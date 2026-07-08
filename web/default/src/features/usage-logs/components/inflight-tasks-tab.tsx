@@ -1269,15 +1269,17 @@ export function InflightTasksTab() {
         }
         renderRow={(row, helpers) => (
           <ContextMenu key={row.id}>
-            <ContextMenuTrigger>
-              <DataTableRow
-                row={row}
-                getColumnClassName={(columnId) =>
-                  helpers.getCellClassName(columnId, 'py-3.5')
-                }
-                cellRenderColumns={columns}
-              />
-            </ContextMenuTrigger>
+            <ContextMenuTrigger
+              render={
+                <DataTableRow
+                  row={row}
+                  getColumnClassName={(columnId) =>
+                    helpers.getCellClassName(columnId, 'py-3.5')
+                  }
+                  cellRenderColumns={columns}
+                />
+              }
+            />
             <ContextMenuContent>
               <ContextMenuItem onClick={() => onOpenDetails(row.original)}>
                 <Eye />

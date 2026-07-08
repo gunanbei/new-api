@@ -54,6 +54,7 @@ func TestShouldOverwriteInflightTaskStatus(t *testing.T) {
 	assert.True(t, shouldOverwriteInflightTaskStatus("", InflightTaskStatusAccepted))
 	assert.True(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusAccepted, InflightTaskStatusStreaming))
 	assert.True(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusStreaming, InflightTaskStatusCompleted))
+	assert.True(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusFailed, InflightTaskStatusCompleted))
 	assert.False(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusCompleted, InflightTaskStatusStreaming))
 	assert.False(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusFailed, InflightTaskStatusRouting))
 }
@@ -96,6 +97,106 @@ func TestShouldApplyReconciledTerminalStatus(t *testing.T) {
 	assert.True(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusFailed))
 	assert.True(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusCompleted))
 	assert.False(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusRouting))
+}
+
+func TestUpdateInflightTaskDetailBuildsAttemptTimeline(t *testing.T) {
+	detail := &InflightTaskDetail{
+		RetryIndex: 0,
+		ChannelID:  10,
+		ChannelName: "first",
+		ChannelChain: []InflightTaskChannelAttempt{{
+			RetryIndex:  0,
+			ChannelID:   10,
+			ChannelName: "first",
+			StartedAt:   100,
+			UpdatedAt:   100,
+		}},
+		Attempts: []InflightTaskAttempt{{
+			RetryIndex:  0,
+			ChannelID:   10,
+			ChannelName: "first",
+			StartedAt:   100,
+			UpdatedAt:   100,
+		}},
+	}
+
+	updateInflightTaskDetail(detail, InflightTaskStatusRouting, 100)
+	updateInflightTaskDetail(detail, InflightTaskStatusUpstreamPending, 105)
+	detail.LatestError = "timeout"
+	updateInflightTaskDetail(detail, InflightTaskStatusFailed, 110)
+
+	require.Len(t, detail.Attempts, 1)
+	require.Len(t, detail.Attempts[0].Timeline, 3)
+	assert.Equal(t, InflightTaskStatusRouting, detail.Attempts[0].Timeline[0].Status)
+	assert.Equal(t, InflightTaskStatusUpstreamPending, detail.Attempts[0].Timeline[1].Status)
+	assert.Equal(t, InflightTaskStatusFailed, detail.Attempts[0].Timeline[2].Status)
+	assert.Equal(t, "timeout", detail.Attempts[0].Error)
+}
+
+func TestMergeInflightTaskDetailSplitsAttemptsByRetryIndex(t *testing.T) {
+	stored := &InflightTask{
+		Detail: &InflightTaskDetail{
+			RetryIndex: 0,
+			ChannelChain: []InflightTaskChannelAttempt{{
+				RetryIndex:  0,
+				ChannelID:   10,
+				ChannelName: "first",
+				Status:      InflightTaskStatusFailed,
+				StartedAt:   100,
+				UpdatedAt:   110,
+			}},
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex:  0,
+				ChannelID:   10,
+				ChannelName: "first",
+				Status:      InflightTaskStatusFailed,
+				StartedAt:   100,
+				UpdatedAt:   110,
+				Timeline: []InflightTaskStatusStep{
+					{Status: InflightTaskStatusRouting, StartedAt: 100, UpdatedAt: 100},
+					{Status: InflightTaskStatusUpstreamPending, StartedAt: 100, UpdatedAt: 105},
+					{Status: InflightTaskStatusFailed, StartedAt: 105, UpdatedAt: 110},
+				},
+			}},
+		},
+	}
+	next := &InflightTask{
+		Status:    InflightTaskStatusRouting,
+		UpdatedAt: 120,
+		Detail: &InflightTaskDetail{
+			RetryIndex: 1,
+			ChannelID:  20,
+			ChannelName: "second",
+			ChannelChain: []InflightTaskChannelAttempt{{
+				RetryIndex:  1,
+				ChannelID:   20,
+				ChannelName: "second",
+				Status:      InflightTaskStatusRouting,
+				StartedAt:   120,
+				UpdatedAt:   120,
+			}},
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex:  1,
+				ChannelID:   20,
+				ChannelName: "second",
+				Status:      InflightTaskStatusRouting,
+				StartedAt:   120,
+				UpdatedAt:   120,
+				Timeline: []InflightTaskStatusStep{
+					{Status: InflightTaskStatusRouting, StartedAt: 120, UpdatedAt: 120},
+				},
+			}},
+		},
+	}
+
+	mergeInflightTaskDetail(stored, next)
+
+	require.Len(t, next.Detail.Attempts, 2)
+	assert.Equal(t, 0, next.Detail.Attempts[0].RetryIndex)
+	assert.Equal(t, 1, next.Detail.Attempts[1].RetryIndex)
+	assert.Equal(t, "second", next.Detail.Attempts[1].ChannelName)
+	require.Len(t, next.Detail.Attempts[1].Timeline, 1)
+	assert.Equal(t, InflightTaskStatusRouting, next.Detail.Attempts[1].Timeline[0].Status)
 }
 
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {

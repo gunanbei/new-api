@@ -195,10 +195,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
-		if retryParam.GetRetry() == 0 {
-			service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting)
-		}
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting)
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())

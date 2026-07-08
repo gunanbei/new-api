@@ -74,6 +74,7 @@ type InflightTaskDetail struct {
 	LatestError  string                       `json:"latest_error,omitempty"`
 	CurrentStage string                       `json:"current_stage,omitempty"`
 	ChannelChain []InflightTaskChannelAttempt `json:"channel_chain,omitempty"`
+	Attempts     []InflightTaskAttempt        `json:"attempts,omitempty"`
 	Timeline     []InflightTaskStatusStep     `json:"timeline,omitempty"`
 }
 
@@ -85,6 +86,17 @@ type InflightTaskChannelAttempt struct {
 	Error       string `json:"error,omitempty"`
 	StartedAt   int64  `json:"started_at,omitempty"`
 	UpdatedAt   int64  `json:"updated_at,omitempty"`
+}
+
+type InflightTaskAttempt struct {
+	RetryIndex  int                      `json:"retry_index"`
+	ChannelID   int                      `json:"channel_id,omitempty"`
+	ChannelName string                   `json:"channel_name,omitempty"`
+	Status      string                   `json:"status,omitempty"`
+	Error       string                   `json:"error,omitempty"`
+	StartedAt   int64                    `json:"started_at,omitempty"`
+	UpdatedAt   int64                    `json:"updated_at,omitempty"`
+	Timeline    []InflightTaskStatusStep `json:"timeline,omitempty"`
 }
 
 type InflightTaskStatusStep struct {
@@ -134,6 +146,9 @@ func shouldOverwriteInflightTaskStatus(current string, next string) bool {
 	}
 	if current == next {
 		return isInflightTaskTerminalStatus(next)
+	}
+	if current == InflightTaskStatusFailed && next == InflightTaskStatusCompleted {
+		return true
 	}
 	if isInflightTaskTerminalStatus(current) {
 		return false
@@ -334,6 +349,21 @@ func inflightTaskDetailFromRelayInfo(info *relaycommon.RelayInfo, status string,
 			UpdatedAt:   now,
 		}
 		detail.ChannelChain = []InflightTaskChannelAttempt{attempt}
+		detail.Attempts = []InflightTaskAttempt{{
+			RetryIndex:  info.RetryIndex,
+			ChannelID:   info.ChannelId,
+			ChannelName: detail.ChannelName,
+			Status:      status,
+			Error:       detail.LatestError,
+			StartedAt:   now,
+			UpdatedAt:   now,
+			Timeline: []InflightTaskStatusStep{{
+				Status:          status,
+				StartedAt:       now,
+				UpdatedAt:       now,
+				DurationSeconds: 0,
+			}},
+		}}
 	}
 	detail.Timeline = []InflightTaskStatusStep{{
 		Status:          status,
@@ -379,6 +409,9 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 	if detail.ChannelChain == nil {
 		detail.ChannelChain = make([]InflightTaskChannelAttempt, 0)
 	}
+	if detail.Attempts == nil {
+		detail.Attempts = make([]InflightTaskAttempt, 0)
+	}
 	if len(next.Detail.ChannelChain) > 0 {
 		attempt := next.Detail.ChannelChain[0]
 		lastIdx := len(detail.ChannelChain) - 1
@@ -398,6 +431,34 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 			}
 			if attempt.Error != "" {
 				current.Error = attempt.Error
+			}
+		}
+	}
+	if len(next.Detail.Attempts) > 0 {
+		attempt := next.Detail.Attempts[0]
+		lastIdx := len(detail.Attempts) - 1
+		if lastIdx < 0 || detail.Attempts[lastIdx].RetryIndex != attempt.RetryIndex {
+			detail.Attempts = append(detail.Attempts, attempt)
+		} else {
+			current := &detail.Attempts[lastIdx]
+			if current.StartedAt == 0 {
+				current.StartedAt = attempt.StartedAt
+			}
+			current.UpdatedAt = attempt.UpdatedAt
+			if attempt.ChannelID != 0 {
+				current.ChannelID = attempt.ChannelID
+			}
+			if attempt.ChannelName != "" {
+				current.ChannelName = attempt.ChannelName
+			}
+			if attempt.Status != "" {
+				current.Status = attempt.Status
+			}
+			if attempt.Error != "" {
+				current.Error = attempt.Error
+			}
+			if len(attempt.Timeline) > 0 {
+				current.Timeline = attempt.Timeline
 			}
 		}
 	}
@@ -423,6 +484,20 @@ func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int
 			lastAttempt.Error = detail.LatestError
 		}
 	}
+	if len(detail.Attempts) > 0 {
+		lastAttempt := &detail.Attempts[len(detail.Attempts)-1]
+		if lastAttempt.StartedAt == 0 {
+			lastAttempt.StartedAt = now
+		}
+		lastAttempt.UpdatedAt = now
+		if status != "" {
+			lastAttempt.Status = status
+		}
+		if detail.LatestError != "" {
+			lastAttempt.Error = detail.LatestError
+		}
+		updateInflightAttemptTimeline(lastAttempt, status, now)
+	}
 	if len(detail.Timeline) == 0 {
 		detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{
 			Status:          status,
@@ -441,6 +516,35 @@ func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int
 	lastStep.UpdatedAt = now
 	lastStep.DurationSeconds = maxInt64(0, now-lastStep.StartedAt)
 	detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{
+		Status:          status,
+		StartedAt:       now,
+		UpdatedAt:       now,
+		DurationSeconds: 0,
+	})
+}
+
+func updateInflightAttemptTimeline(attempt *InflightTaskAttempt, status string, now int64) {
+	if attempt == nil {
+		return
+	}
+	if len(attempt.Timeline) == 0 {
+		attempt.Timeline = append(attempt.Timeline, InflightTaskStatusStep{
+			Status:          status,
+			StartedAt:       now,
+			UpdatedAt:       now,
+			DurationSeconds: 0,
+		})
+		return
+	}
+	lastStep := &attempt.Timeline[len(attempt.Timeline)-1]
+	if lastStep.Status == status {
+		lastStep.UpdatedAt = now
+		lastStep.DurationSeconds = maxInt64(0, now-lastStep.StartedAt)
+		return
+	}
+	lastStep.UpdatedAt = now
+	lastStep.DurationSeconds = maxInt64(0, now-lastStep.StartedAt)
+	attempt.Timeline = append(attempt.Timeline, InflightTaskStatusStep{
 		Status:          status,
 		StartedAt:       now,
 		UpdatedAt:       now,

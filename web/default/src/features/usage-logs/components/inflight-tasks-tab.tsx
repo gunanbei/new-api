@@ -40,6 +40,11 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   Popover,
@@ -100,6 +105,18 @@ type InflightTaskDetail = {
   latest_error?: string
   current_stage?: string
   channel_chain?: InflightTaskChannelAttempt[]
+  attempts?: InflightTaskAttempt[]
+  timeline?: InflightTaskStatusStep[]
+}
+
+type InflightTaskAttempt = {
+  retry_index: number
+  channel_id?: number
+  channel_name?: string
+  status?: string
+  error?: string
+  started_at?: number
+  updated_at?: number
   timeline?: InflightTaskStatusStep[]
 }
 
@@ -185,6 +202,65 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
           updated_at: 1751905228,
         },
       ],
+      attempts: [
+        {
+          retry_index: 0,
+          channel_id: 8,
+          channel_name: 'Azure Fallback',
+          status: 'failed',
+          error: 'upstream timeout after 8s',
+          started_at: 1751905202,
+          updated_at: 1751905213,
+          timeline: [
+            {
+              status: 'routing',
+              started_at: 1751905202,
+              updated_at: 1751905205,
+              duration_seconds: 3,
+            },
+            {
+              status: 'upstream_pending',
+              started_at: 1751905205,
+              updated_at: 1751905213,
+              duration_seconds: 8,
+            },
+            {
+              status: 'failed',
+              started_at: 1751905213,
+              updated_at: 1751905213,
+              duration_seconds: 0,
+            },
+          ],
+        },
+        {
+          retry_index: 1,
+          channel_id: 12,
+          channel_name: 'OpenAI Primary',
+          status: 'streaming',
+          started_at: 1751905214,
+          updated_at: 1751905228,
+          timeline: [
+            {
+              status: 'routing',
+              started_at: 1751905214,
+              updated_at: 1751905214,
+              duration_seconds: 0,
+            },
+            {
+              status: 'upstream_pending',
+              started_at: 1751905214,
+              updated_at: 1751905217,
+              duration_seconds: 3,
+            },
+            {
+              status: 'streaming',
+              started_at: 1751905217,
+              updated_at: 1751905228,
+              duration_seconds: 11,
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -236,6 +312,37 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
           error: 'provider rejected image size',
           started_at: 1751905003,
           updated_at: 1751905016,
+        },
+      ],
+      attempts: [
+        {
+          retry_index: 0,
+          channel_id: 21,
+          channel_name: 'Image Node',
+          status: 'failed',
+          error: 'provider rejected image size',
+          started_at: 1751905001,
+          updated_at: 1751905016,
+          timeline: [
+            {
+              status: 'routing',
+              started_at: 1751905001,
+              updated_at: 1751905003,
+              duration_seconds: 2,
+            },
+            {
+              status: 'upstream_pending',
+              started_at: 1751905003,
+              updated_at: 1751905016,
+              duration_seconds: 13,
+            },
+            {
+              status: 'failed',
+              started_at: 1751905016,
+              updated_at: 1751905016,
+              duration_seconds: 0,
+            },
+          ],
         },
       ],
     },
@@ -359,6 +466,28 @@ function getRetryAttemptLabel(task: InflightTask, t: (key: string, options?: Rec
   })
 }
 
+function getAttempts(task: InflightTask): InflightTaskAttempt[] {
+  const attempts = task.detail?.attempts ?? []
+  if (attempts.length > 0) {
+    return attempts
+  }
+  const chain = task.detail?.channel_chain ?? []
+  if (chain.length === 0) {
+    return []
+  }
+  return chain.map((attempt) => ({
+    retry_index: attempt.retry_index,
+    channel_id: attempt.channel_id,
+    channel_name: attempt.channel_name,
+    status: attempt.status,
+    error: attempt.error,
+    started_at: attempt.started_at,
+    updated_at: attempt.updated_at,
+    timeline:
+      attempt.retry_index === getRetryIndex(task) ? (task.detail?.timeline ?? []) : [],
+  }))
+}
+
 function getTimelineAccentClass(status: string) {
   if (status === 'failed') {
     return 'bg-red-400/80'
@@ -377,6 +506,27 @@ function getRetryPathAccentClass(task: InflightTask, attempt: InflightTaskChanne
     return 'bg-amber-400/80'
   }
   return 'bg-border'
+}
+
+function shouldAttemptDefaultOpen(attempts: InflightTaskAttempt[], retryIndex: number) {
+  if (attempts.length <= 1) {
+    return true
+  }
+  return retryIndex === attempts.at(-1)?.retry_index
+}
+
+function getAttemptSummary(
+  attempt: InflightTaskAttempt,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
+  const summary = [t('Retry {{count}}', { count: attempt.retry_index + 1 })]
+  if (attempt.channel_name) {
+    summary.push(attempt.channel_name)
+  }
+  if (attempt.error) {
+    summary.push(t('Failure Reason'))
+  }
+  return summary.join(' · ')
 }
 
 function buildSourceKey(values: Record<string, unknown>) {
@@ -676,6 +826,7 @@ function InflightTaskDetails(props: {
   const { t } = useTranslation()
   const timeline = props.task.detail?.timeline ?? []
   const channelChain = props.task.detail?.channel_chain ?? []
+  const attempts = getAttempts(props.task)
   const { channelDisplay } = getChannelDisplay(props.task)
   const latestError = getLatestError(props.task)
   const retryState = getRetryState(props.task)
@@ -808,93 +959,189 @@ function InflightTaskDetails(props: {
         </InflightDetailSection>
       )}
 
-      {props.isAdmin && channelChain.length > 0 && (
-        <InflightDetailSection label={t('Retry Path')}>
+      {props.isAdmin && attempts.length > 0 && (
+        <InflightDetailSection label={t('Retry Attempts')}>
           <div className='space-y-2'>
-            {channelChain.map((attempt) => (
-              <div
-                key={`${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
-                className={cn(
-                  'relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3',
-                  attempt.error &&
-                    'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
-                )}
-              >
-                <span
+            {attempts.map((attempt) => {
+              const legacyAttempt: InflightTaskChannelAttempt = {
+                retry_index: attempt.retry_index,
+                channel_id: attempt.channel_id,
+                channel_name: attempt.channel_name,
+                status: attempt.status,
+                error: attempt.error,
+                started_at: attempt.started_at,
+                updated_at: attempt.updated_at,
+              }
+              const attemptTimeline = attempt.timeline ?? []
+              const defaultOpen = shouldAttemptDefaultOpen(attempts, attempt.retry_index)
+              return (
+                <Collapsible
+                  key={`${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
+                  defaultOpen={defaultOpen}
                   className={cn(
-                    'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
-                    getRetryPathAccentClass(props.task, attempt)
+                    'rounded-md border border-border/60 bg-background/80',
+                    attempt.error &&
+                      'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
                   )}
-                  aria-hidden='true'
-                />
-                <div className='flex flex-wrap items-center gap-2'>
-                  <StatusBadge
-                    label={t('Attempt {{number}}', { number: attempt.retry_index + 1 })}
-                    variant='neutral'
-                    size='sm'
-                    copyable={false}
-                    showDot={false}
-                    className='font-mono'
-                  />
-                  {attempt.channel_id ? (
-                    <StatusBadge
-                      label={`#${attempt.channel_id}`}
-                      autoColor={String(attempt.channel_id)}
-                      copyText={String(attempt.channel_id)}
-                      size='sm'
-                      showDot={false}
-                      className='font-mono'
-                    />
-                  ) : null}
-                  {attempt.status ? (
-                    <StatusBadge
-                      label={t(statusLabel[attempt.status] || attempt.status)}
-                      variant={statusVariant[attempt.status] || 'neutral'}
-                      size='sm'
-                      copyable={false}
-                    />
-                  ) : null}
-                  {attempt.retry_index === getRetryIndex(props.task) ? (
-                    <StatusBadge
-                      label={isFinalFailure(props.task) ? t('Final Failure') : t('Current Stage')}
-                      variant={isFinalFailure(props.task) ? 'danger' : 'warning'}
-                      size='sm'
-                      copyable={false}
-                    />
-                  ) : null}
-                </div>
-                {attempt.channel_name ? (
-                  <InflightDetailRow
-                    label={t('Channel')}
-                    value={attempt.channel_name}
-                  />
-                ) : null}
-                {attempt.started_at ? (
-                  <InflightDetailRow
-                    label={t('Started At')}
-                    value={formatTime(attempt.started_at)}
-                    mono
-                  />
-                ) : null}
-                {attempt.updated_at ? (
-                  <InflightDetailRow
-                    label={t('Updated At')}
-                    value={formatTime(attempt.updated_at)}
-                    mono
-                  />
-                ) : null}
-                {attempt.error ? (
-                  <InflightDetailRow
-                    label={t('Failure Reason')}
-                    value={attempt.error}
-                    muted
-                  />
-                ) : null}
-              </div>
-            ))}
+                >
+                  <CollapsibleTrigger
+                    render={
+                      <button
+                        type='button'
+                        className='flex w-full items-start justify-between gap-3 p-3 text-left'
+                        aria-label={getAttemptSummary(attempt, t)}
+                      />
+                    }
+                  >
+                    <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <StatusBadge
+                          label={t('Retry {{count}}', { count: attempt.retry_index + 1 })}
+                          variant='neutral'
+                          size='sm'
+                          copyable={false}
+                          showDot={false}
+                          className='font-mono'
+                        />
+                        {attempt.channel_id ? (
+                          <StatusBadge
+                            label={`#${attempt.channel_id}`}
+                            autoColor={String(attempt.channel_id)}
+                            copyText={String(attempt.channel_id)}
+                            size='sm'
+                            showDot={false}
+                            className='font-mono'
+                          />
+                        ) : null}
+                        {attempt.status ? (
+                          <StatusBadge
+                            label={t(statusLabel[attempt.status] || attempt.status)}
+                            variant={statusVariant[attempt.status] || 'neutral'}
+                            size='sm'
+                            copyable={false}
+                          />
+                        ) : null}
+                      </div>
+                      <div className='text-muted-foreground text-xs'>
+                        {attempt.channel_name || t('Unknown Channel')}
+                      </div>
+                    </div>
+                    <div className='text-muted-foreground shrink-0 text-xs'>
+                      {attempt.error ? t('Failure Reason') : t('Timeline')}
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className='border-t px-3 py-3'>
+                    <div className='space-y-3'>
+                      <div
+                        className={cn(
+                          'relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3',
+                          attempt.error &&
+                            'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
+                            getRetryPathAccentClass(props.task, legacyAttempt)
+                          )}
+                          aria-hidden='true'
+                        />
+                        {attempt.channel_name ? (
+                          <InflightDetailRow label={t('Channel')} value={attempt.channel_name} />
+                        ) : null}
+                        {attempt.started_at ? (
+                          <InflightDetailRow
+                            label={t('Started At')}
+                            value={formatTime(attempt.started_at)}
+                            mono
+                          />
+                        ) : null}
+                        {attempt.updated_at ? (
+                          <InflightDetailRow
+                            label={t('Updated At')}
+                            value={formatTime(attempt.updated_at)}
+                            mono
+                          />
+                        ) : null}
+                        {attempt.error ? (
+                          <InflightDetailRow
+                            label={t('Failure Reason')}
+                            value={attempt.error}
+                            muted
+                          />
+                        ) : null}
+                      </div>
+                      {attemptTimeline.length > 0 ? (
+                        <div className='space-y-2'>
+                          {attemptTimeline.map((step) => (
+                            <div
+                              key={`${attempt.retry_index}-${step.status}-${step.started_at}-${step.updated_at}`}
+                              className='relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3'
+                            >
+                              <span
+                                className={cn(
+                                  'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
+                                  getTimelineAccentClass(step.status)
+                                )}
+                                aria-hidden='true'
+                              />
+                              <div className='flex flex-wrap items-center gap-2'>
+                                <StatusBadge
+                                  label={t(statusLabel[step.status] || step.status)}
+                                  variant={statusVariant[step.status] || 'neutral'}
+                                  size='sm'
+                                  copyable={false}
+                                />
+                                <StatusBadge
+                                  label={`${Math.max(0, step.duration_seconds || 0)}s`}
+                                  variant='neutral'
+                                  size='sm'
+                                  copyable={false}
+                                  showDot={false}
+                                  className='font-mono'
+                                />
+                              </div>
+                              <InflightDetailRow
+                                label={t('Started At')}
+                                value={formatTime(step.started_at)}
+                                mono
+                              />
+                              <InflightDetailRow
+                                label={t('Updated At')}
+                                value={formatTime(step.updated_at)}
+                                mono
+                              />
+                              <InflightDetailRow
+                                label={t('Duration')}
+                                value={`${Math.max(0, step.duration_seconds || 0)}s`}
+                                mono
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )
+            })}
           </div>
         </InflightDetailSection>
       )}
+
+      {props.isAdmin && channelChain.length > 0 ? (
+        <InflightDetailSection label={t('Retry Path')}>
+          <div className='text-muted-foreground text-xs wrap-break-word'>
+            {channelChain
+              .map((attempt) =>
+                attempt.channel_id
+                  ? `${t('Retry {{count}}', { count: attempt.retry_index + 1 })} · #${attempt.channel_id}${attempt.channel_name ? ` ${attempt.channel_name}` : ''}`
+                  : t('Retry {{count}}', { count: attempt.retry_index + 1 })
+              )
+              .join(' -> ')}
+          </div>
+        </InflightDetailSection>
+      ) : null}
 
       {latestError ? (
         <InflightDetailSection label={t('Latest Error')} variant='danger'>

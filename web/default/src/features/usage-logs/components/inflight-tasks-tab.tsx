@@ -825,8 +825,8 @@ function InflightTaskDetails(props: {
 }) {
   const { t } = useTranslation()
   const timeline = props.task.detail?.timeline ?? []
-  const channelChain = props.task.detail?.channel_chain ?? []
   const attempts = getAttempts(props.task)
+  const hasRetries = getAttemptCount(props.task) > 1
   const { channelDisplay } = getChannelDisplay(props.task)
   const latestError = getLatestError(props.task)
   const retryState = getRetryState(props.task)
@@ -841,20 +841,24 @@ function InflightTaskDetails(props: {
           size='sm'
           copyable={false}
         />
-        <StatusBadge
-          label={getRetryStateLabel(props.task, t)}
-          variant={retryStateVariant[retryState] || 'neutral'}
-          size='sm'
-          copyable={false}
-        />
-        <StatusBadge
-          label={getRetryAttemptLabel(props.task, t)}
-          variant='neutral'
-          size='sm'
-          copyable={false}
-          showDot={false}
-          className='font-mono'
-        />
+        {hasRetries || isFinalFailure(props.task) ? (
+          <StatusBadge
+            label={getRetryStateLabel(props.task, t)}
+            variant={retryStateVariant[retryState] || 'neutral'}
+            size='sm'
+            copyable={false}
+          />
+        ) : null}
+        {hasRetries ? (
+          <StatusBadge
+            label={getRetryAttemptLabel(props.task, t)}
+            variant='neutral'
+            size='sm'
+            copyable={false}
+            showDot={false}
+            className='font-mono'
+          />
+        ) : null}
       </div>
 
       <div className='min-w-0 space-y-1'>
@@ -871,16 +875,20 @@ function InflightTaskDetails(props: {
           label={t('Current Stage')}
           value={t(statusLabel[currentStage] || currentStage)}
         />
-        <InflightDetailRow
-          label={t('Current Retry')}
-          value={String(getRetryIndex(props.task))}
-          mono
-        />
-        <InflightDetailRow
-          label={t('Attempts')}
-          value={String(getAttemptCount(props.task))}
-          mono
-        />
+        {hasRetries ? (
+          <>
+            <InflightDetailRow
+              label={t('Current Retry')}
+              value={String(getRetryIndex(props.task))}
+              mono
+            />
+            <InflightDetailRow
+              label={t('Attempts')}
+              value={String(getAttemptCount(props.task))}
+              mono
+            />
+          </>
+        ) : null}
         {props.isAdmin && props.task.detail?.channel_id ? (
           <InflightDetailRow label={t('Current Node')} value={channelDisplay} mono />
         ) : null}
@@ -959,7 +967,7 @@ function InflightTaskDetails(props: {
         </InflightDetailSection>
       )}
 
-      {props.isAdmin && attempts.length > 0 && (
+      {props.isAdmin && hasRetries && attempts.length > 0 && (
         <InflightDetailSection label={t('Retry Attempts')}>
           <div className='space-y-2'>
             {attempts.map((attempt) => {
@@ -1128,20 +1136,6 @@ function InflightTaskDetails(props: {
           </div>
         </InflightDetailSection>
       )}
-
-      {props.isAdmin && channelChain.length > 0 ? (
-        <InflightDetailSection label={t('Retry Path')}>
-          <div className='text-muted-foreground text-xs wrap-break-word'>
-            {channelChain
-              .map((attempt) =>
-                attempt.channel_id
-                  ? `${t('Retry {{count}}', { count: attempt.retry_index + 1 })} · #${attempt.channel_id}${attempt.channel_name ? ` ${attempt.channel_name}` : ''}`
-                  : t('Retry {{count}}', { count: attempt.retry_index + 1 })
-              )
-              .join(' -> ')}
-          </div>
-        </InflightDetailSection>
-      ) : null}
 
       {latestError ? (
         <InflightDetailSection label={t('Latest Error')} variant='danger'>

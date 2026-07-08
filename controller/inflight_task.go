@@ -27,6 +27,7 @@ func GetUserInflightTasks(c *gin.Context) {
 	tasks, total, err := service.ListUserInflightTasks(c.Request.Context(), c.GetInt("id"), service.InflightTaskQuery{
 		Status:         c.Query("status"),
 		Kind:           c.Query("kind"),
+		Channel:        c.Query("channel"),
 		ModelName:      c.Query("model_name"),
 		RequestID:      c.Query("request_id"),
 		StartTimestamp: startTimestamp,

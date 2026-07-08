@@ -18,19 +18,25 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import type { ColumnDef } from '@tanstack/react-table'
-import { RefreshCw } from 'lucide-react'
+import type { ColumnDef, Row } from '@tanstack/react-table'
+import { ChevronDown, ChevronRight, GitBranch, RefreshCw } from 'lucide-react'
 import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import {
   DataTablePage,
+  DataTableRow,
   TruncatedCell,
   useDataTable,
 } from '@/components/data-table'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -38,18 +44,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { TableCell, TableRow } from '@/components/ui/table'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useMediaQuery } from '@/hooks'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 
 import { getDefaultTimeRange } from '../lib/utils'
+import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -57,6 +66,34 @@ import {
 } from './logs-filter-toolbar'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
+const inflightColumnVisibilityStorageKey = 'usage-logs:inflight:column-visibility'
+
+type InflightTaskStatusStep = {
+  status: string
+  started_at: number
+  updated_at: number
+  duration_seconds: number
+}
+
+type InflightTaskChannelAttempt = {
+  retry_index: number
+  channel_id?: number
+  channel_name?: string
+  status?: string
+  error?: string
+  started_at?: number
+  updated_at?: number
+}
+
+type InflightTaskDetail = {
+  channel_id?: number
+  channel_name?: string
+  retry_index?: number
+  latest_error?: string
+  current_stage?: string
+  channel_chain?: InflightTaskChannelAttempt[]
+  timeline?: InflightTaskStatusStep[]
+}
 
 type InflightTask = {
   request_id: string
@@ -66,6 +103,7 @@ type InflightTask = {
   is_stream: boolean
   created_at: number
   updated_at: number
+  detail?: InflightTaskDetail
 }
 
 type InflightTasksResponse = {
@@ -79,6 +117,123 @@ type InflightTasksResponse = {
   }
 }
 
+const MOCK_INFLIGHT_TASKS: InflightTask[] = [
+  {
+    request_id: 'req_inflight_mock_001',
+    status: 'streaming',
+    kind: 'chat',
+    model_name: 'gpt-4.1',
+    is_stream: true,
+    created_at: 1751905200,
+    updated_at: 1751905228,
+    detail: {
+      channel_id: 12,
+      channel_name: 'OpenAI Primary',
+      retry_index: 1,
+      current_stage: 'streaming',
+      latest_error: 'first attempt upstream timeout',
+      timeline: [
+        {
+          status: 'accepted',
+          started_at: 1751905200,
+          updated_at: 1751905202,
+          duration_seconds: 2,
+        },
+        {
+          status: 'routing',
+          started_at: 1751905202,
+          updated_at: 1751905205,
+          duration_seconds: 3,
+        },
+        {
+          status: 'upstream_pending',
+          started_at: 1751905205,
+          updated_at: 1751905214,
+          duration_seconds: 9,
+        },
+        {
+          status: 'streaming',
+          started_at: 1751905214,
+          updated_at: 1751905228,
+          duration_seconds: 14,
+        },
+      ],
+      channel_chain: [
+        {
+          retry_index: 0,
+          channel_id: 8,
+          channel_name: 'Azure Fallback',
+          status: 'upstream_pending',
+          error: 'upstream timeout after 8s',
+          started_at: 1751905205,
+          updated_at: 1751905213,
+        },
+        {
+          retry_index: 1,
+          channel_id: 12,
+          channel_name: 'OpenAI Primary',
+          status: 'streaming',
+          started_at: 1751905214,
+          updated_at: 1751905228,
+        },
+      ],
+    },
+  },
+  {
+    request_id: 'req_inflight_mock_002',
+    status: 'failed',
+    kind: 'image',
+    model_name: 'gpt-image-1',
+    is_stream: false,
+    created_at: 1751905000,
+    updated_at: 1751905016,
+    detail: {
+      channel_id: 21,
+      channel_name: 'Image Node',
+      retry_index: 0,
+      current_stage: 'failed',
+      latest_error: 'provider rejected image size',
+      timeline: [
+        {
+          status: 'accepted',
+          started_at: 1751905000,
+          updated_at: 1751905001,
+          duration_seconds: 1,
+        },
+        {
+          status: 'routing',
+          started_at: 1751905001,
+          updated_at: 1751905003,
+          duration_seconds: 2,
+        },
+        {
+          status: 'upstream_pending',
+          started_at: 1751905003,
+          updated_at: 1751905016,
+          duration_seconds: 13,
+        },
+        {
+          status: 'failed',
+          started_at: 1751905016,
+          updated_at: 1751905016,
+          duration_seconds: 0,
+        },
+      ],
+      channel_chain: [
+        {
+          retry_index: 0,
+          channel_id: 21,
+          channel_name: 'Image Node',
+          status: 'failed',
+          error: 'provider rejected image size',
+          started_at: 1751905003,
+          updated_at: 1751905016,
+        },
+      ],
+    },
+  },
+]
+
 type InflightFilterDraft = {
   sourceKey: string
   status: string
@@ -86,6 +241,9 @@ type InflightFilterDraft = {
   stream: string
   model: string
   requestId: string
+  channel: string
+  startTime?: number
+  endTime?: number
 }
 
 const statusVariant: Record<string, StatusBadgeProps['variant']> = {
@@ -125,7 +283,7 @@ function selectDisplayLabel(
   return value ? labels[value] || value : fallback
 }
 
-function formatTime(timestamp: number) {
+function formatTime(timestamp?: number) {
   if (!timestamp) return '-'
   return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss')
 }
@@ -137,6 +295,9 @@ function buildSourceKey(values: Record<string, unknown>) {
     values.stream,
     values.model,
     values.requestId,
+    values.channel,
+    values.startTime,
+    values.endTime,
   ]
     .map((value) => String(value ?? ''))
     .join('\u001f')
@@ -164,6 +325,7 @@ function buildParams(props: {
     is_stream: props.searchParams.stream,
     model_name: props.searchParams.model,
     request_id: props.searchParams.requestId,
+    channel: props.searchParams.channel,
     start_timestamp: Math.floor(startTime / 1000),
     end_timestamp: Math.floor(endTime / 1000),
   }
@@ -178,11 +340,399 @@ async function fetchInflightTasks(params: Record<string, unknown>) {
   return res.data
 }
 
-function useInflightTaskColumns(): ColumnDef<InflightTask>[] {
+function getMockInflightTasksResponse(params: Record<string, unknown>): NonNullable<InflightTasksResponse['data']> {
+  const page = typeof params.p === 'number' ? params.p : 1
+  const pageSize = typeof params.page_size === 'number' ? params.page_size : 100
+  const status = typeof params.status === 'string' ? params.status : ''
+  const kind = typeof params.kind === 'string' ? params.kind : ''
+  const stream = typeof params.is_stream === 'string' ? params.is_stream : ''
+  const modelName =
+    typeof params.model_name === 'string' ? params.model_name.toLowerCase() : ''
+  const requestId =
+    typeof params.request_id === 'string' ? params.request_id.toLowerCase() : ''
+  const channel =
+    typeof params.channel === 'string' ? params.channel.toLowerCase() : ''
+
+  const filtered = MOCK_INFLIGHT_TASKS.filter((task) => {
+    if (status && task.status !== status) return false
+    if (kind && task.kind !== kind) return false
+    if (stream === 'true' && !task.is_stream) return false
+    if (stream === 'false' && task.is_stream) return false
+    if (modelName && !task.model_name.toLowerCase().includes(modelName)) return false
+    if (requestId && !task.request_id.toLowerCase().includes(requestId)) return false
+    if (channel) {
+      const currentChannel = `${task.detail?.channel_id ?? ''} ${task.detail?.channel_name ?? ''}`.toLowerCase()
+      const retryChannels = (task.detail?.channel_chain ?? [])
+        .map((attempt) => `${attempt.channel_id ?? ''} ${attempt.channel_name ?? ''}`.toLowerCase())
+        .join(' ')
+      if (!currentChannel.includes(channel) && !retryChannels.includes(channel)) {
+        return false
+      }
+    }
+    return true
+  })
+
+  const start = Math.max(0, (page - 1) * pageSize)
+  const items = filtered.slice(start, start + pageSize)
+  return {
+    items,
+    total: filtered.length,
+    page,
+    page_size: pageSize,
+  }
+}
+
+function InflightDetailRow(props: {
+  label: React.ReactNode
+  value: React.ReactNode
+  mono?: boolean
+  muted?: boolean
+}) {
+  return (
+    <div className='grid min-w-0 grid-cols-[5.25rem_minmax(0,1fr)] gap-2 text-sm sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-3'>
+      <span className='text-muted-foreground min-w-0 text-xs'>
+        {props.label}
+      </span>
+      <span
+        className={cn(
+          'max-w-full min-w-0 text-xs break-all sm:wrap-break-word',
+          props.mono && 'font-mono',
+          props.muted && 'text-muted-foreground'
+        )}
+      >
+        {props.value}
+      </span>
+    </div>
+  )
+}
+
+function InflightDetailSection(props: {
+  label: string
+  children: React.ReactNode
+  variant?: 'default' | 'danger'
+}) {
+  const isDanger = props.variant === 'danger'
+  return (
+    <div className='min-w-0 space-y-1.5'>
+      <div
+        className={cn(
+          'text-xs font-semibold',
+          isDanger && 'text-red-500'
+        )}
+      >
+        {props.label}
+      </div>
+      <div
+        className={cn(
+          'min-w-0 space-y-1 overflow-hidden rounded-md border p-2.5 max-sm:p-2',
+          isDanger
+            ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
+            : 'bg-muted/30'
+        )}
+      >
+        {props.children}
+      </div>
+    </div>
+  )
+}
+
+function getChannelDisplay(task: InflightTask) {
+  const channelId = task.detail?.channel_id
+  const channelName = task.detail?.channel_name
+  const channelIdDisplay = channelId ? `#${channelId}` : '-'
+  const channelDisplay =
+    channelId && channelName ? `${channelName} #${channelId}` : channelIdDisplay
+  return { channelIdDisplay, channelDisplay, channelName }
+}
+
+function renderChannelCell(task: InflightTask, t: (key: string) => string) {
+  const { channelIdDisplay, channelDisplay, channelName } = getChannelDisplay(task)
+  const chain = task.detail?.channel_chain ?? []
+  const hasRetryChain = chain.length > 1
+  const retryText = chain
+    .map((attempt) =>
+      attempt.channel_id
+        ? `#${attempt.channel_id}${attempt.channel_name ? ` ${attempt.channel_name}` : ''}`
+        : '-'
+    )
+    .join(' → ')
+
+  if (!task.detail?.channel_id) {
+    return <span className='text-muted-foreground/60 text-xs'>-</span>
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<div className='flex max-w-[180px] flex-col gap-0.5' />}
+      >
+        <div className='relative inline-flex w-fit items-center gap-1'>
+          <StatusBadge
+            label={channelIdDisplay}
+            autoColor={String(task.detail.channel_id)}
+            copyText={String(task.detail.channel_id)}
+            size='sm'
+            showDot={false}
+            className='font-mono'
+          />
+          {hasRetryChain && (
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <button
+                    type='button'
+                    className='text-muted-foreground hover:text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors'
+                    aria-label={t('Retry Chain')}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                }
+              >
+                <GitBranch className='size-3.5 text-amber-500' aria-hidden='true' />
+              </PopoverTrigger>
+              <PopoverContent side='top' align='start' className='w-64 text-xs'>
+                <div className='flex flex-col gap-1'>
+                  <p className='font-medium'>{t('Retry Chain')}</p>
+                  <p className='text-muted-foreground font-mono break-all'>
+                    {retryText}
+                  </p>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
+        {channelName && (
+          <span className='text-muted-foreground/70 truncate !text-xs'>
+            {channelName}
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className='space-y-1'>
+          <p>{channelDisplay}</p>
+          {retryText && hasRetryChain && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Chain')}: {retryText}
+            </p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function buildDetailsSummary(task: InflightTask, t: (key: string) => string) {
+  const timeline = task.detail?.timeline ?? []
+  const totalDuration =
+    timeline.length > 0
+      ? timeline.reduce(
+          (sum, step) => sum + Math.max(0, step.duration_seconds || 0),
+          0
+        )
+      : Math.max(0, task.updated_at - task.created_at)
+  const summary = [
+    t(statusLabel[task.status] || task.status),
+    `${totalDuration}s`,
+  ]
+  if ((task.detail?.channel_chain?.length ?? 0) > 1) {
+    summary.push(t('Retry Chain'))
+  }
+  if (task.detail?.latest_error) {
+    summary.push(t('Error'))
+  }
+  return summary.join(' · ')
+}
+
+function InflightTaskDetails(props: {
+  task: InflightTask
+  isAdmin: boolean
+}) {
+  const { t } = useTranslation()
+  const timeline = props.task.detail?.timeline ?? []
+  const channelChain = props.task.detail?.channel_chain ?? []
+  const { channelDisplay } = getChannelDisplay(props.task)
+
+  return (
+    <div className='w-full min-w-0 space-y-2.5 py-1 sm:space-y-3'>
+      <div className='min-w-0 space-y-1'>
+        <InflightDetailRow label={t('Request ID')} value={props.task.request_id} mono />
+        <InflightDetailRow
+          label={t('Model')}
+          value={props.task.model_name || '-'}
+        />
+        <InflightDetailRow
+          label={t('Status')}
+          value={t(statusLabel[props.task.status] || props.task.status)}
+        />
+        {props.isAdmin && props.task.detail?.channel_id ? (
+          <InflightDetailRow label={t('Channel')} value={channelDisplay} mono />
+        ) : null}
+        <InflightDetailRow
+          label={t('Type')}
+          value={t(kindLabel[props.task.kind] || props.task.kind)}
+        />
+        <InflightDetailRow
+          label={t('Stream')}
+          value={t(props.task.is_stream ? 'Yes' : 'No')}
+        />
+        <InflightDetailRow
+          label={t('Started At')}
+          value={formatTime(props.task.created_at)}
+          mono
+        />
+        <InflightDetailRow
+          label={t('Updated At')}
+          value={formatTime(props.task.updated_at)}
+          mono
+        />
+      </div>
+
+      {timeline.length > 0 && (
+        <InflightDetailSection label={t('Timeline')}>
+          <div className='space-y-2'>
+            {timeline.map((step, index) => (
+              <div
+                key={`${step.status}-${index}-${step.started_at}`}
+                className='space-y-1 rounded-md border border-border/60 bg-background/80 p-2'
+              >
+                <div className='flex flex-wrap items-center gap-2'>
+                  <StatusBadge
+                    label={t(statusLabel[step.status] || step.status)}
+                    variant={statusVariant[step.status] || 'neutral'}
+                    size='sm'
+                    copyable={false}
+                  />
+                  <StatusBadge
+                    label={`${Math.max(0, step.duration_seconds || 0)}s`}
+                    variant='neutral'
+                    size='sm'
+                    copyable={false}
+                    showDot={false}
+                    className='font-mono'
+                  />
+                </div>
+                <InflightDetailRow
+                  label={t('Started At')}
+                  value={formatTime(step.started_at)}
+                  mono
+                />
+                <InflightDetailRow
+                  label={t('Updated At')}
+                  value={formatTime(step.updated_at)}
+                  mono
+                />
+                <InflightDetailRow
+                  label={t('Duration')}
+                  value={`${Math.max(0, step.duration_seconds || 0)}s`}
+                  mono
+                />
+              </div>
+            ))}
+          </div>
+        </InflightDetailSection>
+      )}
+
+      {props.isAdmin && channelChain.length > 0 && (
+        <InflightDetailSection label={t('Retry Chain')}>
+          <div className='space-y-2'>
+            {channelChain.map((attempt, index) => (
+              <div
+                key={`${attempt.retry_index}-${attempt.channel_id}-${index}`}
+                className='space-y-1 rounded-md border border-border/60 bg-background/80 p-2'
+              >
+                <div className='flex flex-wrap items-center gap-2'>
+                  {attempt.channel_id ? (
+                    <StatusBadge
+                      label={`#${attempt.channel_id}`}
+                      autoColor={String(attempt.channel_id)}
+                      copyText={String(attempt.channel_id)}
+                      size='sm'
+                      showDot={false}
+                      className='font-mono'
+                    />
+                  ) : null}
+                  {attempt.status ? (
+                    <StatusBadge
+                      label={t(statusLabel[attempt.status] || attempt.status)}
+                      variant={statusVariant[attempt.status] || 'neutral'}
+                      size='sm'
+                      copyable={false}
+                    />
+                  ) : null}
+                </div>
+                {attempt.channel_name ? (
+                  <InflightDetailRow
+                    label={t('Channel')}
+                    value={attempt.channel_name}
+                  />
+                ) : null}
+                {attempt.started_at ? (
+                  <InflightDetailRow
+                    label={t('Started At')}
+                    value={formatTime(attempt.started_at)}
+                    mono
+                  />
+                ) : null}
+                {attempt.updated_at ? (
+                  <InflightDetailRow
+                    label={t('Updated At')}
+                    value={formatTime(attempt.updated_at)}
+                    mono
+                  />
+                ) : null}
+                {attempt.error ? (
+                  <InflightDetailRow
+                    label={t('Error')}
+                    value={attempt.error}
+                    muted
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </InflightDetailSection>
+      )}
+
+      {props.task.detail?.latest_error ? (
+        <InflightDetailSection label={t('Error')} variant='danger'>
+          <p className='text-xs wrap-break-word'>
+            {props.task.detail.latest_error}
+          </p>
+        </InflightDetailSection>
+      ) : null}
+    </div>
+  )
+}
+
+function useInflightTaskColumns(props: {
+  expandedRequestId: string | null
+  onToggleExpand: (requestId: string) => void
+  isAdmin: boolean
+}): ColumnDef<InflightTask>[] {
   const { t } = useTranslation()
 
   return useMemo(
     () => [
+      {
+        id: 'expand',
+        header: '',
+        cell: ({ row }) => (
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-6 w-6 p-0'
+            onClick={() => props.onToggleExpand(row.original.request_id)}
+            aria-label={t('Details')}
+          >
+            {props.expandedRequestId === row.original.request_id ? (
+              <ChevronDown className='size-4' />
+            ) : (
+              <ChevronRight className='size-4' />
+            )}
+          </Button>
+        ),
+        enableHiding: false,
+        size: 40,
+      },
       {
         accessorKey: 'status',
         header: t('Status'),
@@ -202,12 +752,32 @@ function useInflightTaskColumns(): ColumnDef<InflightTask>[] {
         header: t('Type'),
         cell: ({ row }) => t(kindLabel[row.original.kind] || row.original.kind),
       },
+      ...(props.isAdmin
+        ? [
+            {
+              id: 'channel',
+              header: t('Channel'),
+              accessorFn: (row: InflightTask) => row.detail?.channel_id,
+              cell: ({ row }: { row: Row<InflightTask> }) =>
+                renderChannelCell(row.original, t),
+            } satisfies ColumnDef<InflightTask>,
+          ]
+        : []),
       {
         accessorKey: 'model_name',
         header: t('Model'),
         cell: ({ row }) => (
           <TruncatedCell className='max-w-[220px]'>
             {row.original.model_name || '-'}
+          </TruncatedCell>
+        ),
+      },
+      {
+        id: 'details',
+        header: t('Details'),
+        cell: ({ row }) => (
+          <TruncatedCell className='max-w-[260px]'>
+            {buildDetailsSummary(row.original, t)}
           </TruncatedCell>
         ),
       },
@@ -236,7 +806,7 @@ function useInflightTaskColumns(): ColumnDef<InflightTask>[] {
         cell: ({ row }) => t(row.original.is_stream ? 'Yes' : 'No'),
       },
     ],
-    [t]
+    [props.expandedRequestId, props.isAdmin, props.onToggleExpand, t]
   )
 }
 
@@ -244,6 +814,7 @@ function InflightFilterBar<TData>(props: {
   table: ReturnType<typeof useDataTable<TData>>['table']
   isFetching: boolean
   refetch: () => void
+  isAdmin: boolean
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -251,12 +822,22 @@ function InflightFilterBar<TData>(props: {
   const searchParams = route.useSearch()
 
   const searchState = useMemo<InflightFilterDraft>(() => {
+    const { start, end } = getDefaultTimeRange()
     const sourceValues = {
       status: searchParams.status,
       kind: searchParams.kind,
       stream: searchParams.stream,
       model: searchParams.model,
       requestId: searchParams.requestId,
+      channel: searchParams.channel,
+      startTime:
+        typeof searchParams.startTime === 'number'
+          ? searchParams.startTime
+          : start.getTime(),
+      endTime:
+        typeof searchParams.endTime === 'number'
+          ? searchParams.endTime
+          : end.getTime(),
     }
     return {
       sourceKey: buildSourceKey(sourceValues),
@@ -265,20 +846,29 @@ function InflightFilterBar<TData>(props: {
       stream: searchParams.stream || '',
       model: searchParams.model || '',
       requestId: searchParams.requestId || '',
+      channel: searchParams.channel || '',
+      startTime: sourceValues.startTime,
+      endTime: sourceValues.endTime,
     }
   }, [
-    searchParams.status,
+    searchParams.channel,
+    searchParams.endTime,
     searchParams.kind,
-    searchParams.stream,
     searchParams.model,
     searchParams.requestId,
+    searchParams.startTime,
+    searchParams.status,
+    searchParams.stream,
   ])
   const [draft, setDraft] = useState<InflightFilterDraft>(() => searchState)
   const activeDraft =
     draft.sourceKey === searchState.sourceKey ? draft : searchState
 
   const handleChange = useCallback(
-    (field: keyof Omit<InflightFilterDraft, 'sourceKey'>, value: string) => {
+    (
+      field: keyof Omit<InflightFilterDraft, 'sourceKey'>,
+      value: string | number | undefined
+    ) => {
       setDraft((current) => {
         const base =
           current.sourceKey === searchState.sourceKey ? current : searchState
@@ -298,6 +888,9 @@ function InflightFilterBar<TData>(props: {
         stream: activeDraft.stream || undefined,
         model: activeDraft.model || undefined,
         requestId: activeDraft.requestId || undefined,
+        channel: activeDraft.channel || undefined,
+        startTime: activeDraft.startTime,
+        endTime: activeDraft.endTime,
         page: 1,
       },
     })
@@ -305,6 +898,7 @@ function InflightFilterBar<TData>(props: {
   }, [activeDraft, navigate, queryClient])
 
   const handleReset = useCallback(() => {
+    const { start, end } = getDefaultTimeRange()
     setDraft({
       sourceKey: '',
       status: '',
@@ -312,11 +906,18 @@ function InflightFilterBar<TData>(props: {
       stream: '',
       model: '',
       requestId: '',
+      channel: '',
+      startTime: start.getTime(),
+      endTime: end.getTime(),
     })
     navigate({
       to: '/usage-logs/$section',
       params: { section: 'inflight' },
-      search: { page: 1 },
+      search: {
+        page: 1,
+        startTime: start.getTime(),
+        endTime: end.getTime(),
+      },
     })
     queryClient.invalidateQueries({ queryKey: ['inflight-tasks'] })
   }, [navigate, queryClient])
@@ -333,106 +934,167 @@ function InflightFilterBar<TData>(props: {
     !!activeDraft.kind ||
     !!activeDraft.stream ||
     !!activeDraft.model ||
-    !!activeDraft.requestId
-  const statusDisplay = t(
-    selectDisplayLabel(activeDraft.status, statusLabel, 'All Status')
-  )
-  const kindDisplay = t(
-    selectDisplayLabel(activeDraft.kind, kindLabel, 'All Types')
-  )
-  const streamDisplay = t(
-    selectDisplayLabel(activeDraft.stream, streamLabel, 'All')
-  )
+    !!activeDraft.requestId ||
+    !!activeDraft.channel
 
-  const filterFields = (
-    <>
-      <LogsFilterField>
-        <Select
-          value={activeDraft.status || 'all'}
-          onValueChange={(value) =>
-            handleChange('status', value === 'all' ? '' : (value ?? ''))
-          }
-        >
-          <SelectTrigger className='h-8'>
-            <SelectValue>{statusDisplay}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='all'>{t('All Status')}</SelectItem>
-            {Object.entries(statusLabel).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {t(label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </LogsFilterField>
-      <LogsFilterField>
-        <Select
-          value={activeDraft.kind || 'all'}
-          onValueChange={(value) =>
-            handleChange('kind', value === 'all' ? '' : (value ?? ''))
-          }
-        >
-          <SelectTrigger className='h-8'>
-            <SelectValue>{kindDisplay}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='all'>{t('All Types')}</SelectItem>
-            {Object.entries(kindLabel).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {t(label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </LogsFilterField>
-      <LogsFilterField>
-        <Select
-          value={activeDraft.stream || 'all'}
-          onValueChange={(value) =>
-            handleChange('stream', value === 'all' ? '' : (value ?? ''))
-          }
-        >
-          <SelectTrigger className='h-8'>
-            <SelectValue>{streamDisplay}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='all'>{t('All')}</SelectItem>
-            {Object.entries(streamLabel).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {t(label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </LogsFilterField>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Model name')}
-          value={activeDraft.model}
-          onChange={(event) => handleChange('model', event.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
-      <LogsFilterField wide>
-        <LogsFilterInput
-          placeholder={t('Request ID')}
-          value={activeDraft.requestId}
-          onChange={(event) => handleChange('requestId', event.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
-    </>
+  const dateRangeFilter = (
+    <LogsFilterField wide>
+      <CompactDateTimeRangePicker
+        start={
+          typeof activeDraft.startTime === 'number'
+            ? new Date(activeDraft.startTime)
+            : undefined
+        }
+        end={
+          typeof activeDraft.endTime === 'number'
+            ? new Date(activeDraft.endTime)
+            : undefined
+        }
+        onChange={({ start, end }) => {
+          handleChange('startTime', start?.getTime())
+          handleChange('endTime', end?.getTime())
+        }}
+      />
+    </LogsFilterField>
   )
 
   return (
     <LogsFilterToolbar
       table={props.table}
-      primaryFilters={filterFields}
-      mobilePinnedFilters={filterFields}
+      primaryFilters={
+        <>
+          {dateRangeFilter}
+          <LogsFilterField>
+            <Select
+              value={activeDraft.status || 'all'}
+              onValueChange={(value) =>
+                handleChange('status', value === 'all' ? '' : (value ?? ''))
+              }
+            >
+              <SelectTrigger className='h-8'>
+                <SelectValue>
+                  {t(
+                    selectDisplayLabel(activeDraft.status, statusLabel, 'All Status')
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>{t('All Status')}</SelectItem>
+                {Object.entries(statusLabel).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {t(label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </LogsFilterField>
+          <LogsFilterField>
+            <Select
+              value={activeDraft.kind || 'all'}
+              onValueChange={(value) =>
+                handleChange('kind', value === 'all' ? '' : (value ?? ''))
+              }
+            >
+              <SelectTrigger className='h-8'>
+                <SelectValue>
+                  {t(selectDisplayLabel(activeDraft.kind, kindLabel, 'All Types'))}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>{t('All Types')}</SelectItem>
+                {Object.entries(kindLabel).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {t(label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </LogsFilterField>
+          <LogsFilterField>
+            <Select
+              value={activeDraft.stream || 'all'}
+              onValueChange={(value) =>
+                handleChange('stream', value === 'all' ? '' : (value ?? ''))
+              }
+            >
+              <SelectTrigger className='h-8'>
+                <SelectValue>
+                  {t(selectDisplayLabel(activeDraft.stream, streamLabel, 'All'))}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>{t('All')}</SelectItem>
+                {Object.entries(streamLabel).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {t(label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </LogsFilterField>
+          {props.isAdmin ? (
+            <LogsFilterField>
+              <LogsFilterInput
+                placeholder={t('Channel ID')}
+                value={activeDraft.channel}
+                onChange={(event) => handleChange('channel', event.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </LogsFilterField>
+          ) : null}
+          <LogsFilterField>
+            <LogsFilterInput
+              placeholder={t('Model name')}
+              value={activeDraft.model}
+              onChange={(event) => handleChange('model', event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </LogsFilterField>
+          <LogsFilterField wide>
+            <LogsFilterInput
+              placeholder={t('Request ID')}
+              value={activeDraft.requestId}
+              onChange={(event) => handleChange('requestId', event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </LogsFilterField>
+        </>
+      }
+      mobilePinnedFilters={dateRangeFilter}
+      mobileFilters={
+        <>
+          {props.isAdmin ? (
+            <LogsFilterField>
+              <LogsFilterInput
+                placeholder={t('Channel ID')}
+                value={activeDraft.channel}
+                onChange={(event) => handleChange('channel', event.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </LogsFilterField>
+          ) : null}
+          <LogsFilterField>
+            <LogsFilterInput
+              placeholder={t('Model name')}
+              value={activeDraft.model}
+              onChange={(event) => handleChange('model', event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </LogsFilterField>
+          <LogsFilterField wide>
+            <LogsFilterInput
+              placeholder={t('Request ID')}
+              value={activeDraft.requestId}
+              onChange={(event) => handleChange('requestId', event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </LogsFilterField>
+        </>
+      }
       hasActiveFilters={hasActiveFilters}
       onReset={handleReset}
       onSearch={handleApply}
+      searchLoading={props.isFetching}
       actionStart={
         <Tooltip>
           <TooltipTrigger
@@ -447,9 +1109,7 @@ function InflightFilterBar<TData>(props: {
               />
             }
           >
-            <RefreshCw
-              className={cn('size-4', props.isFetching && 'animate-spin')}
-            />
+            <RefreshCw className={cn('size-4', props.isFetching && 'animate-spin')} />
           </TooltipTrigger>
           <TooltipContent>{t('Refresh')}</TooltipContent>
         </Tooltip>
@@ -460,8 +1120,10 @@ function InflightFilterBar<TData>(props: {
 
 export function InflightTasksTab() {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
+  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -474,7 +1136,17 @@ export function InflightTasksTab() {
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
     globalFilter: { enabled: false },
   })
-  const columns = useInflightTaskColumns()
+
+  const onToggleExpand = useCallback((requestId: string) => {
+    setExpandedRequestId((current) => (current === requestId ? null : requestId))
+  }, [])
+
+  const columns = useInflightTaskColumns({
+    expandedRequestId,
+    onToggleExpand,
+    isAdmin,
+  })
+
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: [
       'inflight-tasks',
@@ -483,6 +1155,15 @@ export function InflightTasksTab() {
       searchParams,
     ],
     queryFn: async () => {
+      if (searchParams.mock === 'inflight') {
+        return getMockInflightTasksResponse(
+          buildParams({
+            page: pagination.pageIndex + 1,
+            pageSize: pagination.pageSize,
+            searchParams,
+          })
+        )
+      }
       const result = await fetchInflightTasks(
         buildParams({
           page: pagination.pageIndex + 1,
@@ -514,6 +1195,7 @@ export function InflightTasksTab() {
     data: data?.items ?? [],
     columns,
     columnFilters,
+    columnVisibilityStorageKey: inflightColumnVisibilityStorageKey,
     pagination,
     enableRowSelection: false,
     onPaginationChange,
@@ -543,8 +1225,29 @@ export function InflightTasksTab() {
           table={table}
           isFetching={isFetching}
           refetch={() => void refetch()}
+          isAdmin={isAdmin}
         />
       }
+      renderRow={(row, helpers) => (
+        <>
+          <DataTableRow
+            key={row.id}
+            row={row}
+            aria-expanded={expandedRequestId === row.original.request_id}
+            getColumnClassName={() => 'py-3.5'}
+            cellRenderColumns={columns}
+          />
+          {expandedRequestId === row.original.request_id ? (
+            <TableRow key={`${row.id}-details`}>
+              <TableCell colSpan={row.getVisibleCells().length} className='bg-muted/20 py-3'>
+                <div className={helpers.getCellClassName('details', 'px-2 sm:px-3')}>
+                  <InflightTaskDetails task={row.original} isAdmin={isAdmin} />
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : null}
+        </>
+      )}
       tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
     />
   )

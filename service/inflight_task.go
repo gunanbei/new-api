@@ -56,19 +56,48 @@ func NewInflightTaskFinalizeContext(parent context.Context) (context.Context, co
 }
 
 type InflightTask struct {
-	RequestID string `json:"request_id"`
-	UserID    int    `json:"user_id"`
-	Status    string `json:"status"`
-	Kind      string `json:"kind"`
-	ModelName string `json:"model_name"`
-	IsStream  bool   `json:"is_stream"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	RequestID string              `json:"request_id"`
+	UserID    int                 `json:"user_id"`
+	Status    string              `json:"status"`
+	Kind      string              `json:"kind"`
+	ModelName string              `json:"model_name"`
+	IsStream  bool                `json:"is_stream"`
+	CreatedAt int64               `json:"created_at"`
+	UpdatedAt int64               `json:"updated_at"`
+	Detail    *InflightTaskDetail `json:"detail,omitempty"`
+}
+
+type InflightTaskDetail struct {
+	ChannelID    int                          `json:"channel_id,omitempty"`
+	ChannelName  string                       `json:"channel_name,omitempty"`
+	RetryIndex   int                          `json:"retry_index,omitempty"`
+	LatestError  string                       `json:"latest_error,omitempty"`
+	CurrentStage string                       `json:"current_stage,omitempty"`
+	ChannelChain []InflightTaskChannelAttempt `json:"channel_chain,omitempty"`
+	Timeline     []InflightTaskStatusStep     `json:"timeline,omitempty"`
+}
+
+type InflightTaskChannelAttempt struct {
+	RetryIndex  int    `json:"retry_index"`
+	ChannelID   int    `json:"channel_id,omitempty"`
+	ChannelName string `json:"channel_name,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Error       string `json:"error,omitempty"`
+	StartedAt   int64  `json:"started_at,omitempty"`
+	UpdatedAt   int64  `json:"updated_at,omitempty"`
+}
+
+type InflightTaskStatusStep struct {
+	Status          string `json:"status"`
+	StartedAt       int64  `json:"started_at"`
+	UpdatedAt       int64  `json:"updated_at"`
+	DurationSeconds int64  `json:"duration_seconds"`
 }
 
 type InflightTaskQuery struct {
 	Status         string
 	Kind           string
+	Channel        string
 	ModelName      string
 	RequestID      string
 	StartTimestamp int64
@@ -242,7 +271,7 @@ func loadTerminalStatusesByRequestID(userID int, requestIDs []string) (map[strin
 
 func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *InflightTask {
 	now := time.Now().Unix()
-	return &InflightTask{
+	task := &InflightTask{
 		RequestID: info.RequestId,
 		UserID:    info.UserId,
 		Status:    status,
@@ -252,6 +281,174 @@ func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *Infl
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	task.Detail = inflightTaskDetailFromRelayInfo(info, status, now)
+	return task
+}
+
+func inflightTaskDetailFromRelayInfo(info *relaycommon.RelayInfo, status string, now int64) *InflightTaskDetail {
+	if info == nil {
+		return nil
+	}
+	detail := &InflightTaskDetail{
+		RetryIndex:   info.RetryIndex,
+		CurrentStage: status,
+	}
+	if info.LastError != nil {
+		detail.LatestError = info.LastError.Error()
+	}
+	if info.ChannelMeta != nil {
+		detail.ChannelID = info.ChannelId
+		detail.ChannelName = strings.TrimSpace(info.ChannelMeta.ChannelName)
+		attempt := InflightTaskChannelAttempt{
+			RetryIndex:  info.RetryIndex,
+			ChannelID:   info.ChannelId,
+			ChannelName: detail.ChannelName,
+			Status:      status,
+			Error:       detail.LatestError,
+			StartedAt:   now,
+			UpdatedAt:   now,
+		}
+		detail.ChannelChain = []InflightTaskChannelAttempt{attempt}
+	}
+	detail.Timeline = []InflightTaskStatusStep{{
+		Status:          status,
+		StartedAt:       now,
+		UpdatedAt:       now,
+		DurationSeconds: 0,
+	}}
+	return detail
+}
+
+func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
+	if next == nil {
+		return
+	}
+	now := next.UpdatedAt
+	if now == 0 {
+		now = time.Now().Unix()
+		next.UpdatedAt = now
+	}
+	if next.Detail == nil {
+		if stored != nil {
+			next.Detail = stored.Detail
+		}
+		return
+	}
+	if stored == nil || stored.Detail == nil {
+		updateInflightTaskDetail(next.Detail, next.Status, now)
+		return
+	}
+
+	detail := stored.Detail
+	if next.Detail.ChannelID != 0 {
+		detail.ChannelID = next.Detail.ChannelID
+	}
+	if next.Detail.ChannelName != "" {
+		detail.ChannelName = next.Detail.ChannelName
+	}
+	detail.RetryIndex = next.Detail.RetryIndex
+	if next.Detail.LatestError != "" {
+		detail.LatestError = next.Detail.LatestError
+	}
+	detail.CurrentStage = next.Status
+	if detail.ChannelChain == nil {
+		detail.ChannelChain = make([]InflightTaskChannelAttempt, 0)
+	}
+	if len(next.Detail.ChannelChain) > 0 {
+		attempt := next.Detail.ChannelChain[0]
+		lastIdx := len(detail.ChannelChain) - 1
+		if lastIdx < 0 || detail.ChannelChain[lastIdx].RetryIndex != attempt.RetryIndex || detail.ChannelChain[lastIdx].ChannelID != attempt.ChannelID {
+			detail.ChannelChain = append(detail.ChannelChain, attempt)
+		} else {
+			current := &detail.ChannelChain[lastIdx]
+			if current.StartedAt == 0 {
+				current.StartedAt = attempt.StartedAt
+			}
+			current.UpdatedAt = attempt.UpdatedAt
+			if attempt.ChannelName != "" {
+				current.ChannelName = attempt.ChannelName
+			}
+			if attempt.Status != "" {
+				current.Status = attempt.Status
+			}
+			if attempt.Error != "" {
+				current.Error = attempt.Error
+			}
+		}
+	}
+	next.Detail = detail
+	updateInflightTaskDetail(next.Detail, next.Status, now)
+}
+
+func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int64) {
+	if detail == nil {
+		return
+	}
+	detail.CurrentStage = status
+	if len(detail.ChannelChain) > 0 {
+		lastAttempt := &detail.ChannelChain[len(detail.ChannelChain)-1]
+		if lastAttempt.StartedAt == 0 {
+			lastAttempt.StartedAt = now
+		}
+		lastAttempt.UpdatedAt = now
+		if status != "" {
+			lastAttempt.Status = status
+		}
+		if detail.LatestError != "" {
+			lastAttempt.Error = detail.LatestError
+		}
+	}
+	if len(detail.Timeline) == 0 {
+		detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{
+			Status:          status,
+			StartedAt:       now,
+			UpdatedAt:       now,
+			DurationSeconds: 0,
+		})
+		return
+	}
+	lastStep := &detail.Timeline[len(detail.Timeline)-1]
+	if lastStep.Status == status {
+		lastStep.UpdatedAt = now
+		lastStep.DurationSeconds = maxInt64(0, now-lastStep.StartedAt)
+		return
+	}
+	lastStep.UpdatedAt = now
+	lastStep.DurationSeconds = maxInt64(0, now-lastStep.StartedAt)
+	detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{
+		Status:          status,
+		StartedAt:       now,
+		UpdatedAt:       now,
+		DurationSeconds: 0,
+	})
+}
+
+func maxInt64(a int64, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func inflightTaskMatchesChannel(task InflightTask, channel string) bool {
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		return true
+	}
+	if task.Detail == nil {
+		return false
+	}
+	if strings.Contains(strconv.Itoa(task.Detail.ChannelID), channel) ||
+		strings.Contains(strings.ToLower(task.Detail.ChannelName), strings.ToLower(channel)) {
+		return true
+	}
+	for _, attempt := range task.Detail.ChannelChain {
+		if strings.Contains(strconv.Itoa(attempt.ChannelID), channel) ||
+			strings.Contains(strings.ToLower(attempt.ChannelName), strings.ToLower(channel)) {
+			return true
+		}
+	}
+	return false
 }
 
 func updateInflightTask(ctx context.Context, client *redis.Client, task *InflightTask) error {
@@ -263,12 +460,15 @@ func updateInflightTask(ctx context.Context, client *redis.Client, task *Infligh
 				var stored InflightTask
 				if err := common.UnmarshalJsonStr(existing, &stored); err == nil {
 					task.CreatedAt = stored.CreatedAt
+					mergeInflightTaskDetail(&stored, task)
 					if !shouldOverwriteInflightTaskStatus(stored.Status, task.Status) {
 						return nil
 					}
 				}
 			} else if !errors.Is(getErr, redis.Nil) {
 				return getErr
+			} else {
+				mergeInflightTaskDetail(nil, task)
 			}
 			return persistInflightTask(ctx, tx, task)
 		}, itemKey)
@@ -373,6 +573,9 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 			continue
 		}
 		if query.Kind != "" && task.Kind != query.Kind {
+			continue
+		}
+		if !inflightTaskMatchesChannel(task, query.Channel) {
 			continue
 		}
 		if query.ModelName != "" && !strings.Contains(task.ModelName, query.ModelName) {

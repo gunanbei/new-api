@@ -36,6 +36,7 @@ const logTypeSearchSchema = z
 const usageLogsSearchSchema = z.object({
   page: z.number().optional().catch(1),
   pageSize: z.number().optional().catch(undefined),
+  mock: z.string().optional().catch(''),
   type: logTypeSearchSchema.optional(),
   filter: z.string().optional().catch(''),
   status: z.string().optional().catch(''),

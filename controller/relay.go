@@ -233,7 +233,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
-			service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusCompleted)
+			service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.FinalInflightTaskStatus(relayInfo))
 			return
 		}
 

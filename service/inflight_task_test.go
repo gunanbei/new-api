@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 
 	"github.com/stretchr/testify/assert"
@@ -70,4 +72,11 @@ func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
 		t.Fatal("finalize context should not inherit parent cancellation immediately")
 	case <-time.After(10 * time.Millisecond):
 	}
+}
+
+func TestFinalInflightTaskStatusUsesStreamStatus(t *testing.T) {
+	info := &relaycommon.RelayInfo{IsStream: true, StreamStatus: relaycommon.NewStreamStatus()}
+	info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, errors.New("context canceled"))
+
+	assert.Equal(t, InflightTaskStatusFailed, FinalInflightTaskStatus(info))
 }

@@ -307,6 +307,13 @@ func MarkInflightTaskStreamStarted(c context.Context, info *relaycommon.RelayInf
 	UpdateInflightTaskStatusAsync(c, info, InflightTaskStatusStreaming)
 }
 
+func FinalInflightTaskStatus(info *relaycommon.RelayInfo) string {
+	if info != nil && info.IsStream && info.StreamStatus != nil && (!info.StreamStatus.IsNormalEnd() || info.StreamStatus.HasErrors()) {
+		return InflightTaskStatusFailed
+	}
+	return InflightTaskStatusCompleted
+}
+
 func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, error) {
 	client, err := inflightTaskRedis()
 	if err != nil {

@@ -122,6 +122,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	if err = service.UpdateInflightTaskStatus(c.Request.Context(), relayInfo, service.InflightTaskStatusAccepted); err != nil && !service.IsInflightTaskUnavailable(err) {
+		logger.LogError(c, fmt.Sprintf("start inflight task failed: %v", err))
+	}
+	if relayInfo.IsStream {
+		relayInfo.OnFirstResponse = func() {
+			service.MarkInflightTaskStreamStarted(c.Request.Context(), relayInfo)
+		}
+	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -189,6 +197,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		if retryParam.GetRetry() == 0 {
+			if err = service.UpdateInflightTaskStatus(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting); err != nil && !service.IsInflightTaskUnavailable(err) {
+				logger.LogError(c, fmt.Sprintf("update inflight task routing status failed: %v", err))
+			}
+		}
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -209,6 +222,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
+		if err = service.UpdateInflightTaskStatus(c.Request.Context(), relayInfo, service.InflightTaskStatusUpstreamPending); err != nil && !service.IsInflightTaskUnavailable(err) {
+			logger.LogError(c, fmt.Sprintf("update inflight task upstream status failed: %v", err))
+		}
 
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
@@ -223,6 +239,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			if statusErr := service.UpdateInflightTaskStatus(c.Request.Context(), relayInfo, service.InflightTaskStatusCompleted); statusErr != nil && !service.IsInflightTaskUnavailable(statusErr) {
+				logger.LogError(c, fmt.Sprintf("complete inflight task failed: %v", statusErr))
+			}
 			return
 		}
 
@@ -242,6 +261,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
+		if err = service.UpdateInflightTaskStatus(c.Request.Context(), relayInfo, service.InflightTaskStatusFailed); err != nil && !service.IsInflightTaskUnavailable(err) {
+			logger.LogError(c, fmt.Sprintf("fail inflight task failed: %v", err))
+		}
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})

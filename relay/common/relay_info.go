@@ -177,7 +177,8 @@ type RelayInfo struct {
 	// 若为空，调用 GetFinalRequestRelayFormat 会回退到 RequestConversionChain 的最后一项或 RelayFormat。
 	FinalRequestRelayFormat types.RelayFormat
 
-	StreamStatus *StreamStatus
+	StreamStatus    *StreamStatus
+	OnFirstResponse func()
 
 	ThinkingContentInfo
 	TokenCountMeta
@@ -660,6 +661,9 @@ func (info *RelayInfo) SetFirstResponseTime() {
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
+		if info.OnFirstResponse != nil {
+			info.OnFirstResponse()
+		}
 	}
 }
 

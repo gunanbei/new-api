@@ -80,12 +80,14 @@ import type { LogCleanupTask } from '../types'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
+  InflightTaskUserLimit: z.coerce.number().int().min(1).max(200),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
 
 type LogSettingsSectionProps = {
   defaultEnabled: boolean
+  defaultInflightTaskUserLimit: number
 }
 
 type ServerLogInfo = {
@@ -141,6 +143,7 @@ function isActiveLogCleanupTask(task: LogCleanupTask | null) {
 
 export function LogSettingsSection({
   defaultEnabled,
+  defaultInflightTaskUserLimit,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -148,6 +151,7 @@ export function LogSettingsSection({
     resolver: zodResolver(logSettingsSchema),
     defaultValues: {
       LogConsumeEnabled: defaultEnabled,
+      InflightTaskUserLimit: defaultInflightTaskUserLimit,
     },
   })
 
@@ -174,8 +178,11 @@ export function LogSettingsSection({
   }, [])
 
   useEffect(() => {
-    form.reset({ LogConsumeEnabled: defaultEnabled })
-  }, [defaultEnabled, form])
+    form.reset({
+      LogConsumeEnabled: defaultEnabled,
+      InflightTaskUserLimit: defaultInflightTaskUserLimit,
+    })
+  }, [defaultEnabled, defaultInflightTaskUserLimit, form])
 
   useEffect(() => {
     fetchServerLogInfo()
@@ -257,11 +264,18 @@ export function LogSettingsSection({
   }, [logCleanupActive, logCleanupTaskId, t])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
-    if (values.LogConsumeEnabled === defaultEnabled) return
-    await updateOption.mutateAsync({
-      key: 'LogConsumeEnabled',
-      value: values.LogConsumeEnabled,
-    })
+    if (values.LogConsumeEnabled !== defaultEnabled) {
+      await updateOption.mutateAsync({
+        key: 'LogConsumeEnabled',
+        value: values.LogConsumeEnabled,
+      })
+    }
+    if (values.InflightTaskUserLimit !== defaultInflightTaskUserLimit) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskUserLimit',
+        value: values.InflightTaskUserLimit,
+      })
+    }
   }
 
   const handleRequestCleanLogs = () => {
@@ -364,6 +378,29 @@ export function LogSettingsSection({
                 </FormControl>
                 <FormMessage />
               </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='InflightTaskUserLimit'
+            render={({ field }) => (
+              <SettingsControlGroup className='grid gap-2'>
+                <FormLabel>{t('Inflight task user limit')}</FormLabel>
+                <FormDescription>
+                  {t('Maximum inflight tasks shown per user.')}
+                </FormDescription>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={1}
+                    max={200}
+                    className='w-[160px]'
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </SettingsControlGroup>
             )}
           />
 

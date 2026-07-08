@@ -58,6 +58,46 @@ func TestShouldOverwriteInflightTaskStatus(t *testing.T) {
 	assert.False(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusFailed, InflightTaskStatusRouting))
 }
 
+func TestShouldReopenInflightTaskForLaterRetry(t *testing.T) {
+	stored := &InflightTask{
+		Status: InflightTaskStatusFailed,
+		Detail: &InflightTaskDetail{RetryIndex: 0},
+	}
+	next := &InflightTask{
+		Status: InflightTaskStatusRouting,
+		Detail: &InflightTaskDetail{RetryIndex: 1},
+	}
+
+	assert.True(t, shouldReopenInflightTask(stored, next))
+	assert.False(t, shouldReopenInflightTask(stored, &InflightTask{
+		Status: InflightTaskStatusRouting,
+		Detail: &InflightTaskDetail{RetryIndex: 0},
+	}))
+	assert.False(t, shouldReopenInflightTask(stored, &InflightTask{
+		Status: InflightTaskStatusCompleted,
+		Detail: &InflightTaskDetail{RetryIndex: 1},
+	}))
+}
+
+func TestShouldApplyReconciledTerminalStatus(t *testing.T) {
+	originalRetryTimes := common.RetryTimes
+	common.RetryTimes = 2
+	defer func() {
+		common.RetryTimes = originalRetryTimes
+	}()
+
+	inflight := &InflightTask{
+		Status: InflightTaskStatusUpstreamPending,
+		Detail: &InflightTaskDetail{RetryIndex: 1},
+	}
+	assert.False(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusFailed))
+
+	inflight.Detail.RetryIndex = 2
+	assert.True(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusFailed))
+	assert.True(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusCompleted))
+	assert.False(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusRouting))
+}
+
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
 	parent, cancelParent := context.WithCancel(context.Background())
 	cancelParent()

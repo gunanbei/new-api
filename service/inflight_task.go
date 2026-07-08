@@ -144,6 +144,35 @@ func shouldOverwriteInflightTaskStatus(current string, next string) bool {
 	return inflightTaskStatusRank(next) > inflightTaskStatusRank(current)
 }
 
+func shouldReopenInflightTask(stored *InflightTask, next *InflightTask) bool {
+	if stored == nil || next == nil {
+		return false
+	}
+	if stored.Status != InflightTaskStatusFailed || isInflightTaskTerminalStatus(next.Status) {
+		return false
+	}
+	if stored.Detail == nil || next.Detail == nil {
+		return false
+	}
+	return next.Detail.RetryIndex > stored.Detail.RetryIndex
+}
+
+func shouldApplyReconciledTerminalStatus(task *InflightTask, terminalStatus string) bool {
+	if task == nil || !isInflightTaskTerminalStatus(terminalStatus) {
+		return false
+	}
+	if !shouldOverwriteInflightTaskStatus(task.Status, terminalStatus) {
+		return false
+	}
+	if terminalStatus != InflightTaskStatusFailed {
+		return true
+	}
+	if task.Detail == nil {
+		return true
+	}
+	return task.Detail.RetryIndex >= common.RetryTimes
+}
+
 func inflightTaskRetentionTTL(status string) time.Duration {
 	switch status {
 	case InflightTaskStatusCompleted, InflightTaskStatusFailed:
@@ -260,10 +289,6 @@ func loadTerminalStatusesByRequestID(userID int, requestIDs []string) (map[strin
 		}
 		if log.Type == model.LogTypeConsume {
 			statuses[log.RequestId] = InflightTaskStatusCompleted
-			continue
-		}
-		if _, ok := statuses[log.RequestId]; !ok && log.Type == model.LogTypeError {
-			statuses[log.RequestId] = InflightTaskStatusFailed
 		}
 	}
 	return statuses, nil
@@ -461,7 +486,7 @@ func updateInflightTask(ctx context.Context, client *redis.Client, task *Infligh
 				if err := common.UnmarshalJsonStr(existing, &stored); err == nil {
 					task.CreatedAt = stored.CreatedAt
 					mergeInflightTaskDetail(&stored, task)
-					if !shouldOverwriteInflightTaskStatus(stored.Status, task.Status) {
+					if !shouldOverwriteInflightTaskStatus(stored.Status, task.Status) && !shouldReopenInflightTask(&stored, task) {
 						return nil
 					}
 				}
@@ -605,7 +630,7 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 	}
 	reconciled := make([]*InflightTask, 0)
 	for i := range tasks {
-		if terminalStatus, ok := terminalStatuses[tasks[i].RequestID]; ok && shouldOverwriteInflightTaskStatus(tasks[i].Status, terminalStatus) {
+		if terminalStatus, ok := terminalStatuses[tasks[i].RequestID]; ok && shouldApplyReconciledTerminalStatus(&tasks[i], terminalStatus) {
 			tasks[i].Status = terminalStatus
 			tasks[i].UpdatedAt = time.Now().Unix()
 			reconciled = append(reconciled, &tasks[i])

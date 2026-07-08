@@ -283,6 +283,12 @@ const streamLabel: Record<string, string> = {
   false: 'No',
 }
 
+const retryStateVariant: Record<string, StatusBadgeProps['variant']> = {
+  idle: 'neutral',
+  retrying: 'warning',
+  failed: 'danger',
+}
+
 function selectDisplayLabel(
   value: string,
   labels: Record<string, string>,
@@ -294,6 +300,83 @@ function selectDisplayLabel(
 function formatTime(timestamp?: number) {
   if (!timestamp) return '-'
   return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss')
+}
+
+function getRetryIndex(task: InflightTask) {
+  return Math.max(0, task.detail?.retry_index ?? 0)
+}
+
+function getAttemptCount(task: InflightTask) {
+  return Math.max(task.detail?.channel_chain?.length ?? 0, getRetryIndex(task) + 1, 1)
+}
+
+function isFinalFailure(task: InflightTask) {
+  return task.status === 'failed'
+}
+
+function getCurrentStage(task: InflightTask) {
+  return task.detail?.current_stage || task.status
+}
+
+function getLatestError(task: InflightTask) {
+  if (task.detail?.latest_error) {
+    return task.detail.latest_error
+  }
+  const chain = task.detail?.channel_chain ?? []
+  for (let i = chain.length - 1; i >= 0; i -= 1) {
+    if (chain[i].error) {
+      return chain[i].error
+    }
+  }
+  return ''
+}
+
+function getRetryState(task: InflightTask) {
+  if (isFinalFailure(task)) {
+    return 'failed'
+  }
+  if (getRetryIndex(task) > 0) {
+    return 'retrying'
+  }
+  return 'idle'
+}
+
+function getRetryStateLabel(task: InflightTask, t: (key: string, options?: Record<string, unknown>) => string) {
+  if (isFinalFailure(task)) {
+    return t('Final Failure')
+  }
+  const retryIndex = getRetryIndex(task)
+  if (retryIndex > 0) {
+    return t('Retry {{count}}', { count: retryIndex })
+  }
+  return t('No Retry')
+}
+
+function getRetryAttemptLabel(task: InflightTask, t: (key: string, options?: Record<string, unknown>) => string) {
+  return t('Attempt {{current}} of {{total}}', {
+    current: getRetryIndex(task) + 1,
+    total: getAttemptCount(task),
+  })
+}
+
+function getTimelineAccentClass(status: string) {
+  if (status === 'failed') {
+    return 'bg-red-400/80'
+  }
+  if (status === 'completed') {
+    return 'bg-emerald-400/80'
+  }
+  return 'bg-amber-400/80'
+}
+
+function getRetryPathAccentClass(task: InflightTask, attempt: InflightTaskChannelAttempt) {
+  if (attempt.status === 'failed') {
+    return 'bg-red-400/80'
+  }
+  if (attempt.retry_index === getRetryIndex(task) && !isFinalFailure(task)) {
+    return 'bg-amber-400/80'
+  }
+  return 'bg-border'
 }
 
 function buildSourceKey(values: Record<string, unknown>) {
@@ -541,11 +624,11 @@ function buildDetailsSummary(task: InflightTask, t: (key: string) => string) {
     t(statusLabel[task.status] || task.status),
     `${totalDuration}s`,
   ]
-  if ((task.detail?.channel_chain?.length ?? 0) > 1) {
-    summary.push(t('Retry Chain'))
+  if (getRetryIndex(task) > 0 || (task.detail?.channel_chain?.length ?? 0) > 1) {
+    summary.push(getRetryStateLabel(task, t))
   }
-  if (task.detail?.latest_error) {
-    summary.push(t('Error'))
+  if (getLatestError(task)) {
+    summary.push(t('Latest Error'))
   }
   return summary.join(' · ')
 }
@@ -594,9 +677,35 @@ function InflightTaskDetails(props: {
   const timeline = props.task.detail?.timeline ?? []
   const channelChain = props.task.detail?.channel_chain ?? []
   const { channelDisplay } = getChannelDisplay(props.task)
+  const latestError = getLatestError(props.task)
+  const retryState = getRetryState(props.task)
+  const currentStage = getCurrentStage(props.task)
 
   return (
     <div className='w-full min-w-0 space-y-2.5 py-1 sm:space-y-3'>
+      <div className='flex flex-wrap items-center gap-2'>
+        <StatusBadge
+          label={t(statusLabel[props.task.status] || props.task.status)}
+          variant={statusVariant[props.task.status] || 'neutral'}
+          size='sm'
+          copyable={false}
+        />
+        <StatusBadge
+          label={getRetryStateLabel(props.task, t)}
+          variant={retryStateVariant[retryState] || 'neutral'}
+          size='sm'
+          copyable={false}
+        />
+        <StatusBadge
+          label={getRetryAttemptLabel(props.task, t)}
+          variant='neutral'
+          size='sm'
+          copyable={false}
+          showDot={false}
+          className='font-mono'
+        />
+      </div>
+
       <div className='min-w-0 space-y-1'>
         <InflightDetailRow label={t('Request ID')} value={props.task.request_id} mono />
         <InflightDetailRow
@@ -607,8 +716,22 @@ function InflightTaskDetails(props: {
           label={t('Status')}
           value={t(statusLabel[props.task.status] || props.task.status)}
         />
+        <InflightDetailRow
+          label={t('Current Stage')}
+          value={t(statusLabel[currentStage] || currentStage)}
+        />
+        <InflightDetailRow
+          label={t('Current Retry')}
+          value={String(getRetryIndex(props.task))}
+          mono
+        />
+        <InflightDetailRow
+          label={t('Attempts')}
+          value={String(getAttemptCount(props.task))}
+          mono
+        />
         {props.isAdmin && props.task.detail?.channel_id ? (
-          <InflightDetailRow label={t('Channel')} value={channelDisplay} mono />
+          <InflightDetailRow label={t('Current Node')} value={channelDisplay} mono />
         ) : null}
         <InflightDetailRow
           label={t('Type')}
@@ -628,16 +751,26 @@ function InflightTaskDetails(props: {
           value={formatTime(props.task.updated_at)}
           mono
         />
+        {isFinalFailure(props.task) ? (
+          <InflightDetailRow label={t('Final Failure')} value={t('Yes')} />
+        ) : null}
       </div>
 
       {timeline.length > 0 && (
         <InflightDetailSection label={t('Timeline')}>
           <div className='space-y-2'>
-            {timeline.map((step, index) => (
+            {timeline.map((step) => (
               <div
-                key={`${step.status}-${index}-${step.started_at}`}
-                className='space-y-1 rounded-md border border-border/60 bg-background/80 p-2'
+                key={`${step.status}-${step.started_at}-${step.updated_at}`}
+                className='relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3'
               >
+                <span
+                  className={cn(
+                    'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
+                    getTimelineAccentClass(step.status)
+                  )}
+                  aria-hidden='true'
+                />
                 <div className='flex flex-wrap items-center gap-2'>
                   <StatusBadge
                     label={t(statusLabel[step.status] || step.status)}
@@ -676,14 +809,33 @@ function InflightTaskDetails(props: {
       )}
 
       {props.isAdmin && channelChain.length > 0 && (
-        <InflightDetailSection label={t('Retry Chain')}>
+        <InflightDetailSection label={t('Retry Path')}>
           <div className='space-y-2'>
-            {channelChain.map((attempt, index) => (
+            {channelChain.map((attempt) => (
               <div
-                key={`${attempt.retry_index}-${attempt.channel_id}-${index}`}
-                className='space-y-1 rounded-md border border-border/60 bg-background/80 p-2'
+                key={`${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
+                className={cn(
+                  'relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3',
+                  attempt.error &&
+                    'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
+                )}
               >
+                <span
+                  className={cn(
+                    'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
+                    getRetryPathAccentClass(props.task, attempt)
+                  )}
+                  aria-hidden='true'
+                />
                 <div className='flex flex-wrap items-center gap-2'>
+                  <StatusBadge
+                    label={t('Attempt {{number}}', { number: attempt.retry_index + 1 })}
+                    variant='neutral'
+                    size='sm'
+                    copyable={false}
+                    showDot={false}
+                    className='font-mono'
+                  />
                   {attempt.channel_id ? (
                     <StatusBadge
                       label={`#${attempt.channel_id}`}
@@ -698,6 +850,14 @@ function InflightTaskDetails(props: {
                     <StatusBadge
                       label={t(statusLabel[attempt.status] || attempt.status)}
                       variant={statusVariant[attempt.status] || 'neutral'}
+                      size='sm'
+                      copyable={false}
+                    />
+                  ) : null}
+                  {attempt.retry_index === getRetryIndex(props.task) ? (
+                    <StatusBadge
+                      label={isFinalFailure(props.task) ? t('Final Failure') : t('Current Stage')}
+                      variant={isFinalFailure(props.task) ? 'danger' : 'warning'}
                       size='sm'
                       copyable={false}
                     />
@@ -725,7 +885,7 @@ function InflightTaskDetails(props: {
                 ) : null}
                 {attempt.error ? (
                   <InflightDetailRow
-                    label={t('Error')}
+                    label={t('Failure Reason')}
                     value={attempt.error}
                     muted
                   />
@@ -736,10 +896,10 @@ function InflightTaskDetails(props: {
         </InflightDetailSection>
       )}
 
-      {props.task.detail?.latest_error ? (
-        <InflightDetailSection label={t('Error')} variant='danger'>
+      {latestError ? (
+        <InflightDetailSection label={t('Latest Error')} variant='danger'>
           <p className='text-xs wrap-break-word'>
-            {props.task.detail.latest_error}
+            {latestError}
           </p>
         </InflightDetailSection>
       ) : null}
@@ -752,6 +912,7 @@ function useInflightTaskColumns(props: {
   isAdmin: boolean
 }): ColumnDef<InflightTask>[] {
   const { t } = useTranslation()
+  const { isAdmin, onOpenDetails } = props
 
   return useMemo(
     () => [
@@ -774,7 +935,7 @@ function useInflightTaskColumns(props: {
         header: t('Type'),
         cell: ({ row }) => t(kindLabel[row.original.kind] || row.original.kind),
       },
-      ...(props.isAdmin
+      ...(isAdmin
         ? [
             {
               id: 'channel',
@@ -786,6 +947,35 @@ function useInflightTaskColumns(props: {
           ]
         : []),
       {
+        id: 'retry',
+        header: t('Retry'),
+        accessorFn: (row: InflightTask) => getRetryIndex(row),
+        cell: ({ row }) => {
+          const task = row.original
+          const retryState = getRetryState(task)
+          return (
+            <div className='flex max-w-[170px] flex-col gap-1'>
+              <div className='flex flex-wrap items-center gap-1'>
+                <StatusBadge
+                  label={getRetryStateLabel(task, t)}
+                  variant={retryStateVariant[retryState] || 'neutral'}
+                  size='sm'
+                  copyable={false}
+                />
+                <StatusBadge
+                  label={getRetryAttemptLabel(task, t)}
+                  variant='neutral'
+                  size='sm'
+                  copyable={false}
+                  showDot={false}
+                  className='font-mono'
+                />
+              </div>
+            </div>
+          )
+        },
+      },
+      {
         accessorKey: 'model_name',
         header: t('Model'),
         cell: ({ row }) => (
@@ -793,6 +983,27 @@ function useInflightTaskColumns(props: {
             {row.original.model_name || '-'}
           </TruncatedCell>
         ),
+      },
+      {
+        id: 'latest_error',
+        header: t('Latest Error'),
+        accessorFn: (row: InflightTask) => getLatestError(row),
+        cell: ({ row }) => {
+          const latestError = getLatestError(row.original)
+          if (!latestError) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+          return (
+            <TruncatedCell
+              className={cn(
+                'max-w-[280px] text-xs',
+                isFinalFailure(row.original) && 'text-red-500'
+              )}
+            >
+              {latestError}
+            </TruncatedCell>
+          )
+        },
       },
       {
         accessorKey: 'request_id',
@@ -830,13 +1041,13 @@ function useInflightTaskColumns(props: {
             <Button
               variant='ghost'
               size='icon-sm'
-              onClick={() => props.onOpenDetails(row.original)}
+              onClick={() => onOpenDetails(row.original)}
               aria-label={t('Details')}
             >
               <Eye />
             </Button>
             <DataTableRowActionMenu ariaLabel={t('Actions')}>
-              <DropdownMenuItem onClick={() => props.onOpenDetails(row.original)}>
+              <DropdownMenuItem onClick={() => onOpenDetails(row.original)}>
                 <Eye />
                 {t('Details')}
               </DropdownMenuItem>
@@ -845,7 +1056,7 @@ function useInflightTaskColumns(props: {
         ),
       },
     ],
-    [props.isAdmin, props.onOpenDetails, t]
+    [isAdmin, onOpenDetails, t]
   )
 }
 
@@ -1273,6 +1484,13 @@ export function InflightTasksTab() {
               render={
                 <DataTableRow
                   row={row}
+                  className={cn(
+                    isFinalFailure(row.original) &&
+                      'bg-red-50/40 dark:bg-red-950/15',
+                    !isFinalFailure(row.original) &&
+                      getRetryIndex(row.original) > 0 &&
+                      'bg-amber-50/30 dark:bg-amber-950/10'
+                  )}
                   getColumnClassName={(columnId) =>
                     helpers.getCellClassName(columnId, 'py-3.5')
                   }

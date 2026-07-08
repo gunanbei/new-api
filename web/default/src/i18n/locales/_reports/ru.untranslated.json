@@ -1,0 +1,13 @@
+{
+  "Attempt {{current}} of {{total}}": "Attempt {{current}} of {{total}}",
+  "Attempt {{number}}": "Attempt {{number}}",
+  "Attempts": "Attempts",
+  "Current Node": "Current Node",
+  "Current Retry": "Current Retry",
+  "Current Stage": "Current Stage",
+  "Failure Reason": "Failure Reason",
+  "Final Failure": "Final Failure",
+  "Latest Error": "Latest Error",
+  "Retry {{count}}": "Retry {{count}}",
+  "Retry Path": "Retry Path"
+}

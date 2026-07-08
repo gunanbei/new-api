@@ -26,7 +26,6 @@ import { toast } from 'sonner'
 
 import {
   DataTablePage,
-  DataTableViewOptions,
   TruncatedCell,
   useDataTable,
 } from '@/components/data-table'
@@ -116,6 +115,14 @@ const kindLabel: Record<string, string> = {
 const streamLabel: Record<string, string> = {
   true: 'Yes',
   false: 'No',
+}
+
+function selectDisplayLabel(
+  value: string,
+  labels: Record<string, string>,
+  fallback: string
+) {
+  return value ? labels[value] || value : fallback
 }
 
 function formatTime(timestamp: number) {
@@ -327,6 +334,15 @@ function InflightFilterBar<TData>(props: {
     !!activeDraft.stream ||
     !!activeDraft.model ||
     !!activeDraft.requestId
+  const statusDisplay = t(
+    selectDisplayLabel(activeDraft.status, statusLabel, 'All Status')
+  )
+  const kindDisplay = t(
+    selectDisplayLabel(activeDraft.kind, kindLabel, 'All Types')
+  )
+  const streamDisplay = t(
+    selectDisplayLabel(activeDraft.stream, streamLabel, 'All')
+  )
 
   const filterFields = (
     <>
@@ -338,7 +354,7 @@ function InflightFilterBar<TData>(props: {
           }
         >
           <SelectTrigger className='h-8'>
-            <SelectValue placeholder={t('All Status')} />
+            <SelectValue>{statusDisplay}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value='all'>{t('All Status')}</SelectItem>
@@ -358,7 +374,7 @@ function InflightFilterBar<TData>(props: {
           }
         >
           <SelectTrigger className='h-8'>
-            <SelectValue placeholder={t('All Types')} />
+            <SelectValue>{kindDisplay}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value='all'>{t('All Types')}</SelectItem>
@@ -378,7 +394,7 @@ function InflightFilterBar<TData>(props: {
           }
         >
           <SelectTrigger className='h-8'>
-            <SelectValue placeholder={t('Stream')} />
+            <SelectValue>{streamDisplay}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value='all'>{t('All')}</SelectItem>
@@ -505,6 +521,10 @@ export function InflightTasksTab() {
     manualPagination: true,
     manualFiltering: true,
     totalCount: data?.total ?? 0,
+    pageCount: Math.max(
+      1,
+      Math.ceil((data?.total ?? 0) / Math.max(1, pagination.pageSize))
+    ),
     ensurePageInRange,
   })
 
@@ -519,16 +539,11 @@ export function InflightTasksTab() {
       skeletonKeyPrefix='inflight-log-skeleton'
       applyHeaderSize
       toolbar={
-        <div className='flex items-center gap-2'>
-          <div className='min-w-0 flex-1'>
-            <InflightFilterBar
-              table={table}
-              isFetching={isFetching}
-              refetch={() => void refetch()}
-            />
-          </div>
-          <DataTableViewOptions table={table} />
-        </div>
+        <InflightFilterBar
+          table={table}
+          isFetching={isFetching}
+          refetch={() => void refetch()}
+        />
       }
       tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
     />

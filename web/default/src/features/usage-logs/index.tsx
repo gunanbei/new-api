@@ -53,7 +53,7 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
     titleKey: 'Task Logs',
   },
   inflight: {
-    titleKey: 'Inflight Tasks',
+    titleKey: 'Inflight Logs',
   },
 }
 

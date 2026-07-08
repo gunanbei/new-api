@@ -63,9 +63,10 @@ import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
-  getCurrentLogCleanupTask,
+  getCurrentInflightLogCleanupTask,
+  getInflightTaskStats,
   getSystemTask,
-  startLogCleanupTask,
+  startInflightLogCleanupTask,
 } from '../api'
 import {
   SettingsControlGroup,
@@ -80,14 +81,16 @@ import type { LogCleanupTask } from '../types'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
-  InflightTaskUserLimit: z.coerce.number().int().min(1).max(200),
+  InflightTaskCleanupRule: z.number().int().min(1).max(2),
+  InflightTaskCleanupIntervalMinutes: z.number().int().min(1).max(1440),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
 
 type LogSettingsSectionProps = {
   defaultEnabled: boolean
-  defaultInflightTaskUserLimit: number
+  defaultInflightTaskCleanupRule: number
+  defaultInflightTaskCleanupIntervalMinutes: number
 }
 
 type ServerLogInfo = {
@@ -97,6 +100,12 @@ type ServerLogInfo = {
   total_size: number
   oldest_time?: string
   newest_time?: string
+}
+
+type InflightTaskStats = {
+  user_count: number
+  item_count: number
+  total_size: number
 }
 
 const HOURS_IN_DAY = 24
@@ -143,7 +152,8 @@ function isActiveLogCleanupTask(task: LogCleanupTask | null) {
 
 export function LogSettingsSection({
   defaultEnabled,
-  defaultInflightTaskUserLimit,
+  defaultInflightTaskCleanupRule,
+  defaultInflightTaskCleanupIntervalMinutes,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -151,7 +161,9 @@ export function LogSettingsSection({
     resolver: zodResolver(logSettingsSchema),
     defaultValues: {
       LogConsumeEnabled: defaultEnabled,
-      InflightTaskUserLimit: defaultInflightTaskUserLimit,
+      InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
+      InflightTaskCleanupIntervalMinutes:
+        defaultInflightTaskCleanupIntervalMinutes,
     },
   })
 
@@ -163,6 +175,8 @@ export function LogSettingsSection({
     null
   )
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [inflightTaskStats, setInflightTaskStats] =
+    useState<InflightTaskStats | null>(null)
   const [serverLogInfo, setServerLogInfo] = useState<ServerLogInfo | null>(null)
   const [serverLogCleanupMode, setServerLogCleanupMode] = useState('by_count')
   const [serverLogCleanupValue, setServerLogCleanupValue] = useState(10)
@@ -180,9 +194,16 @@ export function LogSettingsSection({
   useEffect(() => {
     form.reset({
       LogConsumeEnabled: defaultEnabled,
-      InflightTaskUserLimit: defaultInflightTaskUserLimit,
+      InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
+      InflightTaskCleanupIntervalMinutes:
+        defaultInflightTaskCleanupIntervalMinutes,
     })
-  }, [defaultEnabled, defaultInflightTaskUserLimit, form])
+  }, [
+    defaultEnabled,
+    defaultInflightTaskCleanupIntervalMinutes,
+    defaultInflightTaskCleanupRule,
+    form,
+  ])
 
   useEffect(() => {
     fetchServerLogInfo()
@@ -193,7 +214,7 @@ export function LogSettingsSection({
 
     async function fetchCurrentLogCleanupTask() {
       try {
-        const res = await getCurrentLogCleanupTask()
+        const res = await getCurrentInflightLogCleanupTask()
         if (!cancelled && res.success && res.data) {
           setLogCleanupTask(res.data)
         }
@@ -202,7 +223,19 @@ export function LogSettingsSection({
       }
     }
 
+    async function fetchStats() {
+      try {
+        const res = await getInflightTaskStats()
+        if (!cancelled && res.success && res.data) {
+          setInflightTaskStats(res.data)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     fetchCurrentLogCleanupTask()
+    fetchStats()
 
     return () => {
       cancelled = true
@@ -270,10 +303,19 @@ export function LogSettingsSection({
         value: values.LogConsumeEnabled,
       })
     }
-    if (values.InflightTaskUserLimit !== defaultInflightTaskUserLimit) {
+    if (values.InflightTaskCleanupRule !== defaultInflightTaskCleanupRule) {
       await updateOption.mutateAsync({
-        key: 'InflightTaskUserLimit',
-        value: values.InflightTaskUserLimit,
+        key: 'InflightTaskCleanupRule',
+        value: values.InflightTaskCleanupRule,
+      })
+    }
+    if (
+      values.InflightTaskCleanupIntervalMinutes !==
+      defaultInflightTaskCleanupIntervalMinutes
+    ) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskCleanupIntervalMinutes',
+        value: values.InflightTaskCleanupIntervalMinutes,
       })
     }
   }
@@ -295,7 +337,7 @@ export function LogSettingsSection({
 
     setIsStartingLogCleanup(true)
     try {
-      const res = await startLogCleanupTask(purgeTimestamp)
+      const res = await startInflightLogCleanupTask(purgeTimestamp)
       if (!res.success) {
         throw new Error(res.message || t('Failed to clean logs'))
       }
@@ -304,7 +346,11 @@ export function LogSettingsSection({
       }
       setLogCleanupTask(res.data)
       setShowConfirmDialog(false)
-      toast.success(t('Log cleanup task started.'))
+      toast.success(t('Inflight log cleanup task started.'))
+      const statsRes = await getInflightTaskStats()
+      if (statsRes.success && statsRes.data) {
+        setInflightTaskStats(statsRes.data)
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : t('Failed to clean logs')
@@ -383,33 +429,113 @@ export function LogSettingsSection({
 
           <FormField
             control={form.control}
-            name='InflightTaskUserLimit'
+            name='InflightTaskCleanupRule'
             render={({ field }) => (
               <SettingsControlGroup className='grid gap-2'>
-                <FormLabel>{t('Inflight task user limit')}</FormLabel>
+                <FormLabel>{t('Inflight log cleanup rule')}</FormLabel>
                 <FormDescription>
-                  {t('Maximum inflight tasks shown per user.')}
+                  {t(
+                    'Choose whether terminal inflight logs are cleaned automatically.'
+                  )}
+                </FormDescription>
+                <FormControl>
+                  <Select
+                    items={[
+                      { value: '1', label: t('Do not clean') },
+                      { value: '2', label: t('Clean terminal logs') },
+                    ]}
+                    value={String(field.value)}
+                    onValueChange={(value) => {
+                      if (value !== null) field.onChange(Number(value))
+                    }}
+                  >
+                    <SelectTrigger className='w-[220px]'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        <SelectItem value='1'>{t('Do not clean')}</SelectItem>
+                        <SelectItem value='2'>
+                          {t('Clean terminal logs')}
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormMessage />
+              </SettingsControlGroup>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='InflightTaskCleanupIntervalMinutes'
+            render={({ field }) => (
+              <SettingsControlGroup className='grid gap-2'>
+                <FormLabel>
+                  {t('Inflight log cleanup interval (minutes)')}
+                </FormLabel>
+                <FormDescription>
+                  {t(
+                    'How often the cron cleanup scans terminal inflight logs.'
+                  )}
                 </FormDescription>
                 <FormControl>
                   <Input
                     type='number'
                     min={1}
-                    max={200}
+                    max={1440}
                     className='w-[160px]'
                     {...field}
+                    onChange={(event) =>
+                      field.onChange(event.currentTarget.valueAsNumber)
+                    }
                   />
                 </FormControl>
                 <FormMessage />
               </SettingsControlGroup>
             )}
           />
+          <SettingsControlGroup className='grid gap-2'>
+            <FormLabel>{t('Current inflight log usage')}</FormLabel>
+            <FormDescription>
+              {t('View the current Redis space used by inflight logs.')}
+            </FormDescription>
+            <div className='grid gap-2 text-sm md:grid-cols-3'>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Users')}
+                </div>
+                <div className='font-medium'>
+                  {inflightTaskStats?.user_count ?? '-'}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Inflight log entries')}
+                </div>
+                <div className='font-medium'>
+                  {inflightTaskStats?.item_count ?? '-'}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Total inflight log size')}
+                </div>
+                <div className='font-medium'>
+                  {formatBytes(inflightTaskStats?.total_size ?? 0)}
+                </div>
+              </div>
+            </div>
+          </SettingsControlGroup>
 
           <SettingsControlGroup className='space-y-3'>
             <div>
-              <h4 className='text-sm font-medium'>{t('Clean history logs')}</h4>
+              <h4 className='text-sm font-medium'>
+                {t('Clean inflight logs')}
+              </h4>
               <p className='text-muted-foreground text-sm'>
                 {t(
-                  'Remove all log entries created before the selected timestamp.'
+                  'Remove terminal inflight logs updated before the selected timestamp.'
                 )}
               </p>
             </div>
@@ -440,7 +566,7 @@ export function LogSettingsSection({
               <div className='rounded-md border p-3'>
                 <div className='mb-2 flex items-center justify-between gap-3 text-sm'>
                   <span className='font-medium'>
-                    {t('Log cleanup progress')}
+                    {t('Inflight log cleanup progress')}
                   </span>
                   <span className='text-muted-foreground tabular-nums'>
                     {logCleanupProgress}%
@@ -448,7 +574,7 @@ export function LogSettingsSection({
                 </div>
                 <Progress value={logCleanupProgress} />
                 <div className='text-muted-foreground mt-2 text-xs'>
-                  {t('{{processed}} of {{total}} log entries processed.', {
+                  {t('{{processed}} of {{total}} inflight logs processed.', {
                     processed: logCleanupProcessed,
                     total: logCleanupTotal,
                   })}
@@ -625,11 +751,11 @@ export function LogSettingsSection({
             <AlertDialogDescription>
               {formattedPurgeDate
                 ? t(
-                    'This will permanently remove all log entries created before {{date}}.',
+                    'This will permanently remove terminal inflight logs updated before {{date}}.',
                     { date: formattedPurgeDate }
                   )
                 : t(
-                    'This will permanently remove log entries before the selected timestamp.'
+                    'This will permanently remove terminal inflight logs before the selected timestamp.'
                   )}{' '}
               {t('This action cannot be undone.')}
             </AlertDialogDescription>

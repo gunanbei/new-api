@@ -98,8 +98,11 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
-        defaultInflightTaskUserLimit={
-          Number(settings.InflightTaskUserLimit) || 30
+        defaultInflightTaskCleanupRule={
+          Number(settings.InflightTaskCleanupRule) || 2
+        }
+        defaultInflightTaskCleanupIntervalMinutes={
+          Number(settings.InflightTaskCleanupIntervalMinutes) || 10
         }
       />
     ),

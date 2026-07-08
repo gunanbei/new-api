@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
@@ -96,6 +97,52 @@ export function InflightTasksTab() {
   const tasks = data?.success ? (data.data ?? []) : []
   const message = !data?.success ? data?.message : ''
 
+  let tableContent: ReactNode = tasks.map((task) => (
+    <TableRow key={task.request_id}>
+      <TableCell>
+        <StatusBadge
+          label={t(statusLabel[task.status] || task.status)}
+          variant={statusVariant[task.status] || 'neutral'}
+          copyable={false}
+        />
+      </TableCell>
+      <TableCell>{t(kindLabel[task.kind] || task.kind)}</TableCell>
+      <TableCell className='max-w-[220px] truncate'>
+        {task.model_name || '-'}
+      </TableCell>
+      <TableCell className='font-mono text-xs'>{task.request_id}</TableCell>
+      <TableCell>{formatTime(task.created_at)}</TableCell>
+      <TableCell>{formatTime(task.updated_at)}</TableCell>
+      <TableCell>{task.is_stream ? t('Yes') : t('No')}</TableCell>
+    </TableRow>
+  ))
+
+  if (isLoading) {
+    tableContent = (
+      <TableRow>
+        <TableCell colSpan={7} className='text-muted-foreground h-24 text-center'>
+          {t('Loading...')}
+        </TableCell>
+      </TableRow>
+    )
+  } else if (message) {
+    tableContent = (
+      <TableRow>
+        <TableCell colSpan={7} className='text-muted-foreground h-24 text-center'>
+          {message}
+        </TableCell>
+      </TableRow>
+    )
+  } else if (tasks.length === 0) {
+    tableContent = (
+      <TableRow>
+        <TableCell colSpan={7} className='text-muted-foreground h-24 text-center'>
+          {t('No inflight logs.')}
+        </TableCell>
+      </TableRow>
+    )
+  }
+
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
       <div className='flex items-center justify-end'>
@@ -124,58 +171,7 @@ export function InflightTasksTab() {
               <TableHead>{t('Stream')}</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className='text-muted-foreground h-24 text-center'
-                >
-                  {t('Loading...')}
-                </TableCell>
-              </TableRow>
-            ) : message ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className='text-muted-foreground h-24 text-center'
-                >
-                  {message}
-                </TableCell>
-              </TableRow>
-            ) : tasks.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className='text-muted-foreground h-24 text-center'
-                >
-                  {t('No inflight tasks.')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              tasks.map((task) => (
-                <TableRow key={task.request_id}>
-                  <TableCell>
-                    <StatusBadge
-                      label={t(statusLabel[task.status] || task.status)}
-                      variant={statusVariant[task.status] || 'neutral'}
-                      copyable={false}
-                    />
-                  </TableCell>
-                  <TableCell>{t(kindLabel[task.kind] || task.kind)}</TableCell>
-                  <TableCell className='max-w-[220px] truncate'>
-                    {task.model_name || '-'}
-                  </TableCell>
-                  <TableCell className='font-mono text-xs'>
-                    {task.request_id}
-                  </TableCell>
-                  <TableCell>{formatTime(task.created_at)}</TableCell>
-                  <TableCell>{formatTime(task.updated_at)}</TableCell>
-                  <TableCell>{task.is_stream ? t('Yes') : t('No')}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
+          <TableBody>{tableContent}</TableBody>
         </Table>
       </div>
     </div>

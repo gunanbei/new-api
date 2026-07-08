@@ -87,6 +87,16 @@ export type LogCleanupTaskState = {
 export type LogCleanupTaskResult = {
   deleted_count: number
 }
+export type InflightTaskStats = {
+  user_count: number
+  item_count: number
+  total_size: number
+}
+export type InflightTaskStatsResponse = {
+  success: boolean
+  message: string
+  data?: InflightTaskStats
+}
 
 export type LogCleanupTask = SystemTask<
   LogCleanupTaskPayload,
@@ -347,7 +357,8 @@ export type OperationsSettings = {
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
   LogConsumeEnabled: boolean
-  InflightTaskUserLimit: number
+  InflightTaskCleanupRule: number
+  InflightTaskCleanupIntervalMinutes: number
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

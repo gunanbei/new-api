@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
+  InflightTaskStatsResponse,
   LogCleanupTask,
   SystemOptionsResponse,
   SystemTaskListResponse,
@@ -67,6 +68,32 @@ export async function getCurrentLogCleanupTask() {
       params: { type: 'log_cleanup' },
     }
   )
+  return res.data
+}
+
+export async function startInflightLogCleanupTask(targetTimestamp: number) {
+  const res = await api.post<SystemTaskResponse<LogCleanupTask>>(
+    '/api/system-task/inflight-log-cleanup',
+    null,
+    {
+      params: { target_timestamp: targetTimestamp },
+    }
+  )
+  return res.data
+}
+
+export async function getCurrentInflightLogCleanupTask() {
+  const res = await api.get<SystemTaskResponse<LogCleanupTask | null>>(
+    '/api/system-task/current',
+    {
+      params: { type: 'inflight_log_cleanup' },
+    }
+  )
+  return res.data
+}
+
+export async function getInflightTaskStats() {
+  const res = await api.get<InflightTaskStatsResponse>('/api/log/inflight/stats')
   return res.data
 }
 

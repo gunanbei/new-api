@@ -39,7 +39,7 @@ const USAGE_LOGS_SECTIONS = [
   },
   {
     id: 'inflight',
-    titleKey: 'Inflight Tasks',
+    titleKey: 'Inflight Logs',
     build: () => null, // Content is rendered directly in the page component
   },
 ] as const

@@ -83,8 +83,34 @@ func (logCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runner
 	runLogCleanupTask(ctx, task, runnerID)
 }
 
+type inflightLogCleanupHandler struct{}
+
+func (inflightLogCleanupHandler) Type() string {
+	return model.SystemTaskTypeInflightLogCleanup
+}
+
+func (inflightLogCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	runInflightLogCleanupTask(ctx, task, runnerID)
+}
+
+func (inflightLogCleanupHandler) Enabled() bool {
+	return InflightTaskCleanupRule() == InflightTaskCleanupRuleTerminal
+}
+
+func (inflightLogCleanupHandler) Interval() time.Duration {
+	return InflightTaskCleanupInterval()
+}
+
+func (inflightLogCleanupHandler) NewPayload() any {
+	return LogCleanupPayload{
+		TargetTimestamp: common.GetTimestamp(),
+		BatchSize:       inflightTaskCleanupBatchSize,
+	}
+}
+
 func init() {
 	RegisterSystemTaskHandler(logCleanupHandler{})
+	RegisterSystemTaskHandler(inflightLogCleanupHandler{})
 }
 
 type LogCleanupPayload struct {
@@ -186,6 +212,35 @@ func StartLogCleanupTask(targetTimestamp int64) (*model.SystemTask, error) {
 	task, err := model.CreateSystemTask(model.SystemTaskTypeLogCleanup, payload, state)
 	if err != nil {
 		activeTask, activeErr := model.GetActiveSystemTask(model.SystemTaskTypeLogCleanup)
+		if activeErr == nil && activeTask != nil {
+			return activeTask, nil
+		}
+		return nil, err
+	}
+	notifySystemTaskRunner()
+	return task, nil
+}
+func StartInflightLogCleanupTask(targetTimestamp int64) (*model.SystemTask, error) {
+	if targetTimestamp <= 0 {
+		return nil, errors.New("target timestamp is required")
+	}
+
+	activeTask, err := model.GetActiveSystemTask(model.SystemTaskTypeInflightLogCleanup)
+	if err != nil {
+		return nil, err
+	}
+	if activeTask != nil {
+		return activeTask, nil
+	}
+
+	payload := LogCleanupPayload{
+		TargetTimestamp: targetTimestamp,
+		BatchSize:       inflightTaskCleanupBatchSize,
+	}
+	state := LogCleanupState{}
+	task, err := model.CreateSystemTask(model.SystemTaskTypeInflightLogCleanup, payload, state)
+	if err != nil {
+		activeTask, activeErr := model.GetActiveSystemTask(model.SystemTaskTypeInflightLogCleanup)
 		if activeErr == nil && activeTask != nil {
 			return activeTask, nil
 		}
@@ -420,6 +475,39 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	}
 
 	result := LogCleanupResult{DeletedCount: state.Processed}
+	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
+		logSystemTaskLockError(ctx, task, err)
+	}
+}
+func runInflightLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID string) {
+	var payload LogCleanupPayload
+	if err := task.DecodePayload(&payload); err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
+	if payload.TargetTimestamp <= 0 {
+		failSystemTask(task, runnerID, errors.New("target timestamp is required"))
+		return
+	}
+
+	deleted, err := DeleteTerminalInflightTasksBefore(ctx, payload.TargetTimestamp)
+	if err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
+
+	state := LogCleanupState{
+		Total:     deleted,
+		Processed: deleted,
+		Progress:  100,
+		Remaining: 0,
+	}
+	if err := model.UpdateSystemTaskState(task.TaskID, runnerID, state); err != nil {
+		logSystemTaskLockError(ctx, task, err)
+		return
+	}
+
+	result := LogCleanupResult{DeletedCount: deleted}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
 		logSystemTaskLockError(ctx, task, err)
 	}

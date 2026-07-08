@@ -1,11 +1,15 @@
 package service
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInflightTaskKindFromRelayMode(t *testing.T) {
@@ -15,6 +19,55 @@ func TestInflightTaskKindFromRelayMode(t *testing.T) {
 }
 
 func TestInflightTaskRetentionTTL(t *testing.T) {
-	assert.Equal(t, inflightTaskRetentionTTL(InflightTaskStatusCompleted), inflightTaskRetentionTTL(InflightTaskStatusFailed))
+	assert.Equal(t, time.Duration(0), inflightTaskRetentionTTL(InflightTaskStatusCompleted))
+	assert.Equal(t, time.Duration(0), inflightTaskRetentionTTL(InflightTaskStatusFailed))
 	assert.NotZero(t, inflightTaskRetentionTTL(InflightTaskStatusAccepted))
+}
+func TestInflightTaskCleanupSettings(t *testing.T) {
+	common.OptionMapRWMutex.Lock()
+	originalOptionMap := common.OptionMap
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	originalRule := common.OptionMap[inflightTaskCleanupRuleOptionKey]
+	originalInterval := common.OptionMap[inflightTaskCleanupIntervalMinutesOptionKey]
+	common.OptionMap[inflightTaskCleanupRuleOptionKey] = "1"
+	common.OptionMap[inflightTaskCleanupIntervalMinutesOptionKey] = "15"
+	common.OptionMapRWMutex.Unlock()
+	defer func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = originalOptionMap
+		if common.OptionMap != nil {
+			common.OptionMap[inflightTaskCleanupRuleOptionKey] = originalRule
+			common.OptionMap[inflightTaskCleanupIntervalMinutesOptionKey] = originalInterval
+		}
+		common.OptionMapRWMutex.Unlock()
+	}()
+
+	assert.Equal(t, InflightTaskCleanupRuleDisabled, InflightTaskCleanupRule())
+	assert.Equal(t, 15*time.Minute, InflightTaskCleanupInterval())
+}
+
+func TestShouldOverwriteInflightTaskStatus(t *testing.T) {
+	assert.True(t, shouldOverwriteInflightTaskStatus("", InflightTaskStatusAccepted))
+	assert.True(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusAccepted, InflightTaskStatusStreaming))
+	assert.True(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusStreaming, InflightTaskStatusCompleted))
+	assert.False(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusCompleted, InflightTaskStatusStreaming))
+	assert.False(t, shouldOverwriteInflightTaskStatus(InflightTaskStatusFailed, InflightTaskStatusRouting))
+}
+
+func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+
+	ctx, cancel := NewInflightTaskFinalizeContext(parent)
+	defer cancel()
+
+	require.NoError(t, ctx.Err())
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("finalize context should not inherit parent cancellation immediately")
+	case <-time.After(10 * time.Millisecond):
+	}
 }

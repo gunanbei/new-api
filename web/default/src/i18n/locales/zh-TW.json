@@ -2304,6 +2304,7 @@
     "Inflight Logs": "Inflight Logs",
     "Inflight task user limit": "Inflight task user limit",
     "Inflight Tasks": "Inflight Tasks",
+    "Initial Attempt": "Initial Attempt",
     "Initial quota given to new users": "授予新用戶的初始配額",
     "Initial quota given to new users ({{formattedQuota}})": "授予新用戶的初始配額（{{formattedQuota}}）",
     "Initialization failed, please try again.": "初始化失敗，請重試。",

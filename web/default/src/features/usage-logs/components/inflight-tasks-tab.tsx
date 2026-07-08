@@ -427,7 +427,17 @@ function getAttemptCount(task: InflightTask) {
 }
 
 function hasInflightRetries(task: InflightTask) {
-  return getAttempts(task).length > 1
+  return getRetryIndex(task) > 0 || getAttempts(task).length > 1
+}
+
+function getAttemptLabel(
+  attempt: InflightTaskAttempt,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
+  if (attempt.retry_index <= 0) {
+    return t('Initial Attempt')
+  }
+  return t('Retry {{count}}', { count: attempt.retry_index })
 }
 
 function isFinalFailure(task: InflightTask) {
@@ -568,7 +578,7 @@ function getAttemptSummary(
   attempt: InflightTaskAttempt,
   t: (key: string, options?: Record<string, unknown>) => string
 ) {
-  const summary = [t('Retry {{count}}', { count: attempt.retry_index + 1 })]
+  const summary = [getAttemptLabel(attempt, t)]
   if (attempt.channel_name) {
     summary.push(attempt.channel_name)
   }
@@ -875,8 +885,10 @@ function InflightTaskDetails(props: {
   const { t } = useTranslation()
   const timeline = props.task.detail?.timeline ?? []
   const attempts = getAttempts(props.task)
-  const hasRetries = hasInflightRetries(props.task)
-  const showRetryAttempts = props.isAdmin && hasRetries && attempts.length > 0
+  const showRetryAttempts =
+    props.isAdmin &&
+    attempts.length > 0 &&
+    (getRetryIndex(props.task) > 0 || attempts.length > 1)
   const { channelDisplay } = getChannelDisplay(props.task)
   const latestError = getLatestError(props.task)
   const retryState = getRetryState(props.task)
@@ -891,7 +903,7 @@ function InflightTaskDetails(props: {
           size='sm'
           copyable={false}
         />
-        {hasRetries || isFinalFailure(props.task) ? (
+        {getRetryIndex(props.task) > 0 || isFinalFailure(props.task) ? (
           <StatusBadge
             label={getRetryStateLabel(props.task, t)}
             variant={retryStateVariant[retryState] || 'neutral'}
@@ -899,7 +911,7 @@ function InflightTaskDetails(props: {
             copyable={false}
           />
         ) : null}
-        {hasRetries ? (
+        {getRetryIndex(props.task) > 0 ? (
           <StatusBadge
             label={getRetryAttemptLabel(props.task, t)}
             variant='neutral'
@@ -925,7 +937,7 @@ function InflightTaskDetails(props: {
           label={t('Current Stage')}
           value={t(statusLabel[currentStage] || currentStage)}
         />
-        {hasRetries ? (
+        {getRetryIndex(props.task) > 0 ? (
           <>
             <InflightDetailRow
               label={t('Current Retry')}
@@ -1054,7 +1066,7 @@ function InflightTaskDetails(props: {
                     <div className='flex min-w-0 flex-1 flex-col gap-2'>
                       <div className='flex flex-wrap items-center gap-2'>
                         <StatusBadge
-                          label={t('Retry {{count}}', { count: attempt.retry_index + 1 })}
+                          label={getAttemptLabel(attempt, t)}
                           variant='neutral'
                           size='sm'
                           copyable={false}

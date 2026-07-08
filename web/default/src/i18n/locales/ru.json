@@ -2304,6 +2304,7 @@
     "Inflight Logs": "Активные журналы",
     "Inflight task user limit": "Лимит активных задач на пользователя",
     "Inflight Tasks": "Активные задачи",
+    "Initial Attempt": "Первоначальная попытка",
     "Initial quota given to new users": "Начальная квота, предоставляемая новым пользователям",
     "Initial quota given to new users ({{formattedQuota}})": "Начальная квота, предоставляемая новым пользователям ({{formattedQuota}})",
     "Initialization failed, please try again.": "Инициализация не удалась, попробуйте ещё раз.",

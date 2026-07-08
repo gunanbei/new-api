@@ -414,7 +414,20 @@ function getRetryIndex(task: InflightTask) {
 }
 
 function getAttemptCount(task: InflightTask) {
-  return Math.max(task.detail?.channel_chain?.length ?? 0, getRetryIndex(task) + 1, 1)
+  const attempts = getAttempts(task)
+  const retryTotal = getRetryIndex(task) + 1
+  if (attempts.length > 0) {
+    return Math.max(attempts.length, retryTotal)
+  }
+  const chainLength = task.detail?.channel_chain?.length ?? 0
+  if (chainLength > 0) {
+    return Math.max(chainLength, retryTotal)
+  }
+  return Math.max(retryTotal, 1)
+}
+
+function hasInflightRetries(task: InflightTask) {
+  return getAttempts(task).length > 1
 }
 
 function isFinalFailure(task: InflightTask) {
@@ -826,7 +839,7 @@ function InflightTaskDetails(props: {
   const { t } = useTranslation()
   const timeline = props.task.detail?.timeline ?? []
   const attempts = getAttempts(props.task)
-  const hasRetries = getAttemptCount(props.task) > 1
+  const hasRetries = hasInflightRetries(props.task)
   const { channelDisplay } = getChannelDisplay(props.task)
   const latestError = getLatestError(props.task)
   const retryState = getRetryState(props.task)

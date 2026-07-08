@@ -172,6 +172,52 @@ func shouldReopenInflightTask(stored *InflightTask, next *InflightTask) bool {
 	return next.Detail.RetryIndex > stored.Detail.RetryIndex
 }
 
+func shouldPersistInflightTaskUpdate(previousStatus string, previousRetryIndex int, reopen bool, next *InflightTask) bool {
+	if next == nil {
+		return false
+	}
+	if shouldOverwriteInflightTaskStatus(previousStatus, next.Status) {
+		return true
+	}
+	if reopen {
+		return true
+	}
+	if next.Detail == nil {
+		return false
+	}
+	if previousRetryIndex < 0 {
+		return true
+	}
+	if next.Detail.RetryIndex > previousRetryIndex {
+		return true
+	}
+	if next.Detail.RetryIndex == previousRetryIndex {
+		return inflightTaskStatusRank(next.Status) >= inflightTaskStatusRank(previousStatus)
+	}
+	return false
+}
+
+func finalizeInflightChannelAttempt(attempt *InflightTaskChannelAttempt, errorMessage string) {
+	if attempt == nil || isInflightTaskTerminalStatus(attempt.Status) {
+		return
+	}
+	attempt.Status = InflightTaskStatusFailed
+	if attempt.Error == "" && errorMessage != "" {
+		attempt.Error = errorMessage
+	}
+}
+
+func finalizeInflightAttempt(attempt *InflightTaskAttempt, errorMessage string, now int64) {
+	if attempt == nil || isInflightTaskTerminalStatus(attempt.Status) {
+		return
+	}
+	attempt.Status = InflightTaskStatusFailed
+	if attempt.Error == "" && errorMessage != "" {
+		attempt.Error = errorMessage
+	}
+	updateInflightAttemptTimeline(attempt, InflightTaskStatusFailed, now)
+}
+
 func shouldApplyReconciledTerminalStatus(task *InflightTask, terminalStatus string) bool {
 	if task == nil || !isInflightTaskTerminalStatus(terminalStatus) {
 		return false
@@ -416,6 +462,9 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 		attempt := next.Detail.ChannelChain[0]
 		lastIdx := len(detail.ChannelChain) - 1
 		if lastIdx < 0 || detail.ChannelChain[lastIdx].RetryIndex != attempt.RetryIndex || detail.ChannelChain[lastIdx].ChannelID != attempt.ChannelID {
+			if lastIdx >= 0 && attempt.RetryIndex > detail.ChannelChain[lastIdx].RetryIndex {
+				finalizeInflightChannelAttempt(&detail.ChannelChain[lastIdx], detail.LatestError)
+			}
 			detail.ChannelChain = append(detail.ChannelChain, attempt)
 		} else {
 			current := &detail.ChannelChain[lastIdx]
@@ -438,6 +487,9 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 		attempt := next.Detail.Attempts[0]
 		lastIdx := len(detail.Attempts) - 1
 		if lastIdx < 0 || detail.Attempts[lastIdx].RetryIndex != attempt.RetryIndex {
+			if lastIdx >= 0 && attempt.RetryIndex > detail.Attempts[lastIdx].RetryIndex {
+				finalizeInflightAttempt(&detail.Attempts[lastIdx], detail.LatestError, now)
+			}
 			detail.Attempts = append(detail.Attempts, attempt)
 		} else {
 			current := &detail.Attempts[lastIdx]
@@ -589,8 +641,14 @@ func updateInflightTask(ctx context.Context, client *redis.Client, task *Infligh
 				var stored InflightTask
 				if err := common.UnmarshalJsonStr(existing, &stored); err == nil {
 					task.CreatedAt = stored.CreatedAt
+					previousStatus := stored.Status
+					previousRetryIndex := -1
+					if stored.Detail != nil {
+						previousRetryIndex = stored.Detail.RetryIndex
+					}
+					reopen := shouldReopenInflightTask(&stored, task)
 					mergeInflightTaskDetail(&stored, task)
-					if !shouldOverwriteInflightTaskStatus(stored.Status, task.Status) && !shouldReopenInflightTask(&stored, task) {
+					if !shouldPersistInflightTaskUpdate(previousStatus, previousRetryIndex, reopen, task) {
 						return nil
 					}
 				}

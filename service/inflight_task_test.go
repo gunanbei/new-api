@@ -199,6 +199,66 @@ func TestMergeInflightTaskDetailSplitsAttemptsByRetryIndex(t *testing.T) {
 	assert.Equal(t, InflightTaskStatusRouting, next.Detail.Attempts[1].Timeline[0].Status)
 }
 
+func TestShouldPersistInflightTaskUpdateAllowsRetryAdvance(t *testing.T) {
+	next := &InflightTask{
+		Status: InflightTaskStatusRouting,
+		Detail: &InflightTaskDetail{RetryIndex: 2},
+	}
+
+	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 1, false, next))
+	assert.False(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 2, false, next))
+	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 1, false, &InflightTask{
+		Status: InflightTaskStatusUpstreamPending,
+		Detail: &InflightTaskDetail{RetryIndex: 2},
+	}))
+	assert.False(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 2, false, &InflightTask{
+		Status: InflightTaskStatusRouting,
+		Detail: &InflightTaskDetail{RetryIndex: 2},
+	}))
+}
+
+func TestMergeInflightTaskDetailFinalizesPreviousAttemptOnRetryAdvance(t *testing.T) {
+	stored := &InflightTask{
+		Detail: &InflightTaskDetail{
+			RetryIndex:  0,
+			LatestError: "daily usage limit exceeded",
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex:  0,
+				ChannelID:   10,
+				ChannelName: "first",
+				Status:      InflightTaskStatusUpstreamPending,
+				StartedAt:   100,
+				UpdatedAt:   110,
+			}},
+		},
+	}
+	next := &InflightTask{
+		Status:    InflightTaskStatusRouting,
+		UpdatedAt: 120,
+		Detail: &InflightTaskDetail{
+			RetryIndex:  1,
+			LatestError: "daily usage limit exceeded",
+			ChannelID:   20,
+			ChannelName: "second",
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex:  1,
+				ChannelID:   20,
+				ChannelName: "second",
+				Status:      InflightTaskStatusRouting,
+				StartedAt:   120,
+				UpdatedAt:   120,
+			}},
+		},
+	}
+
+	mergeInflightTaskDetail(stored, next)
+
+	require.Len(t, next.Detail.Attempts, 2)
+	assert.Equal(t, InflightTaskStatusFailed, next.Detail.Attempts[0].Status)
+	assert.Equal(t, "daily usage limit exceeded", next.Detail.Attempts[0].Error)
+	assert.Equal(t, 1, next.Detail.Attempts[1].RetryIndex)
+}
+
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
 	parent, cancelParent := context.WithCancel(context.Background())
 	cancelParent()

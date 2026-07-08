@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
-import { ChevronDown, ChevronRight, GitBranch, RefreshCw } from 'lucide-react'
+import { Eye, GitBranch, RefreshCw } from 'lucide-react'
 import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -27,11 +27,20 @@ import { toast } from 'sonner'
 import {
   DataTablePage,
   DataTableRow,
+  DataTableRowActionMenu,
   TruncatedCell,
   useDataTable,
 } from '@/components/data-table'
+import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   Popover,
   PopoverContent,
@@ -44,7 +53,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { TableCell, TableRow } from '@/components/ui/table'
 import {
   Tooltip,
   TooltipContent,
@@ -542,6 +550,42 @@ function buildDetailsSummary(task: InflightTask, t: (key: string) => string) {
   return summary.join(' · ')
 }
 
+function InflightTaskDetailsDialog(props: {
+  task: InflightTask | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  isAdmin: boolean
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <Dialog
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      title={t('Details')}
+      description={props.task ? buildDetailsSummary(props.task, t) : undefined}
+      contentClassName='max-h-[calc(100dvh-2rem)] overflow-hidden max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-3xl'
+      contentHeight='auto'
+      bodyClassName='space-y-4'
+      footer={
+        <Button
+          variant='outline'
+          onClick={() => props.onOpenChange(false)}
+          className='w-full sm:w-auto'
+        >
+          {t('Close')}
+        </Button>
+      }
+    >
+      {props.task ? (
+        <div className='max-h-[calc(100dvh-8.5rem)] space-y-3 overflow-y-auto py-2 pr-1 sm:max-h-[72vh] sm:space-y-4'>
+          <InflightTaskDetails task={props.task} isAdmin={props.isAdmin} />
+        </div>
+      ) : null}
+    </Dialog>
+  )
+}
+
 function InflightTaskDetails(props: {
   task: InflightTask
   isAdmin: boolean
@@ -704,35 +748,13 @@ function InflightTaskDetails(props: {
 }
 
 function useInflightTaskColumns(props: {
-  expandedRequestId: string | null
-  onToggleExpand: (requestId: string) => void
+  onOpenDetails: (task: InflightTask) => void
   isAdmin: boolean
 }): ColumnDef<InflightTask>[] {
   const { t } = useTranslation()
 
   return useMemo(
     () => [
-      {
-        id: 'expand',
-        header: '',
-        cell: ({ row }) => (
-          <Button
-            variant='ghost'
-            size='sm'
-            className='h-6 w-6 p-0'
-            onClick={() => props.onToggleExpand(row.original.request_id)}
-            aria-label={t('Details')}
-          >
-            {props.expandedRequestId === row.original.request_id ? (
-              <ChevronDown className='size-4' />
-            ) : (
-              <ChevronRight className='size-4' />
-            )}
-          </Button>
-        ),
-        enableHiding: false,
-        size: 40,
-      },
       {
         accessorKey: 'status',
         header: t('Status'),
@@ -773,15 +795,6 @@ function useInflightTaskColumns(props: {
         ),
       },
       {
-        id: 'details',
-        header: t('Details'),
-        cell: ({ row }) => (
-          <TruncatedCell className='max-w-[260px]'>
-            {buildDetailsSummary(row.original, t)}
-          </TruncatedCell>
-        ),
-      },
-      {
         accessorKey: 'request_id',
         header: t('Request ID'),
         cell: ({ row }) => (
@@ -805,8 +818,34 @@ function useInflightTaskColumns(props: {
         header: t('Stream'),
         cell: ({ row }) => t(row.original.is_stream ? 'Yes' : 'No'),
       },
+      {
+        id: 'actions',
+        header: t('Actions'),
+        enableHiding: false,
+        cell: ({ row }) => (
+          <div
+            className='flex items-center justify-end gap-1'
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={() => props.onOpenDetails(row.original)}
+              aria-label={t('Details')}
+            >
+              <Eye />
+            </Button>
+            <DataTableRowActionMenu ariaLabel={t('Actions')}>
+              <DropdownMenuItem onClick={() => props.onOpenDetails(row.original)}>
+                <Eye />
+                {t('Details')}
+              </DropdownMenuItem>
+            </DataTableRowActionMenu>
+          </div>
+        ),
+      },
     ],
-    [props.expandedRequestId, props.isAdmin, props.onToggleExpand, t]
+    [props.isAdmin, props.onOpenDetails, t]
   )
 }
 
@@ -1123,7 +1162,7 @@ export function InflightTasksTab() {
   const isAdmin = useIsAdmin()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
-  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
+  const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -1137,13 +1176,12 @@ export function InflightTasksTab() {
     globalFilter: { enabled: false },
   })
 
-  const onToggleExpand = useCallback((requestId: string) => {
-    setExpandedRequestId((current) => (current === requestId ? null : requestId))
+  const onOpenDetails = useCallback((task: InflightTask) => {
+    setDetailsTask(task)
   }, [])
 
   const columns = useInflightTaskColumns({
-    expandedRequestId,
-    onToggleExpand,
+    onOpenDetails,
     isAdmin,
   })
 
@@ -1211,44 +1249,53 @@ export function InflightTasksTab() {
   })
 
   return (
-    <DataTablePage
-      table={table}
-      columns={columns}
-      isLoading={isLoading}
-      isFetching={isFetching}
-      emptyTitle={t('No inflight logs.')}
-      emptyDescription={t('No inflight logs.')}
-      skeletonKeyPrefix='inflight-log-skeleton'
-      applyHeaderSize
-      toolbar={
-        <InflightFilterBar
-          table={table}
-          isFetching={isFetching}
-          refetch={() => void refetch()}
-          isAdmin={isAdmin}
-        />
-      }
-      renderRow={(row, helpers) => (
-        <>
-          <DataTableRow
-            key={row.id}
-            row={row}
-            aria-expanded={expandedRequestId === row.original.request_id}
-            getColumnClassName={() => 'py-3.5'}
-            cellRenderColumns={columns}
+    <>
+      <DataTablePage
+        table={table}
+        columns={columns}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        emptyTitle={t('No inflight logs.')}
+        emptyDescription={t('No inflight logs.')}
+        skeletonKeyPrefix='inflight-log-skeleton'
+        applyHeaderSize
+        toolbar={
+          <InflightFilterBar
+            table={table}
+            isFetching={isFetching}
+            refetch={() => void refetch()}
+            isAdmin={isAdmin}
           />
-          {expandedRequestId === row.original.request_id ? (
-            <TableRow key={`${row.id}-details`}>
-              <TableCell colSpan={row.getVisibleCells().length} className='bg-muted/20 py-3'>
-                <div className={helpers.getCellClassName('details', 'px-2 sm:px-3')}>
-                  <InflightTaskDetails task={row.original} isAdmin={isAdmin} />
-                </div>
-              </TableCell>
-            </TableRow>
-          ) : null}
-        </>
-      )}
-      tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
-    />
+        }
+        renderRow={(row, helpers) => (
+          <ContextMenu key={row.id}>
+            <ContextMenuTrigger>
+              <DataTableRow
+                row={row}
+                getColumnClassName={(columnId) =>
+                  helpers.getCellClassName(columnId, 'py-3.5')
+                }
+                cellRenderColumns={columns}
+              />
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => onOpenDetails(row.original)}>
+                <Eye />
+                {t('Details')}
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        )}
+        tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
+      />
+      <InflightTaskDetailsDialog
+        task={detailsTask}
+        open={detailsTask !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailsTask(null)
+        }}
+        isAdmin={isAdmin}
+      />
+    </>
   )
 }

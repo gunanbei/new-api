@@ -66,6 +66,18 @@ type InflightTask struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+type InflightTaskQuery struct {
+	Status         string
+	Kind           string
+	ModelName      string
+	RequestID      string
+	StartTimestamp int64
+	EndTimestamp   int64
+	IsStream       *bool
+	StartIdx       int
+	Num            int
+}
+
 func inflightTaskStatusRank(status string) int {
 	switch status {
 	case InflightTaskStatusAccepted:
@@ -314,18 +326,18 @@ func FinalInflightTaskStatus(info *relaycommon.RelayInfo) string {
 	return InflightTaskStatusCompleted
 }
 
-func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, error) {
+func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQuery) ([]InflightTask, int, error) {
 	client, err := inflightTaskRedis()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	requestIDs, err := client.ZRevRange(ctx, inflightTaskUserKey(userID), 0, -1).Result()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(requestIDs) == 0 {
-		return []InflightTask{}, nil
+		return []InflightTask{}, 0, nil
 	}
 
 	keys := make([]string, 0, len(requestIDs))
@@ -335,7 +347,7 @@ func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, err
 
 	values, err := client.MGet(ctx, keys...).Result()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	tasks := make([]InflightTask, 0, len(values))
@@ -357,6 +369,27 @@ func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, err
 		if task.UserID != userID {
 			continue
 		}
+		if query.Status != "" && task.Status != query.Status {
+			continue
+		}
+		if query.Kind != "" && task.Kind != query.Kind {
+			continue
+		}
+		if query.ModelName != "" && !strings.Contains(task.ModelName, query.ModelName) {
+			continue
+		}
+		if query.RequestID != "" && !strings.Contains(task.RequestID, query.RequestID) {
+			continue
+		}
+		if query.StartTimestamp != 0 && task.CreatedAt < query.StartTimestamp {
+			continue
+		}
+		if query.EndTimestamp != 0 && task.CreatedAt > query.EndTimestamp {
+			continue
+		}
+		if query.IsStream != nil && task.IsStream != *query.IsStream {
+			continue
+		}
 		if !isInflightTaskTerminalStatus(task.Status) {
 			activeRequestIDs = append(activeRequestIDs, task.RequestID)
 		}
@@ -365,7 +398,7 @@ func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, err
 
 	terminalStatuses, err := loadTerminalStatusesByRequestID(userID, activeRequestIDs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	reconciled := make([]*InflightTask, 0)
 	for i := range tasks {
@@ -390,7 +423,15 @@ func ListUserInflightTasks(ctx context.Context, userID int) ([]InflightTask, err
 		}
 		return tasks[i].UpdatedAt > tasks[j].UpdatedAt
 	})
-	return tasks, nil
+	total := len(tasks)
+	if query.StartIdx >= total {
+		return []InflightTask{}, total, nil
+	}
+	end := query.StartIdx + query.Num
+	if query.Num <= 0 || end > total {
+		end = total
+	}
+	return tasks[query.StartIdx:end], total, nil
 }
 
 type InflightTaskStats struct {

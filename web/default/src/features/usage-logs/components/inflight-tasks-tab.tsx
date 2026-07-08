@@ -479,26 +479,62 @@ function getRetryAttemptLabel(task: InflightTask, t: (key: string, options?: Rec
   })
 }
 
+function isBetterAttempt(candidate: InflightTaskAttempt, current: InflightTaskAttempt) {
+  const candidateTerminal =
+    candidate.status === 'failed' || candidate.status === 'completed'
+  const currentTerminal =
+    current.status === 'failed' || current.status === 'completed'
+  if (candidateTerminal !== currentTerminal) {
+    return candidateTerminal
+  }
+  const candidateTimeline = candidate.timeline?.length ?? 0
+  const currentTimeline = current.timeline?.length ?? 0
+  if (candidateTimeline !== currentTimeline) {
+    return candidateTimeline > currentTimeline
+  }
+  return (candidate.updated_at ?? 0) >= (current.updated_at ?? 0)
+}
+
+// dedupeAndSortAttempts guarantees a single entry per retry_index rendered in
+// ascending retry order, tolerating older backend data that may still carry
+// duplicate or out-of-order attempts.
+function dedupeAndSortAttempts(attempts: InflightTaskAttempt[]): InflightTaskAttempt[] {
+  const byRetry = new Map<number, InflightTaskAttempt>()
+  for (const attempt of attempts) {
+    const existing = byRetry.get(attempt.retry_index)
+    if (!existing || isBetterAttempt(attempt, existing)) {
+      byRetry.set(attempt.retry_index, attempt)
+    }
+  }
+  return Array.from(byRetry.values()).sort(
+    (a, b) => a.retry_index - b.retry_index
+  )
+}
+
 function getAttempts(task: InflightTask): InflightTaskAttempt[] {
   const attempts = task.detail?.attempts ?? []
   if (attempts.length > 0) {
-    return attempts
+    return dedupeAndSortAttempts(attempts)
   }
   const chain = task.detail?.channel_chain ?? []
   if (chain.length === 0) {
     return []
   }
-  return chain.map((attempt) => ({
-    retry_index: attempt.retry_index,
-    channel_id: attempt.channel_id,
-    channel_name: attempt.channel_name,
-    status: attempt.status,
-    error: attempt.error,
-    started_at: attempt.started_at,
-    updated_at: attempt.updated_at,
-    timeline:
-      attempt.retry_index === getRetryIndex(task) ? (task.detail?.timeline ?? []) : [],
-  }))
+  return dedupeAndSortAttempts(
+    chain.map((attempt) => ({
+      retry_index: attempt.retry_index,
+      channel_id: attempt.channel_id,
+      channel_name: attempt.channel_name,
+      status: attempt.status,
+      error: attempt.error,
+      started_at: attempt.started_at,
+      updated_at: attempt.updated_at,
+      timeline:
+        attempt.retry_index === getRetryIndex(task)
+          ? (task.detail?.timeline ?? [])
+          : [],
+    }))
+  )
 }
 
 function getTimelineAccentClass(status: string) {
@@ -840,6 +876,7 @@ function InflightTaskDetails(props: {
   const timeline = props.task.detail?.timeline ?? []
   const attempts = getAttempts(props.task)
   const hasRetries = hasInflightRetries(props.task)
+  const showRetryAttempts = props.isAdmin && hasRetries && attempts.length > 0
   const { channelDisplay } = getChannelDisplay(props.task)
   const latestError = getLatestError(props.task)
   const retryState = getRetryState(props.task)
@@ -928,7 +965,7 @@ function InflightTaskDetails(props: {
         ) : null}
       </div>
 
-      {timeline.length > 0 && (
+      {!showRetryAttempts && timeline.length > 0 && (
         <InflightDetailSection label={t('Timeline')}>
           <div className='space-y-2'>
             {timeline.map((step) => (
@@ -980,7 +1017,7 @@ function InflightTaskDetails(props: {
         </InflightDetailSection>
       )}
 
-      {props.isAdmin && hasRetries && attempts.length > 0 && (
+      {showRetryAttempts && (
         <InflightDetailSection label={t('Retry Attempts')}>
           <div className='space-y-2'>
             {attempts.map((attempt) => {

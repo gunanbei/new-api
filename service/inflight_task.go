@@ -218,6 +218,63 @@ func finalizeInflightAttempt(attempt *InflightTaskAttempt, errorMessage string, 
 	updateInflightAttemptTimeline(attempt, InflightTaskStatusFailed, now)
 }
 
+func indexOfInflightChannelAttempt(chain []InflightTaskChannelAttempt, retryIndex int) int {
+	for i := range chain {
+		if chain[i].RetryIndex == retryIndex {
+			return i
+		}
+	}
+	return -1
+}
+
+func indexOfInflightAttempt(attempts []InflightTaskAttempt, retryIndex int) int {
+	for i := range attempts {
+		if attempts[i].RetryIndex == retryIndex {
+			return i
+		}
+	}
+	return -1
+}
+
+func maxInflightChannelRetryIndex(chain []InflightTaskChannelAttempt) int {
+	maxRetry := -1
+	for i := range chain {
+		if chain[i].RetryIndex > maxRetry {
+			maxRetry = chain[i].RetryIndex
+		}
+	}
+	return maxRetry
+}
+
+func maxInflightAttemptRetryIndex(attempts []InflightTaskAttempt) int {
+	maxRetry := -1
+	for i := range attempts {
+		if attempts[i].RetryIndex > maxRetry {
+			maxRetry = attempts[i].RetryIndex
+		}
+	}
+	return maxRetry
+}
+
+// finalizeSupersededInflightAttempts marks every attempt that a later retry has
+// superseded as failed. Earlier retries are always finished before a newer one
+// starts, so once a higher retry_index exists any lower non-terminal attempt is
+// stale regardless of the order the async status writes arrived in.
+func finalizeSupersededInflightAttempts(detail *InflightTaskDetail) {
+	maxChain := maxInflightChannelRetryIndex(detail.ChannelChain)
+	for i := range detail.ChannelChain {
+		if detail.ChannelChain[i].RetryIndex < maxChain {
+			finalizeInflightChannelAttempt(&detail.ChannelChain[i], detail.LatestError)
+		}
+	}
+	maxAttempt := maxInflightAttemptRetryIndex(detail.Attempts)
+	for i := range detail.Attempts {
+		if detail.Attempts[i].RetryIndex < maxAttempt {
+			finalizeInflightAttempt(&detail.Attempts[i], detail.LatestError, detail.Attempts[i].UpdatedAt)
+		}
+	}
+}
+
 func shouldApplyReconciledTerminalStatus(task *InflightTask, terminalStatus string) bool {
 	if task == nil || !isInflightTaskTerminalStatus(terminalStatus) {
 		return false
@@ -436,18 +493,21 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 		return
 	}
 	if stored == nil || stored.Detail == nil {
-		updateInflightTaskDetail(next.Detail, next.Status, now)
+		updateInflightTaskDetail(next.Detail, next.Status, now, next.Detail.RetryIndex)
 		return
 	}
 
 	detail := stored.Detail
+	incomingRetryIndex := next.Detail.RetryIndex
 	if next.Detail.ChannelID != 0 {
 		detail.ChannelID = next.Detail.ChannelID
 	}
 	if next.Detail.ChannelName != "" {
 		detail.ChannelName = next.Detail.ChannelName
 	}
-	detail.RetryIndex = next.Detail.RetryIndex
+	if incomingRetryIndex > detail.RetryIndex {
+		detail.RetryIndex = incomingRetryIndex
+	}
 	if next.Detail.LatestError != "" {
 		detail.LatestError = next.Detail.LatestError
 	}
@@ -459,96 +519,124 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 		detail.Attempts = make([]InflightTaskAttempt, 0)
 	}
 	if len(next.Detail.ChannelChain) > 0 {
-		attempt := next.Detail.ChannelChain[0]
-		lastIdx := len(detail.ChannelChain) - 1
-		if lastIdx < 0 || detail.ChannelChain[lastIdx].RetryIndex != attempt.RetryIndex || detail.ChannelChain[lastIdx].ChannelID != attempt.ChannelID {
-			if lastIdx >= 0 && attempt.RetryIndex > detail.ChannelChain[lastIdx].RetryIndex {
-				finalizeInflightChannelAttempt(&detail.ChannelChain[lastIdx], detail.LatestError)
-			}
-			detail.ChannelChain = append(detail.ChannelChain, attempt)
-		} else {
-			current := &detail.ChannelChain[lastIdx]
-			if current.StartedAt == 0 {
-				current.StartedAt = attempt.StartedAt
-			}
-			current.UpdatedAt = attempt.UpdatedAt
-			if attempt.ChannelName != "" {
-				current.ChannelName = attempt.ChannelName
-			}
-			if attempt.Status != "" {
-				current.Status = attempt.Status
-			}
-			if attempt.Error != "" {
-				current.Error = attempt.Error
-			}
-		}
+		upsertInflightChannelAttempt(detail, next.Detail.ChannelChain[0])
 	}
 	if len(next.Detail.Attempts) > 0 {
-		attempt := next.Detail.Attempts[0]
-		lastIdx := len(detail.Attempts) - 1
-		if lastIdx < 0 || detail.Attempts[lastIdx].RetryIndex != attempt.RetryIndex {
-			if lastIdx >= 0 && attempt.RetryIndex > detail.Attempts[lastIdx].RetryIndex {
-				finalizeInflightAttempt(&detail.Attempts[lastIdx], detail.LatestError, now)
-			}
-			detail.Attempts = append(detail.Attempts, attempt)
-		} else {
-			current := &detail.Attempts[lastIdx]
-			if current.StartedAt == 0 {
-				current.StartedAt = attempt.StartedAt
-			}
-			current.UpdatedAt = attempt.UpdatedAt
-			if attempt.ChannelID != 0 {
-				current.ChannelID = attempt.ChannelID
-			}
-			if attempt.ChannelName != "" {
-				current.ChannelName = attempt.ChannelName
-			}
-			if attempt.Status != "" {
-				current.Status = attempt.Status
-			}
-			if attempt.Error != "" {
-				current.Error = attempt.Error
-			}
-			if len(attempt.Timeline) > 0 {
-				current.Timeline = attempt.Timeline
-			}
-		}
+		upsertInflightAttempt(detail, next.Detail.Attempts[0])
 	}
+	finalizeSupersededInflightAttempts(detail)
 	next.Detail = detail
-	updateInflightTaskDetail(next.Detail, next.Status, now)
+	updateInflightTaskDetail(next.Detail, next.Status, now, incomingRetryIndex)
 }
 
-func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int64) {
+// upsertInflightChannelAttempt merges an incoming channel attempt into the
+// stored chain keyed by retry_index, keeping the chain ordered and free of
+// duplicates even when async status writes arrive out of order.
+func upsertInflightChannelAttempt(detail *InflightTaskDetail, incoming InflightTaskChannelAttempt) {
+	idx := indexOfInflightChannelAttempt(detail.ChannelChain, incoming.RetryIndex)
+	if idx < 0 {
+		detail.ChannelChain = append(detail.ChannelChain, incoming)
+		sort.SliceStable(detail.ChannelChain, func(i, j int) bool {
+			return detail.ChannelChain[i].RetryIndex < detail.ChannelChain[j].RetryIndex
+		})
+		return
+	}
+	current := &detail.ChannelChain[idx]
+	if current.StartedAt == 0 {
+		current.StartedAt = incoming.StartedAt
+	}
+	if incoming.UpdatedAt > current.UpdatedAt {
+		current.UpdatedAt = incoming.UpdatedAt
+	}
+	if incoming.ChannelID != 0 {
+		current.ChannelID = incoming.ChannelID
+	}
+	if incoming.ChannelName != "" {
+		current.ChannelName = incoming.ChannelName
+	}
+	if incoming.Status != "" && !isInflightTaskTerminalStatus(current.Status) {
+		current.Status = incoming.Status
+	}
+	if incoming.Error != "" {
+		current.Error = incoming.Error
+	}
+}
+
+func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAttempt) {
+	idx := indexOfInflightAttempt(detail.Attempts, incoming.RetryIndex)
+	if idx < 0 {
+		detail.Attempts = append(detail.Attempts, incoming)
+		sort.SliceStable(detail.Attempts, func(i, j int) bool {
+			return detail.Attempts[i].RetryIndex < detail.Attempts[j].RetryIndex
+		})
+		return
+	}
+	current := &detail.Attempts[idx]
+	if current.StartedAt == 0 {
+		current.StartedAt = incoming.StartedAt
+	}
+	if incoming.UpdatedAt > current.UpdatedAt {
+		current.UpdatedAt = incoming.UpdatedAt
+	}
+	if incoming.ChannelID != 0 {
+		current.ChannelID = incoming.ChannelID
+	}
+	if incoming.ChannelName != "" {
+		current.ChannelName = incoming.ChannelName
+	}
+	if incoming.Status != "" && !isInflightTaskTerminalStatus(current.Status) {
+		current.Status = incoming.Status
+	}
+	if incoming.Error != "" {
+		current.Error = incoming.Error
+	}
+	if len(incoming.Timeline) > len(current.Timeline) {
+		current.Timeline = incoming.Timeline
+	}
+}
+
+func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int64, retryIndex int) {
 	if detail == nil {
 		return
 	}
 	detail.CurrentStage = status
 	if len(detail.ChannelChain) > 0 {
-		lastAttempt := &detail.ChannelChain[len(detail.ChannelChain)-1]
-		if lastAttempt.StartedAt == 0 {
-			lastAttempt.StartedAt = now
+		idx := indexOfInflightChannelAttempt(detail.ChannelChain, retryIndex)
+		if idx < 0 {
+			idx = len(detail.ChannelChain) - 1
 		}
-		lastAttempt.UpdatedAt = now
-		if status != "" {
-			lastAttempt.Status = status
+		target := &detail.ChannelChain[idx]
+		if target.StartedAt == 0 {
+			target.StartedAt = now
+		}
+		target.UpdatedAt = now
+		if status != "" && !isInflightTaskTerminalStatus(target.Status) {
+			target.Status = status
 		}
 		if detail.LatestError != "" {
-			lastAttempt.Error = detail.LatestError
+			target.Error = detail.LatestError
 		}
 	}
 	if len(detail.Attempts) > 0 {
-		lastAttempt := &detail.Attempts[len(detail.Attempts)-1]
-		if lastAttempt.StartedAt == 0 {
-			lastAttempt.StartedAt = now
+		idx := indexOfInflightAttempt(detail.Attempts, retryIndex)
+		if idx < 0 {
+			idx = len(detail.Attempts) - 1
 		}
-		lastAttempt.UpdatedAt = now
-		if status != "" {
-			lastAttempt.Status = status
+		target := &detail.Attempts[idx]
+		wasTerminal := isInflightTaskTerminalStatus(target.Status)
+		if target.StartedAt == 0 {
+			target.StartedAt = now
+		}
+		target.UpdatedAt = now
+		if status != "" && !wasTerminal {
+			target.Status = status
 		}
 		if detail.LatestError != "" {
-			lastAttempt.Error = detail.LatestError
+			target.Error = detail.LatestError
 		}
-		updateInflightAttemptTimeline(lastAttempt, status, now)
+		if !wasTerminal {
+			updateInflightAttemptTimeline(target, status, now)
+		}
 	}
 	if len(detail.Timeline) == 0 {
 		detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{

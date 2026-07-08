@@ -120,10 +120,10 @@ func TestUpdateInflightTaskDetailBuildsAttemptTimeline(t *testing.T) {
 		}},
 	}
 
-	updateInflightTaskDetail(detail, InflightTaskStatusRouting, 100)
-	updateInflightTaskDetail(detail, InflightTaskStatusUpstreamPending, 105)
+	updateInflightTaskDetail(detail, InflightTaskStatusRouting, 100, 0)
+	updateInflightTaskDetail(detail, InflightTaskStatusUpstreamPending, 105, 0)
 	detail.LatestError = "timeout"
-	updateInflightTaskDetail(detail, InflightTaskStatusFailed, 110)
+	updateInflightTaskDetail(detail, InflightTaskStatusFailed, 110, 0)
 
 	require.Len(t, detail.Attempts, 1)
 	require.Len(t, detail.Attempts[0].Timeline, 3)
@@ -257,6 +257,59 @@ func TestMergeInflightTaskDetailFinalizesPreviousAttemptOnRetryAdvance(t *testin
 	assert.Equal(t, InflightTaskStatusFailed, next.Detail.Attempts[0].Status)
 	assert.Equal(t, "daily usage limit exceeded", next.Detail.Attempts[0].Error)
 	assert.Equal(t, 1, next.Detail.Attempts[1].RetryIndex)
+}
+
+func TestMergeInflightTaskDetailDedupesAndOrdersOutOfOrderRetries(t *testing.T) {
+	// Simulate async status writes arriving out of order: a delayed retry_index=1
+	// write shows up after retry_index=2 has already been recorded. It must update
+	// the existing slot in place (no duplicate) and stay ordered by retry_index.
+	stored := &InflightTask{
+		Detail: &InflightTaskDetail{
+			RetryIndex: 2,
+			ChannelChain: []InflightTaskChannelAttempt{
+				{RetryIndex: 0, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 100, UpdatedAt: 110},
+				{RetryIndex: 2, ChannelID: 13, Status: InflightTaskStatusRouting, StartedAt: 130, UpdatedAt: 130},
+			},
+			Attempts: []InflightTaskAttempt{
+				{RetryIndex: 0, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 100, UpdatedAt: 110},
+				{RetryIndex: 2, ChannelID: 13, Status: InflightTaskStatusRouting, StartedAt: 130, UpdatedAt: 130},
+			},
+		},
+	}
+	next := &InflightTask{
+		Status:    InflightTaskStatusUpstreamPending,
+		UpdatedAt: 135,
+		Detail: &InflightTaskDetail{
+			RetryIndex:  1,
+			ChannelID:   12,
+			ChannelName: "second",
+			ChannelChain: []InflightTaskChannelAttempt{{
+				RetryIndex: 1, ChannelID: 12, ChannelName: "second", Status: InflightTaskStatusUpstreamPending, StartedAt: 120, UpdatedAt: 135,
+			}},
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex: 1, ChannelID: 12, ChannelName: "second", Status: InflightTaskStatusUpstreamPending, StartedAt: 120, UpdatedAt: 135,
+			}},
+		},
+	}
+
+	mergeInflightTaskDetail(stored, next)
+
+	require.Len(t, next.Detail.Attempts, 3)
+	assert.Equal(t, []int{0, 1, 2}, []int{
+		next.Detail.Attempts[0].RetryIndex,
+		next.Detail.Attempts[1].RetryIndex,
+		next.Detail.Attempts[2].RetryIndex,
+	})
+	require.Len(t, next.Detail.ChannelChain, 3)
+	assert.Equal(t, []int{0, 1, 2}, []int{
+		next.Detail.ChannelChain[0].RetryIndex,
+		next.Detail.ChannelChain[1].RetryIndex,
+		next.Detail.ChannelChain[2].RetryIndex,
+	})
+	// retry_index 1 is superseded by 2, so it must be finalized as failed.
+	assert.Equal(t, InflightTaskStatusFailed, next.Detail.Attempts[1].Status)
+	// The displayed current retry must not regress below the furthest attempt.
+	assert.Equal(t, 2, next.Detail.RetryIndex)
 }
 
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {

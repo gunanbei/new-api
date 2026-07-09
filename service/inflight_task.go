@@ -595,17 +595,53 @@ func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAtte
 	}
 }
 
+func appendInflightChannelAttempt(detail *InflightTaskDetail, retryIndex int, status string, now int64) *InflightTaskChannelAttempt {
+	attempt := InflightTaskChannelAttempt{
+		RetryIndex:  retryIndex,
+		ChannelID:   detail.ChannelID,
+		ChannelName: detail.ChannelName,
+		Status:      status,
+		Error:       detail.LatestError,
+		StartedAt:   now,
+		UpdatedAt:   now,
+	}
+	detail.ChannelChain = append(detail.ChannelChain, attempt)
+	sort.SliceStable(detail.ChannelChain, func(i, j int) bool {
+		return detail.ChannelChain[i].RetryIndex < detail.ChannelChain[j].RetryIndex
+	})
+	return &detail.ChannelChain[indexOfInflightChannelAttempt(detail.ChannelChain, retryIndex)]
+}
+
+func appendInflightAttempt(detail *InflightTaskDetail, retryIndex int, status string, now int64) *InflightTaskAttempt {
+	attempt := InflightTaskAttempt{
+		RetryIndex:  retryIndex,
+		ChannelID:   detail.ChannelID,
+		ChannelName: detail.ChannelName,
+		Status:      status,
+		Error:       detail.LatestError,
+		StartedAt:   now,
+		UpdatedAt:   now,
+	}
+	detail.Attempts = append(detail.Attempts, attempt)
+	sort.SliceStable(detail.Attempts, func(i, j int) bool {
+		return detail.Attempts[i].RetryIndex < detail.Attempts[j].RetryIndex
+	})
+	return &detail.Attempts[indexOfInflightAttempt(detail.Attempts, retryIndex)]
+}
+
 func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int64, retryIndex int) {
 	if detail == nil {
 		return
 	}
 	detail.CurrentStage = status
-	if len(detail.ChannelChain) > 0 {
+	if len(detail.ChannelChain) > 0 || detail.ChannelID != 0 || detail.ChannelName != "" {
 		idx := indexOfInflightChannelAttempt(detail.ChannelChain, retryIndex)
+		var target *InflightTaskChannelAttempt
 		if idx < 0 {
-			idx = len(detail.ChannelChain) - 1
+			target = appendInflightChannelAttempt(detail, retryIndex, status, now)
+		} else {
+			target = &detail.ChannelChain[idx]
 		}
-		target := &detail.ChannelChain[idx]
 		if target.StartedAt == 0 {
 			target.StartedAt = now
 		}
@@ -617,12 +653,14 @@ func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int
 			target.Error = detail.LatestError
 		}
 	}
-	if len(detail.Attempts) > 0 {
+	if len(detail.Attempts) > 0 || detail.ChannelID != 0 || detail.ChannelName != "" {
 		idx := indexOfInflightAttempt(detail.Attempts, retryIndex)
+		var target *InflightTaskAttempt
 		if idx < 0 {
-			idx = len(detail.Attempts) - 1
+			target = appendInflightAttempt(detail, retryIndex, status, now)
+		} else {
+			target = &detail.Attempts[idx]
 		}
-		target := &detail.Attempts[idx]
 		wasTerminal := isInflightTaskTerminalStatus(target.Status)
 		if target.StartedAt == 0 {
 			target.StartedAt = now

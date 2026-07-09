@@ -523,28 +523,53 @@ function dedupeAndSortAttempts(attempts: InflightTaskAttempt[]): InflightTaskAtt
 
 function getAttempts(task: InflightTask): InflightTaskAttempt[] {
   const attempts = task.detail?.attempts ?? []
+  let resolved: InflightTaskAttempt[]
   if (attempts.length > 0) {
-    return dedupeAndSortAttempts(attempts)
+    resolved = dedupeAndSortAttempts(attempts)
+  } else {
+    const chain = task.detail?.channel_chain ?? []
+    if (chain.length === 0) {
+      resolved = []
+    } else {
+      resolved = dedupeAndSortAttempts(
+        chain.map((attempt) => ({
+          retry_index: attempt.retry_index,
+          channel_id: attempt.channel_id,
+          channel_name: attempt.channel_name,
+          status: attempt.status,
+          error: attempt.error,
+          started_at: attempt.started_at,
+          updated_at: attempt.updated_at,
+          timeline:
+            attempt.retry_index === getRetryIndex(task)
+              ? (task.detail?.timeline ?? [])
+              : [],
+        }))
+      )
+    }
   }
-  const chain = task.detail?.channel_chain ?? []
-  if (chain.length === 0) {
-    return []
+
+  const retryIndex = getRetryIndex(task)
+  if (
+    resolved.some((attempt) => attempt.retry_index === retryIndex) ||
+    (!task.detail?.channel_id && !task.detail?.channel_name)
+  ) {
+    return resolved
   }
-  return dedupeAndSortAttempts(
-    chain.map((attempt) => ({
-      retry_index: attempt.retry_index,
-      channel_id: attempt.channel_id,
-      channel_name: attempt.channel_name,
-      status: attempt.status,
-      error: attempt.error,
-      started_at: attempt.started_at,
-      updated_at: attempt.updated_at,
-      timeline:
-        attempt.retry_index === getRetryIndex(task)
-          ? (task.detail?.timeline ?? [])
-          : [],
-    }))
-  )
+
+  return dedupeAndSortAttempts([
+    ...resolved,
+    {
+      retry_index: retryIndex,
+      channel_id: task.detail.channel_id,
+      channel_name: task.detail.channel_name,
+      status: task.status,
+      error: task.detail.latest_error,
+      started_at: task.detail.timeline?.[0]?.started_at ?? task.created_at,
+      updated_at: task.updated_at,
+      timeline: task.detail.timeline,
+    },
+  ])
 }
 
 function getTimelineAccentClass(status: string) {
@@ -747,9 +772,9 @@ function getChannelDisplay(task: InflightTask) {
 
 function renderChannelCell(task: InflightTask, t: (key: string) => string) {
   const { channelIdDisplay, channelDisplay, channelName } = getChannelDisplay(task)
-  const chain = task.detail?.channel_chain ?? []
-  const hasRetryChain = chain.length > 1
-  const retryText = chain
+  const attempts = getAttempts(task)
+  const hasRetryChain = hasInflightRetries(task)
+  const retryText = attempts
     .map((attempt) =>
       attempt.channel_id
         ? `#${attempt.channel_id}${attempt.channel_name ? ` ${attempt.channel_name}` : ''}`

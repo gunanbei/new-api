@@ -312,6 +312,31 @@ func TestMergeInflightTaskDetailDedupesAndOrdersOutOfOrderRetries(t *testing.T) 
 	assert.Equal(t, 2, next.Detail.RetryIndex)
 }
 
+func TestUpdateInflightTaskDetailCreatesMissingRetryAttempt(t *testing.T) {
+	detail := &InflightTaskDetail{
+		RetryIndex:  6,
+		ChannelID:   10,
+		ChannelName: "last",
+		LatestError: "API key is disabled",
+		Attempts: []InflightTaskAttempt{
+			{RetryIndex: 0, ChannelID: 16, Status: InflightTaskStatusFailed, StartedAt: 100, UpdatedAt: 110},
+			{RetryIndex: 1, ChannelID: 13, Status: InflightTaskStatusFailed, StartedAt: 120, UpdatedAt: 130},
+			{RetryIndex: 2, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 140, UpdatedAt: 150},
+			{RetryIndex: 3, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 160, UpdatedAt: 170},
+			{RetryIndex: 4, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 180, UpdatedAt: 190},
+			{RetryIndex: 5, ChannelID: 10, Status: InflightTaskStatusFailed, StartedAt: 200, UpdatedAt: 210},
+		},
+	}
+
+	updateInflightTaskDetail(detail, InflightTaskStatusFailed, 220, 6)
+
+	require.Len(t, detail.Attempts, 7)
+	assert.Equal(t, 6, detail.Attempts[6].RetryIndex)
+	assert.Equal(t, InflightTaskStatusFailed, detail.Attempts[6].Status)
+	assert.Equal(t, "API key is disabled", detail.Attempts[6].Error)
+	assert.Equal(t, 10, detail.Attempts[6].ChannelID)
+}
+
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
 	parent, cancelParent := context.WithCancel(context.Background())
 	cancelParent()

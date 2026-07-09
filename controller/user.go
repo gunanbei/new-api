@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -36,6 +37,33 @@ var (
 	errUserPasswordUnset    = errors.New("user password is not set")
 	errOriginalPasswordFail = errors.New("original password is incorrect")
 )
+
+type imagePlaygroundBootstrapModel struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	Ratio    float64 `json:"ratio"`
+	Disabled bool    `json:"disabled"`
+}
+
+type imagePlaygroundBootstrapGroup struct {
+	Name        string                          `json:"name"`
+	DisplayName string                          `json:"display_name"`
+	Ratio       float64                         `json:"ratio"`
+	Disabled    bool                            `json:"disabled"`
+	Models      []imagePlaygroundBootstrapModel `json:"models"`
+}
+
+type imagePlaygroundBootstrapToken struct {
+	ID                 int                             `json:"id"`
+	Name               string                          `json:"name"`
+	Group              string                          `json:"group"`
+	ModelLimitsEnabled bool                            `json:"model_limits_enabled"`
+	ModelLimits        string                          `json:"model_limits"`
+	MaskedKey          string                          `json:"masked_key"`
+	Disabled           bool                            `json:"disabled"`
+	Groups             []imagePlaygroundBootstrapGroup `json:"groups"`
+}
 
 func Login(c *gin.Context) {
 	if !common.PasswordLoginEnabled {
@@ -649,6 +677,119 @@ func GetUserModels(c *gin.Context) {
 		"data":    models,
 	})
 	return
+}
+
+func GetImagePlaygroundBootstrap(c *gin.Context) {
+	userId := c.GetInt("id")
+	user, err := model.GetUserCache(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	usedQuota, err := model.GetUserUsedQuota(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	groups := service.GetUserUsableGroups(user.Group)
+	tokens, err := model.GetAllUserTokens(userId, 0, 100)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	responseTokens := make([]imagePlaygroundBootstrapToken, 0, len(tokens))
+	var defaults gin.H
+	for _, token := range tokens {
+		if token.Status != common.TokenStatusEnabled {
+			continue
+		}
+
+		group := strings.TrimSpace(token.Group)
+		if group == "" {
+			group = "default"
+		}
+		displayName, groupEnabled := groups[group]
+		models := imagePlaygroundModelsForToken(token, group, groupEnabled)
+		groupDisabled := !groupEnabled || len(models) == 0
+		tokenDisabled := groupDisabled
+
+		if defaults == nil && !tokenDisabled {
+			defaults = gin.H{
+				"token_id":      token.Id,
+				"group":         group,
+				"model":         models[0].Name,
+				"api_mode":      "images",
+				"size":          "1024x1024",
+				"quality":       "auto",
+				"n":             1,
+				"output_format": "png",
+			}
+		}
+
+		responseTokens = append(responseTokens, imagePlaygroundBootstrapToken{
+			ID:                 token.Id,
+			Name:               token.Name,
+			Group:              group,
+			ModelLimitsEnabled: token.ModelLimitsEnabled,
+			ModelLimits:        token.ModelLimits,
+			MaskedKey:          token.GetMaskedKey(),
+			Disabled:           tokenDisabled,
+			Groups: []imagePlaygroundBootstrapGroup{{
+				Name:        group,
+				DisplayName: displayName,
+				Ratio:       service.GetUserGroupRatio(user.Group, group),
+				Disabled:    groupDisabled,
+				Models:      models,
+			}},
+		})
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"user": gin.H{
+			"id":         user.Id,
+			"quota":      user.Quota,
+			"used_quota": usedQuota,
+		},
+		"tokens":   responseTokens,
+		"defaults": defaults,
+		"features": gin.H{
+			"show_quota":              true,
+			"show_estimated_cost":     true,
+			"allow_model_select":      true,
+			"allow_manual_api_config": false,
+		},
+	})
+}
+
+func imagePlaygroundModelsForToken(token *model.Token, group string, groupEnabled bool) []imagePlaygroundBootstrapModel {
+	if !groupEnabled {
+		return []imagePlaygroundBootstrapModel{}
+	}
+
+	limitMap := token.GetModelLimitsMap()
+	models := make([]imagePlaygroundBootstrapModel, 0)
+	seen := make(map[string]bool)
+	for _, modelName := range model.GetGroupEnabledModels(group) {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" || seen[modelName] || !common.IsImageGenerationModel(modelName) {
+			continue
+		}
+		if token.ModelLimitsEnabled && !limitMap[modelName] {
+			continue
+		}
+		seen[modelName] = true
+		ratio, _ := ratio_setting.GetImageRatio(modelName)
+		models = append(models, imagePlaygroundBootstrapModel{
+			ID:       modelName,
+			Name:     modelName,
+			Type:     "image",
+			Ratio:    ratio,
+			Disabled: false,
+		})
+	}
+	return models
 }
 
 func UpdateUser(c *gin.Context) {

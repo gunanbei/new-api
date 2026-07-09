@@ -34,6 +34,24 @@ type userModelsResponse struct {
 	Data    []string `json:"data"`
 }
 
+type imagePlaygroundBootstrapResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		Tokens []struct {
+			ID       int    `json:"id"`
+			Group    string `json:"group"`
+			Disabled bool   `json:"disabled"`
+			Groups   []struct {
+				Name     string `json:"name"`
+				Disabled bool   `json:"disabled"`
+				Models   []struct {
+					Name string `json:"name"`
+				} `json:"models"`
+			} `json:"groups"`
+		} `json:"tokens"`
+	} `json:"data"`
+}
+
 func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -49,7 +67,7 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -165,6 +183,16 @@ func decodeUserModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 	return payload.Data
 }
 
+func decodeImagePlaygroundBootstrapResponse(t *testing.T, recorder *httptest.ResponseRecorder) imagePlaygroundBootstrapResponse {
+	t.Helper()
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload imagePlaygroundBootstrapResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	return payload
+}
+
 func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.Create(&model.User{
@@ -197,6 +225,68 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	GetUserModels(vipContext)
 
 	require.Empty(t, decodeUserModelsResponse(t, vipRecorder))
+}
+
+func TestGetImagePlaygroundBootstrapUsesTokenOwnGroupAndImageModels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:        1003,
+		Username:  "bootstrap-user",
+		Password:  "password",
+		Group:     "default",
+		Status:    common.UserStatusEnabled,
+		Quota:     12345,
+		UsedQuota: 678,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-image-1", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "gpt-image-1", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "gpt-4o", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "gpt-image-1", ChannelId: 1, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Token{
+		{Id: 2001, UserId: 1003, Name: "image-key", Key: "sk-image-key", Status: common.TokenStatusEnabled, Group: "default", ModelLimitsEnabled: true, ModelLimits: "gpt-image-1"},
+		{Id: 2002, UserId: 1003, Name: "disabled-key", Key: "sk-disabled", Status: common.TokenStatusEnabled, Group: "vip", ModelLimitsEnabled: true, ModelLimits: "gpt-4o"},
+		{Id: 2003, UserId: 1003, Name: "off-key", Key: "sk-off", Status: common.TokenStatusDisabled, Group: "default"},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/image-playground/bootstrap", nil)
+	ctx.Set("id", 1003)
+
+	GetImagePlaygroundBootstrap(ctx)
+
+	payload := decodeImagePlaygroundBootstrapResponse(t, recorder)
+	require.Len(t, payload.Data.Tokens, 2)
+
+	tokensByID := map[int]struct {
+		ID       int    `json:"id"`
+		Group    string `json:"group"`
+		Disabled bool   `json:"disabled"`
+		Groups   []struct {
+			Name     string `json:"name"`
+			Disabled bool   `json:"disabled"`
+			Models   []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		} `json:"groups"`
+	}{}
+	for _, token := range payload.Data.Tokens {
+		tokensByID[token.ID] = token
+	}
+
+	imageToken := tokensByID[2001]
+	assert.Equal(t, "default", imageToken.Group)
+	require.Len(t, imageToken.Groups, 1)
+	assert.Equal(t, "default", imageToken.Groups[0].Name)
+	require.Len(t, imageToken.Groups[0].Models, 1)
+	assert.Equal(t, "gpt-image-1", imageToken.Groups[0].Models[0].Name)
+
+	disabledToken := tokensByID[2002]
+	assert.True(t, disabledToken.Disabled)
+	assert.True(t, disabledToken.Groups[0].Disabled)
+	assert.Empty(t, disabledToken.Groups[0].Models)
 }
 
 func TestListModelsIncludesTieredBillingModel(t *testing.T) {

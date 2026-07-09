@@ -12,6 +12,7 @@ type PageInfo struct {
 
 	Total int `json:"total"` // 总条数，后设置
 	Items any `json:"items"` // 数据，后设置
+	Meta  any `json:"meta,omitempty"`
 }
 
 func (p *PageInfo) GetStartIdx() int {
@@ -36,6 +37,10 @@ func (p *PageInfo) SetTotal(total int) {
 
 func (p *PageInfo) SetItems(items any) {
 	p.Items = items
+}
+
+func (p *PageInfo) SetMeta(meta any) {
+	p.Meta = meta
 }
 
 func GetPageQuery(c *gin.Context) *PageInfo {

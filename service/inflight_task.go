@@ -64,6 +64,7 @@ type InflightTask struct {
 	IsStream  bool                `json:"is_stream"`
 	CreatedAt int64               `json:"created_at"`
 	UpdatedAt int64               `json:"updated_at"`
+	HasTrace  bool                `json:"has_trace,omitempty"`
 	Detail    *InflightTaskDetail `json:"detail,omitempty"`
 }
 
@@ -1010,13 +1011,19 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 	if query.Num <= 0 || end > total {
 		end = total
 	}
-	return tasks[query.StartIdx:end], total, nil
+	pageItems := tasks[query.StartIdx:end]
+	if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
+		return nil, 0, err
+	}
+	return pageItems, total, nil
 }
 
 type InflightTaskStats struct {
-	UserCount int64 `json:"user_count"`
-	ItemCount int64 `json:"item_count"`
-	TotalSize int64 `json:"total_size"`
+	UserCount      int64 `json:"user_count"`
+	ItemCount      int64 `json:"item_count"`
+	TotalSize      int64 `json:"total_size"`
+	TraceCount     int64 `json:"trace_count"`
+	TraceTotalSize int64 `json:"trace_total_size"`
 }
 
 func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
@@ -1037,10 +1044,15 @@ func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
 				stats.UserCount++
 			} else if strings.HasPrefix(key, inflightTaskItemKeyPrefix) {
 				stats.ItemCount++
+			} else if strings.HasPrefix(key, inflightTaskTraceKeyPrefix) {
+				stats.TraceCount++
 			}
 			size, err := client.MemoryUsage(ctx, key).Result()
 			if err == nil {
 				stats.TotalSize += size
+				if strings.HasPrefix(key, inflightTaskTraceKeyPrefix) {
+					stats.TraceTotalSize += size
+				}
 			}
 		}
 		if cursor == 0 {
@@ -1109,6 +1121,7 @@ func DeleteTerminalInflightTasksBefore(ctx context.Context, targetTimestamp int6
 					if isInflightTaskTerminalStatus(task.Status) && task.UpdatedAt <= targetTimestamp {
 						removeIDs = append(removeIDs, requestIDs[i])
 						removeKeys = append(removeKeys, keys[i])
+						removeKeys = append(removeKeys, inflightTaskTraceKey(requestIDs[i]))
 					}
 				}
 				if len(removeIDs) == 0 {

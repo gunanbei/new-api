@@ -53,7 +53,51 @@ func GetUserInflightTasks(c *gin.Context) {
 
 	pageInfo.SetTotal(total)
 	pageInfo.SetItems(tasks)
+	pageInfo.SetMeta(service.InflightTaskListMeta{
+		TraceMenuVisible: service.InflightTaskTraceMenuVisible(),
+	})
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": pageInfo})
+}
+
+func GetUserInflightTaskTrace(c *gin.Context) {
+	requestID := c.Param("request_id")
+	trace, err := service.GetInflightTaskTrace(c.Request.Context(), c.GetInt("id"), requestID)
+	if err != nil {
+		switch {
+		case service.IsInflightTaskUnavailable(err):
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+		case service.IsInflightTaskTraceNotFound(err):
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"message": "Debug log not found",
+			})
+		case service.IsInflightTaskTraceForbidden(err):
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+		case service.IsInflightTaskTraceInProgress(err):
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false,
+				"message": "Debug log is not available for in-progress requests",
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    trace,
+	})
 }
 func GetInflightTaskStats(c *gin.Context) {
 	stats, err := service.GetInflightTaskStats(c.Request.Context())

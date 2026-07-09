@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
-import { Eye, GitBranch, RefreshCw } from 'lucide-react'
+import { Eye, GitBranch, RefreshCw, ScrollText } from 'lucide-react'
 import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -72,6 +72,11 @@ import { cn } from '@/lib/utils'
 
 import { getDefaultTimeRange } from '../lib/utils'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import {
+  InflightDetailRow,
+  InflightDetailSection,
+} from './inflight-detail-primitives'
+import { InflightTaskTraceDialog } from './inflight-task-trace-dialog'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -128,6 +133,7 @@ type InflightTask = {
   is_stream: boolean
   created_at: number
   updated_at: number
+  has_trace?: boolean
   detail?: InflightTaskDetail
 }
 
@@ -139,6 +145,9 @@ type InflightTasksResponse = {
     total: number
     page: number
     page_size: number
+    meta?: {
+      trace_menu_visible: boolean
+    }
   }
 }
 
@@ -269,6 +278,7 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
     kind: 'image',
     model_name: 'gpt-image-1',
     is_stream: false,
+    has_trace: true,
     created_at: 1751905000,
     updated_at: 1751905016,
     detail: {
@@ -763,61 +773,10 @@ function getMockInflightTasksResponse(params: Record<string, unknown>): NonNulla
     total: filtered.length,
     page,
     page_size: pageSize,
+    meta: {
+      trace_menu_visible: true,
+    },
   }
-}
-
-function InflightDetailRow(props: {
-  label: React.ReactNode
-  value: React.ReactNode
-  mono?: boolean
-  muted?: boolean
-}) {
-  return (
-    <div className='grid min-w-0 grid-cols-[5.25rem_minmax(0,1fr)] gap-2 text-sm sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-3'>
-      <span className='text-muted-foreground min-w-0 text-xs'>
-        {props.label}
-      </span>
-      <span
-        className={cn(
-          'max-w-full min-w-0 text-xs break-all sm:wrap-break-word',
-          props.mono && 'font-mono',
-          props.muted && 'text-muted-foreground'
-        )}
-      >
-        {props.value}
-      </span>
-    </div>
-  )
-}
-
-function InflightDetailSection(props: {
-  label: string
-  children: React.ReactNode
-  variant?: 'default' | 'danger'
-}) {
-  const isDanger = props.variant === 'danger'
-  return (
-    <div className='min-w-0 space-y-1.5'>
-      <div
-        className={cn(
-          'text-xs font-semibold',
-          isDanger && 'text-red-500'
-        )}
-      >
-        {props.label}
-      </div>
-      <div
-        className={cn(
-          'min-w-0 space-y-1 overflow-hidden rounded-md border p-2.5 max-sm:p-2',
-          isDanger
-            ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
-            : 'bg-muted/30'
-        )}
-      >
-        {props.children}
-      </div>
-    </div>
-  )
 }
 
 function getChannelDisplay(task: InflightTask) {
@@ -1318,10 +1277,18 @@ function InflightTaskDetails(props: {
 
 function useInflightTaskColumns(props: {
   onOpenDetails: (task: InflightTask) => void
+  onOpenTrace: (task: InflightTask) => void
+  traceMenuVisible: boolean
   isAdmin: boolean
 }): ColumnDef<InflightTask>[] {
   const { t } = useTranslation()
-  const { isAdmin, onOpenDetails } = props
+  const { isAdmin, onOpenDetails, onOpenTrace, traceMenuVisible } = props
+
+  const showTraceMenu = useCallback(
+    (task: InflightTask) =>
+      traceMenuVisible && task.has_trace === true && isInflightTaskTerminal(task),
+    [traceMenuVisible]
+  )
 
   return useMemo(
     () => [
@@ -1460,12 +1427,18 @@ function useInflightTaskColumns(props: {
                 <Eye />
                 {t('Details')}
               </DropdownMenuItem>
+              {showTraceMenu(row.original) ? (
+                <DropdownMenuItem onClick={() => onOpenTrace(row.original)}>
+                  <ScrollText />
+                  {t('Debug Log')}
+                </DropdownMenuItem>
+              ) : null}
             </DataTableRowActionMenu>
           </div>
         ),
       },
     ],
-    [isAdmin, onOpenDetails, t]
+    [isAdmin, onOpenDetails, onOpenTrace, showTraceMenu, t]
   )
 }
 
@@ -1783,6 +1756,7 @@ export function InflightTasksTab() {
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
   const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
+  const [traceTask, setTraceTask] = useState<InflightTask | null>(null)
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -1800,6 +1774,10 @@ export function InflightTasksTab() {
     setDetailsTask(task)
   }, [])
 
+  const onOpenTrace = useCallback((task: InflightTask) => {
+    setTraceTask(task)
+  }, [])
+
   const detailFetchParams = useMemo(
     () =>
       buildParams({
@@ -1809,11 +1787,6 @@ export function InflightTasksTab() {
       }),
     [searchParams]
   )
-
-  const columns = useInflightTaskColumns({
-    onOpenDetails,
-    isAdmin,
-  })
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: [
@@ -1857,6 +1830,13 @@ export function InflightTasksTab() {
     placeholderData: (previousData) => previousData,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
+  })
+
+  const columns = useInflightTaskColumns({
+    onOpenDetails,
+    onOpenTrace,
+    traceMenuVisible: data?.meta?.trace_menu_visible === true,
+    isAdmin,
   })
 
   const { table } = useDataTable({
@@ -1922,6 +1902,14 @@ export function InflightTasksTab() {
                 <Eye />
                 {t('Details')}
               </ContextMenuItem>
+              {data?.meta?.trace_menu_visible === true &&
+              row.original.has_trace === true &&
+              isInflightTaskTerminal(row.original) ? (
+                <ContextMenuItem onClick={() => onOpenTrace(row.original)}>
+                  <ScrollText />
+                  {t('Debug Log')}
+                </ContextMenuItem>
+              ) : null}
             </ContextMenuContent>
           </ContextMenu>
         )}
@@ -1936,6 +1924,23 @@ export function InflightTasksTab() {
         isAdmin={isAdmin}
         fetchParams={detailFetchParams}
         useMock={searchParams.mock === 'inflight'}
+      />
+      <InflightTaskTraceDialog
+        requestId={traceTask?.request_id ?? null}
+        open={traceTask !== null}
+        onOpenChange={(open) => {
+          if (!open) setTraceTask(null)
+        }}
+        useMock={searchParams.mock === 'inflight'}
+        summary={
+          traceTask
+            ? {
+                model_name: traceTask.model_name,
+                status: traceTask.status,
+                is_stream: traceTask.is_stream,
+              }
+            : undefined
+        }
       />
     </>
   )

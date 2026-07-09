@@ -50,6 +50,10 @@ func InitOptionMap() {
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
 	common.OptionMap["InflightTaskCleanupRule"] = "2"
 	common.OptionMap["InflightTaskCleanupIntervalMinutes"] = "10"
+	common.OptionMap["InflightTaskTraceEnabled"] = "false"
+	common.OptionMap["InflightTaskTraceMenuVisible"] = "false"
+	common.OptionMap["InflightTaskTraceMaxRequestBytes"] = "0"
+	common.OptionMap["InflightTaskTraceMaxResponseBytes"] = "0"
 	common.OptionMap["DisplayInCurrencyEnabled"] = strconv.FormatBool(common.DisplayInCurrencyEnabled)
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)

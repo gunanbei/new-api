@@ -83,6 +83,10 @@ const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
   InflightTaskCleanupRule: z.number().int().min(1).max(2),
   InflightTaskCleanupIntervalMinutes: z.number().int().min(1).max(1440),
+  InflightTaskTraceEnabled: z.boolean(),
+  InflightTaskTraceMenuVisible: z.boolean(),
+  InflightTaskTraceMaxRequestBytes: z.number().int().min(0),
+  InflightTaskTraceMaxResponseBytes: z.number().int().min(0),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
@@ -91,6 +95,10 @@ type LogSettingsSectionProps = {
   defaultEnabled: boolean
   defaultInflightTaskCleanupRule: number
   defaultInflightTaskCleanupIntervalMinutes: number
+  defaultInflightTaskTraceEnabled: boolean
+  defaultInflightTaskTraceMenuVisible: boolean
+  defaultInflightTaskTraceMaxRequestBytes: number
+  defaultInflightTaskTraceMaxResponseBytes: number
 }
 
 type ServerLogInfo = {
@@ -106,6 +114,8 @@ type InflightTaskStats = {
   user_count: number
   item_count: number
   total_size: number
+  trace_count?: number
+  trace_total_size?: number
 }
 
 const HOURS_IN_DAY = 24
@@ -154,6 +164,10 @@ export function LogSettingsSection({
   defaultEnabled,
   defaultInflightTaskCleanupRule,
   defaultInflightTaskCleanupIntervalMinutes,
+  defaultInflightTaskTraceEnabled,
+  defaultInflightTaskTraceMenuVisible,
+  defaultInflightTaskTraceMaxRequestBytes,
+  defaultInflightTaskTraceMaxResponseBytes,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -164,6 +178,11 @@ export function LogSettingsSection({
       InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
       InflightTaskCleanupIntervalMinutes:
         defaultInflightTaskCleanupIntervalMinutes,
+      InflightTaskTraceEnabled: defaultInflightTaskTraceEnabled,
+      InflightTaskTraceMenuVisible: defaultInflightTaskTraceMenuVisible,
+      InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
+      InflightTaskTraceMaxResponseBytes:
+        defaultInflightTaskTraceMaxResponseBytes,
     },
   })
 
@@ -197,11 +216,20 @@ export function LogSettingsSection({
       InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
       InflightTaskCleanupIntervalMinutes:
         defaultInflightTaskCleanupIntervalMinutes,
+      InflightTaskTraceEnabled: defaultInflightTaskTraceEnabled,
+      InflightTaskTraceMenuVisible: defaultInflightTaskTraceMenuVisible,
+      InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
+      InflightTaskTraceMaxResponseBytes:
+        defaultInflightTaskTraceMaxResponseBytes,
     })
   }, [
     defaultEnabled,
     defaultInflightTaskCleanupIntervalMinutes,
     defaultInflightTaskCleanupRule,
+    defaultInflightTaskTraceEnabled,
+    defaultInflightTaskTraceMaxRequestBytes,
+    defaultInflightTaskTraceMaxResponseBytes,
+    defaultInflightTaskTraceMenuVisible,
     form,
   ])
 
@@ -316,6 +344,39 @@ export function LogSettingsSection({
       await updateOption.mutateAsync({
         key: 'InflightTaskCleanupIntervalMinutes',
         value: values.InflightTaskCleanupIntervalMinutes,
+      })
+    }
+    if (values.InflightTaskTraceEnabled !== defaultInflightTaskTraceEnabled) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskTraceEnabled',
+        value: values.InflightTaskTraceEnabled,
+      })
+    }
+    if (
+      values.InflightTaskTraceMenuVisible !==
+      defaultInflightTaskTraceMenuVisible
+    ) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskTraceMenuVisible',
+        value: values.InflightTaskTraceMenuVisible,
+      })
+    }
+    if (
+      values.InflightTaskTraceMaxRequestBytes !==
+      defaultInflightTaskTraceMaxRequestBytes
+    ) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskTraceMaxRequestBytes',
+        value: values.InflightTaskTraceMaxRequestBytes,
+      })
+    }
+    if (
+      values.InflightTaskTraceMaxResponseBytes !==
+      defaultInflightTaskTraceMaxResponseBytes
+    ) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskTraceMaxResponseBytes',
+        value: values.InflightTaskTraceMaxResponseBytes,
       })
     }
   }
@@ -495,6 +556,107 @@ export function LogSettingsSection({
               </SettingsControlGroup>
             )}
           />
+          <Separator />
+          <SettingsControlGroup className='grid gap-3'>
+            <div>
+              <h4 className='text-sm font-medium'>
+                {t('Inflight Debug Log')}
+              </h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Inflight debug logs may contain sensitive data and increase Redis usage.'
+                )}
+              </p>
+            </div>
+            <FormField
+              control={form.control}
+              name='InflightTaskTraceEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Record inflight debug logs')}</FormLabel>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='InflightTaskTraceMenuVisible'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Show debug log menu item')}</FormLabel>
+                    <FormDescription>
+                      {t('Debug log menu requires recording to be enabled.')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={!form.watch('InflightTaskTraceEnabled')}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='InflightTaskTraceMaxRequestBytes'
+              render={({ field }) => (
+                <SettingsControlGroup className='grid gap-2'>
+                  <FormLabel>
+                    {t('Max inflight debug log request size (bytes)')}
+                  </FormLabel>
+                  <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      className='w-[200px]'
+                      {...field}
+                      onChange={(event) =>
+                        field.onChange(event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </SettingsControlGroup>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='InflightTaskTraceMaxResponseBytes'
+              render={({ field }) => (
+                <SettingsControlGroup className='grid gap-2'>
+                  <FormLabel>
+                    {t('Max inflight debug log response size (bytes)')}
+                  </FormLabel>
+                  <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={0}
+                      className='w-[200px]'
+                      {...field}
+                      onChange={(event) =>
+                        field.onChange(event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </SettingsControlGroup>
+              )}
+            />
+          </SettingsControlGroup>
           <SettingsControlGroup className='grid gap-2'>
             <FormLabel>{t('Current inflight log usage')}</FormLabel>
             <FormDescription>
@@ -523,6 +685,22 @@ export function LogSettingsSection({
                 </div>
                 <div className='font-medium'>
                   {formatBytes(inflightTaskStats?.total_size ?? 0)}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Inflight debug log entries')}
+                </div>
+                <div className='font-medium'>
+                  {inflightTaskStats?.trace_count ?? '-'}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Total inflight debug log size')}
+                </div>
+                <div className='font-medium'>
+                  {formatBytes(inflightTaskStats?.trace_total_size ?? 0)}
                 </div>
               </div>
             </div>

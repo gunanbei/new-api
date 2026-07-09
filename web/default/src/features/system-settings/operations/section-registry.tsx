@@ -104,6 +104,18 @@ const OPERATIONS_SECTIONS = [
         defaultInflightTaskCleanupIntervalMinutes={
           Number(settings.InflightTaskCleanupIntervalMinutes) || 10
         }
+        defaultInflightTaskTraceEnabled={Boolean(
+          settings.InflightTaskTraceEnabled
+        )}
+        defaultInflightTaskTraceMenuVisible={Boolean(
+          settings.InflightTaskTraceMenuVisible
+        )}
+        defaultInflightTaskTraceMaxRequestBytes={
+          Number(settings.InflightTaskTraceMaxRequestBytes) || 0
+        }
+        defaultInflightTaskTraceMaxResponseBytes={
+          Number(settings.InflightTaskTraceMaxResponseBytes) || 0
+        }
       />
     ),
   },

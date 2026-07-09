@@ -360,6 +360,10 @@ export type OperationsSettings = {
   LogConsumeEnabled: boolean
   InflightTaskCleanupRule: number
   InflightTaskCleanupIntervalMinutes: number
+  InflightTaskTraceEnabled: boolean
+  InflightTaskTraceMenuVisible: boolean
+  InflightTaskTraceMaxRequestBytes: number
+  InflightTaskTraceMaxResponseBytes: number
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

@@ -72,8 +72,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
 	var (
-		newAPIError *types.NewAPIError
-		ws          *websocket.Conn
+		newAPIError  *types.NewAPIError
+		ws           *websocket.Conn
+		relayInfo    *relaycommon.RelayInfo
+		traceCapture *service.InflightTraceCapture
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -104,6 +106,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				})
 			}
 		}
+		if traceCapture != nil && relayInfo != nil {
+			finalStatus := service.ResolveInflightTraceFinalStatus(relayInfo, newAPIError)
+			service.PersistInflightTaskTraceAsync(c.Request.Context(), traceCapture, relayInfo, finalStatus)
+		}
 	}()
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
@@ -117,11 +123,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfo, err = relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	traceCapture = service.StartInflightTraceCapture(c, relayInfo, relayFormat)
 	service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusAccepted)
 	if relayInfo.IsStream {
 		relayInfo.OnFirstResponse = func() {

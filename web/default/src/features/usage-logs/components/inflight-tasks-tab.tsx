@@ -91,6 +91,7 @@ import {
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 const inflightColumnVisibilityStorageKey = 'usage-logs:inflight:column-visibility'
+const inflightListLiveRefreshMs = 5000
 
 type InflightTaskStatusStep = {
   status: string
@@ -1501,7 +1502,8 @@ function useInflightTaskColumns(props: {
 function InflightFilterBar<TData>(props: {
   table: ReturnType<typeof useDataTable<TData>>['table']
   isFetching: boolean
-  refetch: () => void
+  liveRefresh: boolean
+  onToggleLiveRefresh: () => void
   isAdmin: boolean
 }) {
   const { t } = useTranslation()
@@ -1794,24 +1796,32 @@ function InflightFilterBar<TData>(props: {
       hasActiveFilters={hasActiveFilters}
       onReset={handleReset}
       onSearch={handleApply}
-      searchLoading={props.isFetching}
+      searchLoading={props.isFetching && !props.liveRefresh}
       actionStart={
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 type='button'
-                variant='outline'
+                variant={props.liveRefresh ? 'secondary' : 'outline'}
                 size='icon'
-                onClick={props.refetch}
-                disabled={props.isFetching}
-                aria-label={t('Refresh')}
+                onClick={props.onToggleLiveRefresh}
+                aria-pressed={props.liveRefresh}
+                aria-label={
+                  props.liveRefresh
+                    ? t('Stop live refresh')
+                    : t('Start live refresh')
+                }
               />
             }
           >
-            <RefreshCw className={cn('size-4', props.isFetching && 'animate-spin')} />
+            <RefreshCw
+              className={cn('size-4', props.liveRefresh && 'animate-spin')}
+            />
           </TooltipTrigger>
-          <TooltipContent>{t('Refresh')}</TooltipContent>
+          <TooltipContent>
+            {props.liveRefresh ? t('Stop live refresh') : t('Start live refresh')}
+          </TooltipContent>
         </Tooltip>
       }
     />
@@ -1825,6 +1835,7 @@ export function InflightTasksTab() {
   const searchParams = route.useSearch()
   const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
   const [traceTask, setTraceTask] = useState<InflightTask | null>(null)
+  const [liveRefresh, setLiveRefresh] = useState(false)
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -1898,7 +1909,19 @@ export function InflightTasksTab() {
     placeholderData: (previousData) => previousData,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
+    refetchInterval: liveRefresh ? inflightListLiveRefreshMs : false,
+    refetchIntervalInBackground: false,
   })
+
+  const handleToggleLiveRefresh = useCallback(() => {
+    setLiveRefresh((enabled) => {
+      const next = !enabled
+      if (next) {
+        void refetch()
+      }
+      return next
+    })
+  }, [refetch])
 
   const columns = useInflightTaskColumns({
     onOpenDetails,
@@ -1941,7 +1964,8 @@ export function InflightTasksTab() {
           <InflightFilterBar
             table={table}
             isFetching={isFetching}
-            refetch={() => void refetch()}
+            liveRefresh={liveRefresh}
+            onToggleLiveRefresh={handleToggleLiveRefresh}
             isAdmin={isAdmin}
           />
         }

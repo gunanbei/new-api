@@ -205,16 +205,46 @@ func TestShouldPersistInflightTaskUpdateAllowsRetryAdvance(t *testing.T) {
 		Detail: &InflightTaskDetail{RetryIndex: 2},
 	}
 
-	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 1, false, next))
-	assert.False(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 2, false, next))
+	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 1, false, next, nil))
+	assert.False(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 2, false, next, nil))
 	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 1, false, &InflightTask{
 		Status: InflightTaskStatusUpstreamPending,
 		Detail: &InflightTaskDetail{RetryIndex: 2},
-	}))
+	}, nil))
 	assert.False(t, shouldPersistInflightTaskUpdate(InflightTaskStatusUpstreamPending, 2, false, &InflightTask{
 		Status: InflightTaskStatusRouting,
 		Detail: &InflightTaskDetail{RetryIndex: 2},
-	}))
+	}, nil))
+}
+
+func TestShouldPersistInflightTaskUpdateBackfillsMissingAttemptSlot(t *testing.T) {
+	storedDetail := &InflightTaskDetail{
+		RetryIndex: 2,
+		Attempts: []InflightTaskAttempt{
+			{RetryIndex: 1, ChannelID: 16, Status: InflightTaskStatusFailed},
+			{RetryIndex: 2, ChannelID: 10, Status: InflightTaskStatusFailed},
+		},
+		ChannelChain: []InflightTaskChannelAttempt{
+			{RetryIndex: 1, ChannelID: 16, Status: InflightTaskStatusFailed},
+			{RetryIndex: 2, ChannelID: 10, Status: InflightTaskStatusFailed},
+		},
+	}
+	next := &InflightTask{
+		Status: InflightTaskStatusUpstreamPending,
+		Detail: &InflightTaskDetail{
+			RetryIndex: 0,
+			ChannelID:  16,
+			ChannelName: "first",
+			ChannelChain: []InflightTaskChannelAttempt{{
+				RetryIndex: 0, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusUpstreamPending,
+			}},
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex: 0, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusUpstreamPending,
+			}},
+		},
+	}
+
+	assert.True(t, shouldPersistInflightTaskUpdate(InflightTaskStatusRouting, 2, false, next, storedDetail))
 }
 
 func TestMergeInflightTaskDetailFinalizesPreviousAttemptOnRetryAdvance(t *testing.T) {
@@ -310,6 +340,32 @@ func TestMergeInflightTaskDetailDedupesAndOrdersOutOfOrderRetries(t *testing.T) 
 	assert.Equal(t, InflightTaskStatusFailed, next.Detail.Attempts[1].Status)
 	// The displayed current retry must not regress below the furthest attempt.
 	assert.Equal(t, 2, next.Detail.RetryIndex)
+}
+
+func TestEnsureInflightAttemptCoverageBackfillsMissingInitialAttempt(t *testing.T) {
+	detail := &InflightTaskDetail{
+		RetryIndex:  2,
+		ChannelID:   10,
+		ChannelName: "last",
+		LatestError: "API key is disabled",
+		ChannelChain: []InflightTaskChannelAttempt{
+			{RetryIndex: 0, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusFailed, StartedAt: 100, UpdatedAt: 110},
+			{RetryIndex: 1, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusFailed, StartedAt: 110, UpdatedAt: 120},
+			{RetryIndex: 2, ChannelID: 10, ChannelName: "last", Status: InflightTaskStatusFailed, StartedAt: 130, UpdatedAt: 140, Error: "API key is disabled"},
+		},
+		Attempts: []InflightTaskAttempt{
+			{RetryIndex: 1, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusFailed, StartedAt: 110, UpdatedAt: 120},
+			{RetryIndex: 2, ChannelID: 10, ChannelName: "last", Status: InflightTaskStatusFailed, StartedAt: 130, UpdatedAt: 140, Error: "API key is disabled"},
+		},
+	}
+
+	ensureInflightAttemptCoverage(detail, InflightTaskStatusFailed, 140)
+
+	require.Len(t, detail.Attempts, 3)
+	assert.Equal(t, 0, detail.Attempts[0].RetryIndex)
+	assert.Equal(t, 1, detail.Attempts[1].RetryIndex)
+	assert.Equal(t, 2, detail.Attempts[2].RetryIndex)
+	assert.Equal(t, "API key is disabled", detail.Attempts[2].Error)
 }
 
 func TestUpdateInflightTaskDetailCreatesMissingRetryAttempt(t *testing.T) {

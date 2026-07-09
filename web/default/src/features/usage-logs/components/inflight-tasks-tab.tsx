@@ -432,12 +432,13 @@ function hasInflightRetries(task: InflightTask) {
 
 function getAttemptLabel(
   attempt: InflightTaskAttempt,
+  task: InflightTask,
   t: (key: string, options?: Record<string, unknown>) => string
 ) {
-  if (attempt.retry_index <= 0) {
-    return t('Initial Attempt')
-  }
-  return t('Retry {{count}}', { count: attempt.retry_index })
+  return t('Attempt {{current}} of {{total}}', {
+    current: attempt.retry_index + 1,
+    total: getAttemptCount(task),
+  })
 }
 
 function isFinalFailure(task: InflightTask) {
@@ -521,6 +522,71 @@ function dedupeAndSortAttempts(attempts: InflightTaskAttempt[]): InflightTaskAtt
   )
 }
 
+function attemptFromChannel(
+  attempt: InflightTaskChannelAttempt,
+  task: InflightTask
+): InflightTaskAttempt {
+  return {
+    retry_index: attempt.retry_index,
+    channel_id: attempt.channel_id,
+    channel_name: attempt.channel_name,
+    status: attempt.status,
+    error: attempt.error,
+    started_at: attempt.started_at,
+    updated_at: attempt.updated_at,
+    timeline:
+      attempt.retry_index === getRetryIndex(task)
+        ? (task.detail?.timeline ?? [])
+        : [],
+  }
+}
+
+function fillMissingInflightAttempts(
+  task: InflightTask,
+  resolved: InflightTaskAttempt[]
+): InflightTaskAttempt[] {
+  const retryIndex = getRetryIndex(task)
+  const byRetry = new Map(
+    resolved.map((attempt) => [attempt.retry_index, attempt] as const)
+  )
+
+  for (const chain of task.detail?.channel_chain ?? []) {
+    if (!byRetry.has(chain.retry_index)) {
+      byRetry.set(chain.retry_index, attemptFromChannel(chain, task))
+    }
+  }
+
+  for (let index = 0; index <= retryIndex; index += 1) {
+    if (byRetry.has(index)) {
+      continue
+    }
+    const chain = task.detail?.channel_chain?.find(
+      (attempt) => attempt.retry_index === index
+    )
+    if (chain) {
+      byRetry.set(index, attemptFromChannel(chain, task))
+      continue
+    }
+    if (
+      index === retryIndex &&
+      (task.detail?.channel_id || task.detail?.channel_name)
+    ) {
+      byRetry.set(index, {
+        retry_index: index,
+        channel_id: task.detail.channel_id,
+        channel_name: task.detail.channel_name,
+        status: task.status,
+        error: task.detail.latest_error,
+        started_at: task.detail.timeline?.[0]?.started_at ?? task.created_at,
+        updated_at: task.updated_at,
+        timeline: task.detail.timeline,
+      })
+    }
+  }
+
+  return dedupeAndSortAttempts(Array.from(byRetry.values()))
+}
+
 function getAttempts(task: InflightTask): InflightTaskAttempt[] {
   const attempts = task.detail?.attempts ?? []
   let resolved: InflightTaskAttempt[]
@@ -531,45 +597,11 @@ function getAttempts(task: InflightTask): InflightTaskAttempt[] {
     if (chain.length === 0) {
       resolved = []
     } else {
-      resolved = dedupeAndSortAttempts(
-        chain.map((attempt) => ({
-          retry_index: attempt.retry_index,
-          channel_id: attempt.channel_id,
-          channel_name: attempt.channel_name,
-          status: attempt.status,
-          error: attempt.error,
-          started_at: attempt.started_at,
-          updated_at: attempt.updated_at,
-          timeline:
-            attempt.retry_index === getRetryIndex(task)
-              ? (task.detail?.timeline ?? [])
-              : [],
-        }))
-      )
+      resolved = dedupeAndSortAttempts(chain.map((attempt) => attemptFromChannel(attempt, task)))
     }
   }
 
-  const retryIndex = getRetryIndex(task)
-  if (
-    resolved.some((attempt) => attempt.retry_index === retryIndex) ||
-    (!task.detail?.channel_id && !task.detail?.channel_name)
-  ) {
-    return resolved
-  }
-
-  return dedupeAndSortAttempts([
-    ...resolved,
-    {
-      retry_index: retryIndex,
-      channel_id: task.detail.channel_id,
-      channel_name: task.detail.channel_name,
-      status: task.status,
-      error: task.detail.latest_error,
-      started_at: task.detail.timeline?.[0]?.started_at ?? task.created_at,
-      updated_at: task.updated_at,
-      timeline: task.detail.timeline,
-    },
-  ])
+  return fillMissingInflightAttempts(task, resolved)
 }
 
 function getTimelineAccentClass(status: string) {
@@ -601,9 +633,10 @@ function shouldAttemptDefaultOpen(attempts: InflightTaskAttempt[], retryIndex: n
 
 function getAttemptSummary(
   attempt: InflightTaskAttempt,
+  task: InflightTask,
   t: (key: string, options?: Record<string, unknown>) => string
 ) {
-  const summary = [getAttemptLabel(attempt, t)]
+  const summary = [getAttemptLabel(attempt, task, t)]
   if (attempt.channel_name) {
     summary.push(attempt.channel_name)
   }
@@ -962,11 +995,11 @@ function InflightTaskDetails(props: {
           label={t('Current Stage')}
           value={t(statusLabel[currentStage] || currentStage)}
         />
-        {getRetryIndex(props.task) > 0 ? (
+        {hasInflightRetries(props.task) ? (
           <>
             <InflightDetailRow
-              label={t('Current Retry')}
-              value={String(getRetryIndex(props.task))}
+              label={t('Current Attempt')}
+              value={String(getRetryIndex(props.task) + 1)}
               mono
             />
             <InflightDetailRow
@@ -1084,14 +1117,14 @@ function InflightTaskDetails(props: {
                       <button
                         type='button'
                         className='flex w-full items-start justify-between gap-3 p-3 text-left'
-                        aria-label={getAttemptSummary(attempt, t)}
+                        aria-label={getAttemptSummary(attempt, props.task, t)}
                       />
                     }
                   >
                     <div className='flex min-w-0 flex-1 flex-col gap-2'>
                       <div className='flex flex-wrap items-center gap-2'>
                         <StatusBadge
-                          label={getAttemptLabel(attempt, t)}
+                          label={getAttemptLabel(attempt, props.task, t)}
                           variant='neutral'
                           size='sm'
                           copyable={false}

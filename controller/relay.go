@@ -196,7 +196,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
-		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting)
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
@@ -205,6 +204,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting)
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
@@ -243,6 +243,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusFailed)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")

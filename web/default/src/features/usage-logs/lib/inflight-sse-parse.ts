@@ -89,6 +89,19 @@ function extractOpenAi(parsed: unknown): string {
   if (type === 'response.output_text.delta' && typeof record.delta === 'string') {
     return record.delta
   }
+  if (
+    type === 'image_generation.partial_image' ||
+    type === 'image_generation.completed'
+  ) {
+    if (typeof record.url === 'string' && record.url.trim()) {
+      return record.url
+    }
+    if (typeof record.b64_json === 'string' && record.b64_json.length > 0) {
+      const kb = (record.b64_json.length / 1024).toFixed(1)
+      return `[image payload: ${kb} KB]`
+    }
+    return `[${type}]`
+  }
   const parts = [
     extractWithJsonPath(parsed, '$.choices[0].delta.content'),
     extractWithJsonPath(parsed, '$.choices[0].delta.reasoning_content'),

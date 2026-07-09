@@ -41,6 +41,19 @@ describe('parseSseTrace', () => {
     assert.equal(result.events[0]?.extracted, 'Hi')
   })
 
+  test('summarizes image stream payloads without dumping base64', () => {
+    const body = [
+      'data: {"type":"image_generation.partial_image","b64_json":"' +
+        'a'.repeat(120) +
+        '"}',
+      '',
+    ].join('\n')
+
+    const result = parseSseTrace(body, 'openai', '')
+    assert.match(result.concatenated, /\[image payload:/)
+    assert.doesNotMatch(result.concatenated, /a{120}/)
+  })
+
   test('extracts OpenAI Responses API output text deltas', () => {
     const body = [
       'data: {"type":"response.output_text.delta","delta":"hello"}',

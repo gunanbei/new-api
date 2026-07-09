@@ -30,6 +30,7 @@ const (
 	inflightTaskTraceMaxRequestBytesOptionKey    = "InflightTaskTraceMaxRequestBytes"
 	inflightTaskTraceMaxResponseBytesOptionKey   = "InflightTaskTraceMaxResponseBytes"
 	inflightTraceFlushInterval                   = 2 * time.Second
+	inflightTraceFlushMinBytes                   = 64 * 1024
 )
 
 var sensitiveTraceHeaderNames = map[string]struct{}{
@@ -143,7 +144,7 @@ func (w *traceResponseWriter) capture(chunk []byte) {
 	}
 	_, _ = w.buf.Write(chunk)
 	if w.owner != nil {
-		w.owner.scheduleTraceFlush()
+		w.owner.noteResponseCapture(len(chunk))
 	}
 }
 
@@ -161,6 +162,7 @@ type InflightTraceCapture struct {
 	createdAt      int64
 	flushMu        sync.Mutex
 	lastFlushedAt  time.Time
+	bytesSinceFlush int64
 }
 
 func InflightTaskTraceEnabled() bool {
@@ -298,16 +300,23 @@ func StartInflightTraceCapture(c *gin.Context, info *relaycommon.RelayInfo, rela
 	return capture
 }
 
-func (capture *InflightTraceCapture) scheduleTraceFlush() {
+func (capture *InflightTraceCapture) noteResponseCapture(n int) {
 	if capture == nil {
 		return
 	}
 	capture.flushMu.Lock()
 	defer capture.flushMu.Unlock()
+	if n > 0 {
+		capture.bytesSinceFlush += int64(n)
+	}
 	now := time.Now()
-	if !capture.lastFlushedAt.IsZero() && now.Sub(capture.lastFlushedAt) < inflightTraceFlushInterval {
+	shouldFlush := capture.bytesSinceFlush >= inflightTraceFlushMinBytes ||
+		capture.lastFlushedAt.IsZero() ||
+		now.Sub(capture.lastFlushedAt) >= inflightTraceFlushInterval
+	if !shouldFlush {
 		return
 	}
+	capture.bytesSinceFlush = 0
 	capture.lastFlushedAt = now
 	flushInflightTraceSnapshotAsync(capture)
 }

@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { Download, Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -59,6 +59,12 @@ import type {
   InflightTaskTrace,
   InflightTraceHTTPPart,
 } from '../types/inflight-trace'
+import {
+  formatJsonText,
+  formatTraceJsonForDisplay,
+  isHeavyTraceJsonBody,
+  shouldUseInstantTraceBodyRender,
+} from '../lib/inflight-trace-body-display'
 import {
   formatSseEventsForCopy,
   parseSseTrace,
@@ -201,14 +207,6 @@ function isBinaryContentType(contentType?: string) {
   )
 }
 
-function formatJsonText(text: string) {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2)
-  } catch {
-    return text
-  }
-}
-
 function buildHttpLine(part?: InflightTraceHTTPPart, response = false) {
   if (!part) return '-'
   if (response) {
@@ -286,27 +284,56 @@ function TraceBodyPanel(props: {
   truncated?: boolean
   filenameBase: string
   bodyLabel: string
+  liveUpdate?: boolean
+  traceKind?: string
 }) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
-  const [viewMode, setViewMode] = useState<BodyViewMode>('formatted')
-  const [sseViewMode, setSseViewMode] = useState<SseViewMode>('raw')
-  const [sseStrategy, setSseStrategy] = useState<SseParseStrategy>('openai')
-  const [customJsonPath, setCustomJsonPath] = useState('$.choices[0].delta.content')
+  const preRef = useRef<HTMLPreElement>(null)
   const textBody = props.part?.body_encoding === 'text' ? props.part.body || '' : ''
   const contentType = props.part?.content_type
   const isJson = isJsonContentType(contentType)
   const isMultipart = isMultipartContentType(contentType)
   const isSse = isSseContentType(contentType)
   const isBinary = isTraceBodyBinary(props.part)
+  const heavyBody = useMemo(
+    () => isHeavyTraceJsonBody(textBody, contentType, props.traceKind),
+    [contentType, props.traceKind, textBody]
+  )
+  const [viewMode, setViewMode] = useState<BodyViewMode>(() =>
+    heavyBody ? 'raw' : 'formatted'
+  )
+  const [sseViewMode, setSseViewMode] = useState<SseViewMode>('raw')
+  const [sseStrategy, setSseStrategy] = useState<SseParseStrategy>('openai')
+  const [customJsonPath, setCustomJsonPath] = useState('$.choices[0].delta.content')
+  const useInstantPre = shouldUseInstantTraceBodyRender({
+    liveUpdate: props.liveUpdate,
+    isSse,
+  })
+
+  useEffect(() => {
+    if (props.liveUpdate) {
+      setViewMode('raw')
+    }
+  }, [props.liveUpdate])
 
   const displayText = useMemo(() => {
     if (!textBody) return ''
+    if (useInstantPre) {
+      return textBody
+    }
     if (viewMode === 'formatted' && isJson) {
-      return formatJsonText(textBody)
+      return heavyBody ? formatTraceJsonForDisplay(textBody) : formatJsonText(textBody)
     }
     return textBody
-  }, [isJson, textBody, viewMode])
+  }, [heavyBody, isJson, textBody, useInstantPre, viewMode])
+
+  useEffect(() => {
+    if (!props.liveUpdate || !preRef.current) {
+      return
+    }
+    preRef.current.scrollTop = preRef.current.scrollHeight
+  }, [props.liveUpdate, textBody])
 
   const parsedSse = useMemo(() => {
     if (!isSse || !textBody) {
@@ -336,7 +363,13 @@ function TraceBodyPanel(props: {
 
   let textBodyContent: ReactNode = null
   if (!isBinary && !isSse && textBody) {
-    if (isJson && viewMode === 'formatted') {
+    if (useInstantPre || viewMode === 'raw' || heavyBody) {
+      textBodyContent = (
+        <pre ref={preRef} className={tracePreClassName}>
+          {displayText}
+        </pre>
+      )
+    } else if (isJson && viewMode === 'formatted') {
       textBodyContent = (
         <CodeBlock
           code={displayText}
@@ -350,7 +383,7 @@ function TraceBodyPanel(props: {
       )
     } else {
       textBodyContent = (
-        <pre className={tracePreClassName}>
+        <pre ref={preRef} className={tracePreClassName}>
           {displayText}
         </pre>
       )
@@ -359,7 +392,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'raw' && textBody) {
     textBodyContent = (
-      <pre className={tracePreClassName}>
+      <pre ref={props.liveUpdate ? preRef : undefined} className={tracePreClassName}>
         {textBody}
       </pre>
     )
@@ -367,7 +400,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'parsed') {
     textBodyContent = (
-      <pre className={tracePreClassName}>
+      <pre ref={props.liveUpdate ? preRef : undefined} className={tracePreClassName}>
         {parsedSse?.concatenated || '-'}
       </pre>
     )
@@ -835,6 +868,8 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
               truncated={trace.flags.request_truncated}
               filenameBase={`${trace.request_id}-request`}
               bodyLabel={t('Request Body')}
+              liveUpdate={trace.flags.in_progress}
+              traceKind={trace.kind}
             />
           </TabsContent>
           <TabsContent value='response' className='space-y-4'>
@@ -855,6 +890,8 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
               truncated={trace.flags.response_truncated}
               filenameBase={`${trace.request_id}-response`}
               bodyLabel={t('Response Body')}
+              liveUpdate={trace.flags.in_progress}
+              traceKind={trace.kind}
             />
           </TabsContent>
         </Tabs>

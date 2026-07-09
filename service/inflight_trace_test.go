@@ -138,3 +138,15 @@ func TestBuildInflightTaskTraceInProgressFlags(t *testing.T) {
 	)
 	assert.False(t, finalTrace.Flags.InProgress)
 }
+
+func TestInflightTraceNoteResponseCaptureFlushesByBytes(t *testing.T) {
+	capture := &InflightTraceCapture{
+		info: &relaycommon.RelayInfo{
+			RequestId: "req-chunk",
+			UserId:    1,
+		},
+	}
+	capture.noteResponseCapture(inflightTraceFlushMinBytes)
+	assert.Equal(t, int64(0), capture.bytesSinceFlush)
+	assert.False(t, capture.lastFlushedAt.IsZero())
+}

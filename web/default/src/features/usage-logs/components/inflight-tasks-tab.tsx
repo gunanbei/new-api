@@ -814,7 +814,7 @@ function getChannelDisplay(task: InflightTask) {
 }
 
 function renderChannelCell(task: InflightTask, t: (key: string) => string) {
-  const { channelIdDisplay, channelDisplay, channelName } = getChannelDisplay(task)
+  const { channelIdDisplay, channelName } = getChannelDisplay(task)
   const attempts = getAttempts(task)
   const hasRetryChain = hasInflightRetries(task)
   const retryText = attempts
@@ -830,61 +830,47 @@ function renderChannelCell(task: InflightTask, t: (key: string) => string) {
   }
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<div className='flex max-w-[180px] flex-col gap-0.5' />}
-      >
-        <div className='relative inline-flex w-fit items-center gap-1'>
-          <StatusBadge
-            label={channelIdDisplay}
-            autoColor={String(task.detail.channel_id)}
-            copyText={String(task.detail.channel_id)}
-            size='sm'
-            showDot={false}
-            className='font-mono'
-          />
-          {hasRetryChain && (
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <button
-                    type='button'
-                    className='text-muted-foreground hover:text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors'
-                    aria-label={t('Retry Chain')}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                }
-              >
-                <GitBranch className='size-3.5 text-amber-500' aria-hidden='true' />
-              </PopoverTrigger>
-              <PopoverContent side='top' align='start' className='w-64 text-xs'>
-                <div className='flex flex-col gap-1'>
-                  <p className='font-medium'>{t('Retry Chain')}</p>
-                  <p className='text-muted-foreground font-mono break-all'>
-                    {retryText}
-                  </p>
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
-        {channelName && (
-          <span className='text-muted-foreground/70 truncate !text-xs'>
-            {channelName}
-          </span>
+    <div className='flex max-w-[180px] flex-col gap-0.5'>
+      <div className='relative inline-flex w-fit items-center gap-1'>
+        <StatusBadge
+          label={channelIdDisplay}
+          autoColor={String(task.detail.channel_id)}
+          copyText={String(task.detail.channel_id)}
+          size='sm'
+          showDot={false}
+          className='font-mono'
+        />
+        {hasRetryChain && (
+          <Popover>
+            <PopoverTrigger
+              render={
+                <button
+                  type='button'
+                  className='text-muted-foreground hover:text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors'
+                  aria-label={t('Retry Chain')}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              }
+            >
+              <GitBranch className='size-3.5 text-amber-500' aria-hidden='true' />
+            </PopoverTrigger>
+            <PopoverContent side='top' align='start' className='w-64 text-xs'>
+              <div className='flex flex-col gap-1'>
+                <p className='font-medium'>{t('Retry Chain')}</p>
+                <p className='text-muted-foreground font-mono break-all'>
+                  {retryText}
+                </p>
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
-      </TooltipTrigger>
-      <TooltipContent>
-        <div className='space-y-1'>
-          <p>{channelDisplay}</p>
-          {retryText && hasRetryChain && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Chain')}: {retryText}
-            </p>
-          )}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+      </div>
+      {channelName && (
+        <span className='text-muted-foreground/70 truncate !text-xs'>
+          {channelName}
+        </span>
+      )}
+    </div>
   )
 }
 

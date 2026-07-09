@@ -2304,6 +2304,7 @@
     "Inflight Logs": "処理中ログ",
     "Inflight task user limit": "ユーザーごとの処理中タスク上限",
     "Inflight Tasks": "処理中タスク",
+    "Initial Attempt": "初回リクエスト",
     "Initial quota given to new users": "新規ユーザーに付与される初期クォータ",
     "Initial quota given to new users ({{formattedQuota}})": "新規ユーザーに付与される初期クォータ（{{formattedQuota}}）",
     "Initialization failed, please try again.": "初期化に失敗しました。もう一度お試しください。",

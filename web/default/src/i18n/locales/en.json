@@ -2304,6 +2304,7 @@
     "Inflight Logs": "Inflight Logs",
     "Inflight task user limit": "Inflight task user limit",
     "Inflight Tasks": "Inflight Tasks",
+    "Initial Attempt": "Initial Attempt",
     "Initial quota given to new users": "Initial quota given to new users",
     "Initial quota given to new users ({{formattedQuota}})": "Initial quota given to new users ({{formattedQuota}})",
     "Initialization failed, please try again.": "Initialization failed, please try again.",

@@ -2304,6 +2304,7 @@
     "Inflight Logs": "Nhật ký đang chạy",
     "Inflight task user limit": "Giới hạn tác vụ đang chạy mỗi người dùng",
     "Inflight Tasks": "Tác vụ đang chạy",
+    "Initial Attempt": "Lan thu dau tien",
     "Initial quota given to new users": "Hạn mức ban đầu cấp cho người dùng mới",
     "Initial quota given to new users ({{formattedQuota}})": "Hạn mức ban đầu cấp cho người dùng mới ({{formattedQuota}})",
     "Initialization failed, please try again.": "Khởi tạo thất bại, vui lòng thử lại.",

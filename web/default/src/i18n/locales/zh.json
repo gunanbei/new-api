@@ -2304,6 +2304,7 @@
     "Inflight Logs": "在途日志",
     "Inflight task user limit": "在途任务用户上限",
     "Inflight Tasks": "在途任务",
+    "Initial Attempt": "首次请求",
     "Initial quota given to new users": "授予新用户的初始配额",
     "Initial quota given to new users ({{formattedQuota}})": "授予新用户的初始配额（{{formattedQuota}}）",
     "Initialization failed, please try again.": "初始化失败，请重试。",

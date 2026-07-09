@@ -66,8 +66,11 @@ import {
   shouldUseInstantTraceBodyRender,
 } from '../lib/inflight-trace-body-display'
 import {
+  appendSseTraceText,
+  createIncrementalSseParserState,
   formatSseEventsForCopy,
   parseSseTrace,
+  type IncrementalSseParserState,
   type SseParseStrategy,
 } from '../lib/inflight-sse-parse'
 
@@ -290,6 +293,7 @@ function TraceBodyPanel(props: {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
   const preRef = useRef<HTMLPreElement>(null)
+  const incrementalSseRef = useRef<IncrementalSseParserState | null>(null)
   const textBody = props.part?.body_encoding === 'text' ? props.part.body || '' : ''
   const contentType = props.part?.content_type
   const isJson = isJsonContentType(contentType)
@@ -314,8 +318,28 @@ function TraceBodyPanel(props: {
   useEffect(() => {
     if (props.liveUpdate) {
       setViewMode('raw')
+    } else {
+      incrementalSseRef.current = null
     }
   }, [props.liveUpdate])
+
+  const parsedSse = useMemo(() => {
+    if (!isSse || !textBody) {
+      return null
+    }
+    if (props.liveUpdate) {
+      if (!incrementalSseRef.current) {
+        incrementalSseRef.current = createIncrementalSseParserState()
+      }
+      return appendSseTraceText(
+        incrementalSseRef.current,
+        textBody,
+        sseStrategy,
+        customJsonPath
+      )
+    }
+    return parseSseTrace(textBody, sseStrategy, customJsonPath)
+  }, [customJsonPath, isSse, props.liveUpdate, sseStrategy, textBody])
 
   const displayText = useMemo(() => {
     if (!textBody) return ''
@@ -333,14 +357,17 @@ function TraceBodyPanel(props: {
       return
     }
     preRef.current.scrollTop = preRef.current.scrollHeight
-  }, [props.liveUpdate, textBody])
+  }, [parsedSse?.concatenated, props.liveUpdate, sseViewMode, textBody])
 
-  const parsedSse = useMemo(() => {
-    if (!isSse || !textBody) {
-      return null
+  const sseEventsToRender = useMemo(() => {
+    if (!parsedSse?.events.length) {
+      return []
     }
-    return parseSseTrace(textBody, sseStrategy, customJsonPath)
-  }, [customJsonPath, isSse, sseStrategy, textBody])
+    if (props.liveUpdate) {
+      return parsedSse.events.slice(-12)
+    }
+    return parsedSse.events
+  }, [parsedSse?.events, props.liveUpdate])
 
   const currentCopyText = useMemo(() => {
     if (!textBody) {
@@ -392,7 +419,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'raw' && textBody) {
     textBodyContent = (
-      <pre ref={props.liveUpdate ? preRef : undefined} className={tracePreClassName}>
+      <pre ref={preRef} className={tracePreClassName}>
         {textBody}
       </pre>
     )
@@ -400,7 +427,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'parsed') {
     textBodyContent = (
-      <pre ref={props.liveUpdate ? preRef : undefined} className={tracePreClassName}>
+      <pre ref={preRef} className={tracePreClassName}>
         {parsedSse?.concatenated || '-'}
       </pre>
     )
@@ -540,9 +567,16 @@ function TraceBodyPanel(props: {
         <p className='text-muted-foreground text-sm'>-</p>
       ) : null}
 
-      {!isBinary && isSse && sseViewMode === 'events' && parsedSse && parsedSse.events.length > 0 ? (
+      {!isBinary && isSse && sseViewMode === 'events' && sseEventsToRender.length > 0 ? (
         <div className='space-y-2'>
-          {parsedSse.events.map((event) => (
+          {props.liveUpdate ? (
+            <p className='text-muted-foreground text-xs'>
+              {t('Showing the latest {{count}} events while response is in progress', {
+                count: sseEventsToRender.length,
+              })}
+            </p>
+          ) : null}
+          {sseEventsToRender.map((event) => (
             <Collapsible key={event.index} defaultOpen={event.index <= 3}>
               <CollapsibleTrigger className='border-border hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs'>
                 <span className='font-mono'>[{event.index}]</span>

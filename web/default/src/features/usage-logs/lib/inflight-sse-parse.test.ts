@@ -20,6 +20,8 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import {
+  appendSseTraceText,
+  createIncrementalSseParserState,
   formatSseEventsForCopy,
   parseSseTrace,
 } from './inflight-sse-parse'
@@ -78,5 +80,24 @@ describe('parseSseTrace', () => {
     const copied = formatSseEventsForCopy(parsed.events)
     assert.match(copied, /\[1\] data:/)
     assert.match(copied, /"id": 1/)
+  })
+
+  test('incrementally appends parsed SSE output', () => {
+    const state = createIncrementalSseParserState()
+    const first = appendSseTraceText(
+      state,
+      'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+      'openai',
+      ''
+    )
+    const second = appendSseTraceText(
+      state,
+      'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: {"choices":[{"delta":{"content":" there"}}]}\n\n',
+      'openai',
+      ''
+    )
+    assert.equal(first.concatenated, 'Hi')
+    assert.equal(second.concatenated, 'Hi there')
+    assert.equal(second.events.length, 2)
   })
 })

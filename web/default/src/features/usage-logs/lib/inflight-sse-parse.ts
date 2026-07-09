@@ -147,6 +147,131 @@ export function parseSseChunks(text: string): string[] {
   return text.split('\n\n').filter((chunk) => chunk.trim().length > 0)
 }
 
+function parseSseChunk(
+  chunk: string,
+  index: number,
+  strategy: SseParseStrategy,
+  customPath: string
+): ParsedSseEvent {
+  const dataPayload = parseSseDataPayload(chunk)
+  if (dataPayload === null) {
+    return {
+      index,
+      raw: chunk,
+      dataPayload: null,
+      parsed: null,
+      parseError: null,
+      isDone: false,
+      extracted: '',
+      extractError: null,
+    }
+  }
+
+  if (dataPayload === '[DONE]') {
+    return {
+      index,
+      raw: chunk,
+      dataPayload,
+      parsed: null,
+      parseError: null,
+      isDone: true,
+      extracted: '',
+      extractError: null,
+    }
+  }
+
+  let parsed: unknown = null
+  let parseError: string | null = null
+  try {
+    parsed = JSON.parse(dataPayload)
+  } catch (error) {
+    parseError = error instanceof Error ? error.message : 'Invalid JSON'
+  }
+
+  let extracted = ''
+  let extractError: string | null = null
+  if (parsed !== null) {
+    try {
+      extracted = extractByStrategy(parsed, strategy, customPath)
+    } catch (error) {
+      extractError = error instanceof Error ? error.message : 'Extract failed'
+    }
+  }
+
+  return {
+    index,
+    raw: chunk,
+    dataPayload,
+    parsed,
+    parseError,
+    isDone: false,
+    extracted,
+    extractError,
+  }
+}
+
+export type IncrementalSseParserState = {
+  scannedLength: number
+  pending: string
+  events: ParsedSseEvent[]
+  concatenated: string
+}
+
+export function createIncrementalSseParserState(): IncrementalSseParserState {
+  return {
+    scannedLength: 0,
+    pending: '',
+    events: [],
+    concatenated: '',
+  }
+}
+
+export function appendSseTraceText(
+  state: IncrementalSseParserState,
+  text: string,
+  strategy: SseParseStrategy,
+  customPath: string
+): ParsedSseResult {
+  if (text.length < state.scannedLength) {
+    state.scannedLength = 0
+    state.pending = ''
+    state.events = []
+    state.concatenated = ''
+  }
+
+  const delta = text.slice(state.scannedLength)
+  state.scannedLength = text.length
+  if (!delta) {
+    return {
+      events: state.events,
+      concatenated: state.concatenated,
+    }
+  }
+
+  state.pending += delta
+  while (true) {
+    const separator = state.pending.indexOf('\n\n')
+    if (separator < 0) {
+      break
+    }
+    const chunk = state.pending.slice(0, separator)
+    state.pending = state.pending.slice(separator + 2)
+    if (!chunk.trim()) {
+      continue
+    }
+    const event = parseSseChunk(chunk, state.events.length + 1, strategy, customPath)
+    state.events.push(event)
+    if (event.extracted) {
+      state.concatenated += event.extracted
+    }
+  }
+
+  return {
+    events: state.events,
+    concatenated: state.concatenated,
+  }
+}
+
 export function parseSseTrace(
   text: string,
   strategy: SseParseStrategy,
@@ -157,66 +282,11 @@ export function parseSseTrace(
   const extractedParts: string[] = []
 
   chunks.forEach((chunk, index) => {
-    const dataPayload = parseSseDataPayload(chunk)
-    if (dataPayload === null) {
-      events.push({
-        index: index + 1,
-        raw: chunk,
-        dataPayload: null,
-        parsed: null,
-        parseError: null,
-        isDone: false,
-        extracted: '',
-        extractError: null,
-      })
-      return
+    const event = parseSseChunk(chunk, index + 1, strategy, customPath)
+    events.push(event)
+    if (event.extracted) {
+      extractedParts.push(event.extracted)
     }
-
-    if (dataPayload === '[DONE]') {
-      events.push({
-        index: index + 1,
-        raw: chunk,
-        dataPayload,
-        parsed: null,
-        parseError: null,
-        isDone: true,
-        extracted: '',
-        extractError: null,
-      })
-      return
-    }
-
-    let parsed: unknown = null
-    let parseError: string | null = null
-    try {
-      parsed = JSON.parse(dataPayload)
-    } catch (error) {
-      parseError = error instanceof Error ? error.message : 'Invalid JSON'
-    }
-
-    let extracted = ''
-    let extractError: string | null = null
-    if (parsed !== null) {
-      try {
-        extracted = extractByStrategy(parsed, strategy, customPath)
-      } catch (error) {
-        extractError = error instanceof Error ? error.message : 'Extract failed'
-      }
-      if (extracted) {
-        extractedParts.push(extracted)
-      }
-    }
-
-    events.push({
-      index: index + 1,
-      raw: chunk,
-      dataPayload,
-      parsed,
-      parseError,
-      isDone: false,
-      extracted,
-      extractError,
-    })
   })
 
   return {

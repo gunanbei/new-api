@@ -81,11 +81,18 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 	accumulator := relayconvert.NewResponsesBufferedAccumulator()
 	var finalResponse *dto.OpenAIResponsesResponse
 	var streamErr *types.NewAPIError
+	traceCapture := service.GetInflightTraceCapture(c)
+	if traceCapture != nil {
+		traceCapture.StageInflightTraceResponse("text/event-stream", http.StatusOK)
+	}
 
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if traceCapture != nil && strings.HasPrefix(line, "data:") {
+			traceCapture.AppendInflightTraceResponseChunk([]byte(line + "\n\n"))
+		}
 		if len(line) < 6 || line[:5] != "data:" {
 			continue
 		}
@@ -171,7 +178,11 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 	}
 
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	if traceCapture != nil {
+		traceCapture.ResetInflightTraceResponseBody()
+	}
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	service.IOCopyBytesGracefully(c, nil, responseBody)
 	return usage, nil
 }
 

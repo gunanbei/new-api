@@ -300,6 +300,58 @@ func StartInflightTraceCapture(c *gin.Context, info *relaycommon.RelayInfo, rela
 	return capture
 }
 
+func GetInflightTraceCapture(c *gin.Context) *InflightTraceCapture {
+	if c == nil {
+		return nil
+	}
+	raw, ok := common.GetContextKey(c, constant.ContextKeyInflightTraceCapture)
+	if !ok {
+		return nil
+	}
+	capture, _ := raw.(*InflightTraceCapture)
+	return capture
+}
+
+func (capture *InflightTraceCapture) StageInflightTraceResponse(contentType string, statusCode int) {
+	if capture == nil || capture.writer == nil {
+		return
+	}
+	if statusCode <= 0 {
+		statusCode = http.StatusOK
+	}
+	if capture.writer.wroteHeader {
+		return
+	}
+	capture.writer.statusCode = statusCode
+	capture.writer.headerSnap = http.Header{}
+	if contentType != "" {
+		capture.writer.headerSnap.Set("Content-Type", contentType)
+	}
+	capture.writer.wroteHeader = true
+}
+
+func (capture *InflightTraceCapture) AppendInflightTraceResponseChunk(chunk []byte) {
+	if capture == nil || capture.writer == nil || len(chunk) == 0 {
+		return
+	}
+	if !capture.writer.wroteHeader {
+		capture.StageInflightTraceResponse("text/event-stream", http.StatusOK)
+	}
+	capture.writer.capture(chunk)
+}
+
+func (capture *InflightTraceCapture) ResetInflightTraceResponseBody() {
+	if capture == nil || capture.writer == nil {
+		return
+	}
+	capture.writer.buf.Reset()
+	capture.writer.truncated = false
+	capture.writer.totalWritten = 0
+	capture.writer.wroteHeader = false
+	capture.writer.statusCode = 0
+	capture.writer.headerSnap = nil
+}
+
 func (capture *InflightTraceCapture) noteResponseCapture(n int) {
 	if capture == nil {
 		return

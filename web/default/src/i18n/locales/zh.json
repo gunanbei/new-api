@@ -4202,6 +4202,7 @@
     "Showcase core capabilities with demo credentials and limited access.": "使用演示凭据和有限访问权限展示核心功能。",
     "Showing": "显示第",
     "showing •": "显示 •",
+    "Showing the latest {{count}} events while response is in progress": "响应进行中，仅显示最近 {{count}} 条事件",
     "Sidebar": "侧边栏",
     "Sidebar collapsed by default for new users": "默认情况下为新用户折叠侧边栏",
     "Sidebar modules": "侧边栏模块",

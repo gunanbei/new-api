@@ -4202,6 +4202,7 @@
     "Showcase core capabilities with demo credentials and limited access.": "Trình diễn các tính năng cốt lõi với thông tin đăng nhập demo và quyền truy cập hạn chế.",
     "Showing": "Đang hiển thị",
     "showing •": "hiển thị •",
+    "Showing the latest {{count}} events while response is in progress": "Dang xu ly phan hoi, chi hien thi {{count}} su kien moi nhat",
     "Sidebar": "Thanh bên",
     "Sidebar collapsed by default for new users": "Thanh bên được thu gọn theo mặc định đối với người dùng mới",
     "Sidebar modules": "Mô-đun thanh bên",

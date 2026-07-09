@@ -4202,6 +4202,7 @@
     "Showcase core capabilities with demo credentials and limited access.": "Демонстрация основных возможностей с демо-учётными данными и ограниченным доступом.",
     "Showing": "Отображать",
     "showing •": "отображается •",
+    "Showing the latest {{count}} events while response is in progress": "Показаны последние {{count}} событий, пока ответ еще выполняется",
     "Sidebar": "Боковая панель",
     "Sidebar collapsed by default for new users": "Боковая панель свернута по умолчанию для новых пользователей",
     "Sidebar modules": "Модули боковой панели",

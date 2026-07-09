@@ -150,3 +150,25 @@ func TestInflightTraceNoteResponseCaptureFlushesByBytes(t *testing.T) {
 	assert.Equal(t, int64(0), capture.bytesSinceFlush)
 	assert.False(t, capture.lastFlushedAt.IsZero())
 }
+
+func TestInflightTraceAppendBufferedSSEChunks(t *testing.T) {
+	capture := &InflightTraceCapture{
+		writer: &traceResponseWriter{
+			buf: bytes.NewBuffer(nil),
+		},
+		info: &relaycommon.RelayInfo{
+			RequestId: "req-buffered-sse",
+			UserId:    1,
+		},
+	}
+	capture.AppendInflightTraceResponseChunk([]byte("data: {\"delta\":\"hi\"}\n\n"))
+	capture.AppendInflightTraceResponseChunk([]byte("data: [DONE]\n\n"))
+	require.Equal(t, http.StatusOK, capture.writer.statusCode)
+	require.Equal(t, "text/event-stream", capture.writer.headerSnap.Get("Content-Type"))
+	require.Contains(t, capture.writer.buf.String(), `"delta":"hi"`)
+	require.Contains(t, capture.writer.buf.String(), "data: [DONE]")
+
+	capture.ResetInflightTraceResponseBody()
+	require.Empty(t, capture.writer.buf.String())
+	require.False(t, capture.writer.wroteHeader)
+}

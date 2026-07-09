@@ -65,6 +65,8 @@ const newKeys = {
     'Loading cleanup schedule...': 'Loading cleanup schedule...',
     'Next cleanup: {{time}}': 'Next cleanup: {{time}}',
     'Async Logs': 'Async Logs',
+    'Showing the latest {{count}} events while response is in progress':
+      'Showing the latest {{count}} events while response is in progress',
   },
   zh: {
     'Allowed range: {{min}}-{{max}} minutes (up to 7 days)':
@@ -104,6 +106,8 @@ const newKeys = {
     'Loading cleanup schedule...': '正在加载清理计划...',
     'Next cleanup: {{time}}': '下次清理：{{time}}',
     'Async Logs': '异步日志',
+    'Showing the latest {{count}} events while response is in progress':
+      '响应进行中，仅显示最近 {{count}} 条事件',
   },
   fr: {
     'Allowed range: {{min}}-{{max}} minutes (up to 7 days)':
@@ -145,6 +149,8 @@ const newKeys = {
     'Loading cleanup schedule...': 'Chargement du planning de nettoyage...',
     'Next cleanup: {{time}}': 'Prochain nettoyage : {{time}}',
     'Async Logs': 'Journaux asynchrones',
+    'Showing the latest {{count}} events while response is in progress':
+      'Affichage des {{count}} derniers evenements pendant la reponse en cours',
   },
   ja: {
     'Allowed range: {{min}}-{{max}} minutes (up to 7 days)':
@@ -185,6 +191,8 @@ const newKeys = {
     'Loading cleanup schedule...': 'クリーンアップ予定を読み込み中...',
     'Next cleanup: {{time}}': '次回クリーンアップ：{{time}}',
     'Async Logs': '非同期ログ',
+    'Showing the latest {{count}} events while response is in progress':
+      '応答進行中は直近 {{count}} 件のイベントのみ表示します',
   },
   ru: {
     'Allowed range: {{min}}-{{max}} minutes (up to 7 days)':
@@ -226,6 +234,8 @@ const newKeys = {
     'Loading cleanup schedule...': 'Загрузка расписания очистки...',
     'Next cleanup: {{time}}': 'Следующая очистка: {{time}}',
     'Async Logs': 'Асинхронные журналы',
+    'Showing the latest {{count}} events while response is in progress':
+      'Показаны последние {{count}} событий, пока ответ еще выполняется',
   },
   vi: {
     'Allowed range: {{min}}-{{max}} minutes (up to 7 days)':
@@ -267,6 +277,8 @@ const newKeys = {
     'Loading cleanup schedule...': 'Dang tai lich don dep...',
     'Next cleanup: {{time}}': 'Lan don dep tiep theo: {{time}}',
     'Async Logs': 'Nhat ky bat dong bo',
+    'Showing the latest {{count}} events while response is in progress':
+      'Dang xu ly phan hoi, chi hien thi {{count}} su kien moi nhat',
   },
 }
 

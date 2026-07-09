@@ -4202,6 +4202,7 @@
     "Showcase core capabilities with demo credentials and limited access.": "Présenter les fonctionnalités principales avec des identifiants de démonstration et un accès limité.",
     "Showing": "Affichage de",
     "showing •": "affichage •",
+    "Showing the latest {{count}} events while response is in progress": "Affichage des {{count}} derniers evenements pendant la reponse en cours",
     "Sidebar": "Barre latérale",
     "Sidebar collapsed by default for new users": "Barre latérale masquée par défaut pour les nouveaux utilisateurs",
     "Sidebar modules": "Modules de la barre latérale",

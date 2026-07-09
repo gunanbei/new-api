@@ -99,7 +99,7 @@ export function SidebarModulesCard() {
         },
         {
           key: 'task',
-          title: t('Task Logs'),
+          title: t('Async Logs'),
           description: t('System task records'),
         },
       ],

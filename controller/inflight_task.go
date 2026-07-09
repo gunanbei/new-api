@@ -79,11 +79,6 @@ func GetUserInflightTaskTrace(c *gin.Context) {
 				"success": false,
 				"message": err.Error(),
 			})
-		case service.IsInflightTaskTraceInProgress(err):
-			c.JSON(http.StatusConflict, gin.H{
-				"success": false,
-				"message": "Debug log is not available for in-progress requests",
-			})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
@@ -120,5 +115,22 @@ func GetInflightTaskStats(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    stats,
+	})
+}
+
+func GetInflightTaskCleanupSchedule(c *gin.Context) {
+	summary, err := service.GetInflightTaskCleanupScheduleSummary()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    summary,
 	})
 }

@@ -98,10 +98,18 @@ export function useSidebarData(): SidebarData {
             icon: FileText,
           },
           {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+            title: t('Async Logs'),
+            url: '/usage-logs/inflight',
+            activeUrls: [
+              '/usage-logs/drawing',
+              '/usage-logs/task',
+              '/usage-logs/inflight',
+            ],
+            configUrls: [
+              '/usage-logs/drawing',
+              '/usage-logs/task',
+              '/usage-logs/inflight',
+            ],
             icon: ListTodo,
           },
         ],

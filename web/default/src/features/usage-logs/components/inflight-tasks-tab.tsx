@@ -20,7 +20,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
 import { Eye, GitBranch, RefreshCw, ScrollText } from 'lucide-react'
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -504,6 +510,24 @@ function getRetryAttemptLabel(task: InflightTask, t: (key: string, options?: Rec
   })
 }
 
+function getAttemptDisplayStatus(attempt: InflightTaskAttempt, task: InflightTask) {
+  if (
+    attempt.retry_index === getRetryIndex(task) &&
+    task.status === 'completed' &&
+    isInflightTaskTerminal(task)
+  ) {
+    return 'completed'
+  }
+  return attempt.status
+}
+
+function getAttemptDisplayError(attempt: InflightTaskAttempt, task: InflightTask) {
+  if (getAttemptDisplayStatus(attempt, task) === 'completed') {
+    return ''
+  }
+  return attempt.error ?? ''
+}
+
 function isBetterAttempt(candidate: InflightTaskAttempt, current: InflightTaskAttempt) {
   const candidateTerminal =
     candidate.status === 'failed' || candidate.status === 'completed'
@@ -590,7 +614,7 @@ function fillMissingInflightAttempts(
         channel_id: task.detail.channel_id,
         channel_name: task.detail.channel_name,
         status: task.status,
-        error: task.detail.latest_error,
+        error: task.status === 'completed' ? '' : task.detail.latest_error,
         started_at: task.detail.timeline?.[0]?.started_at ?? task.created_at,
         updated_at: task.updated_at,
         timeline: task.detail.timeline,
@@ -654,7 +678,7 @@ function getAttemptSummary(
   if (attempt.channel_name) {
     summary.push(attempt.channel_name)
   }
-  if (attempt.error) {
+  if (getAttemptDisplayError(attempt, task)) {
     summary.push(t('Failure Reason'))
   }
   return summary.join(' · ')
@@ -895,7 +919,7 @@ function InflightTaskDetailsDialog(props: {
 }) {
   const { t } = useTranslation()
   const requestId = props.task?.request_id
-  const { data: liveTask } = useQuery({
+  const { data: liveTask, isFetched, isLoading } = useQuery({
     queryKey: ['inflight-task-detail', requestId, props.fetchParams, props.useMock],
     queryFn: () =>
       fetchInflightTaskByRequestId(requestId!, props.fetchParams, props.useMock),
@@ -913,7 +937,36 @@ function InflightTaskDetailsDialog(props: {
     },
     refetchIntervalInBackground: false,
   })
-  const task = liveTask ?? props.task
+
+  useEffect(() => {
+    if (
+      !props.open ||
+      props.useMock ||
+      !requestId ||
+      isLoading ||
+      !isFetched
+    ) {
+      return
+    }
+    if (liveTask === null) {
+      toast.error(
+        t('This inflight record does not exist or has been cleaned up')
+      )
+      props.onOpenChange(false)
+    }
+  }, [
+    props.open,
+    props.useMock,
+    props.onOpenChange,
+    requestId,
+    isLoading,
+    isFetched,
+    liveTask,
+    t,
+  ])
+
+  const task =
+    isFetched && liveTask === null ? null : (liveTask ?? props.task)
 
   return (
     <Dialog
@@ -1098,12 +1151,14 @@ function InflightTaskDetails(props: {
         <InflightDetailSection label={t('Retry Attempts')}>
           <div className='space-y-2'>
             {attempts.map((attempt) => {
+              const displayStatus = getAttemptDisplayStatus(attempt, props.task)
+              const displayError = getAttemptDisplayError(attempt, props.task)
               const legacyAttempt: InflightTaskChannelAttempt = {
                 retry_index: attempt.retry_index,
                 channel_id: attempt.channel_id,
                 channel_name: attempt.channel_name,
-                status: attempt.status,
-                error: attempt.error,
+                status: displayStatus,
+                error: displayError,
                 started_at: attempt.started_at,
                 updated_at: attempt.updated_at,
               }
@@ -1115,7 +1170,7 @@ function InflightTaskDetails(props: {
                   defaultOpen={defaultOpen}
                   className={cn(
                     'rounded-md border border-border/60 bg-background/80',
-                    attempt.error &&
+                    displayError &&
                       'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
                   )}
                 >
@@ -1148,10 +1203,10 @@ function InflightTaskDetails(props: {
                             className='font-mono'
                           />
                         ) : null}
-                        {attempt.status ? (
+                        {displayStatus ? (
                           <StatusBadge
-                            label={t(statusLabel[attempt.status] || attempt.status)}
-                            variant={statusVariant[attempt.status] || 'neutral'}
+                            label={t(statusLabel[displayStatus] || displayStatus)}
+                            variant={statusVariant[displayStatus] || 'neutral'}
                             size='sm'
                             copyable={false}
                           />
@@ -1162,7 +1217,7 @@ function InflightTaskDetails(props: {
                       </div>
                     </div>
                     <div className='text-muted-foreground shrink-0 text-xs'>
-                      {attempt.error ? t('Failure Reason') : t('Timeline')}
+                      {displayError ? t('Failure Reason') : t('Timeline')}
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent className='border-t px-3 py-3'>
@@ -1170,7 +1225,7 @@ function InflightTaskDetails(props: {
                       <div
                         className={cn(
                           'relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3',
-                          attempt.error &&
+                          displayError &&
                             'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
                         )}
                       >
@@ -1198,10 +1253,10 @@ function InflightTaskDetails(props: {
                             mono
                           />
                         ) : null}
-                        {attempt.error ? (
+                        {displayError ? (
                           <InflightDetailRow
                             label={t('Failure Reason')}
-                            value={attempt.error}
+                            value={displayError}
                             muted
                           />
                         ) : null}
@@ -1286,7 +1341,8 @@ function useInflightTaskColumns(props: {
 
   const showTraceMenu = useCallback(
     (task: InflightTask) =>
-      traceMenuVisible && task.has_trace === true && isInflightTaskTerminal(task),
+      traceMenuVisible &&
+      (!isInflightTaskTerminal(task) || task.has_trace === true),
     [traceMenuVisible]
   )
 
@@ -1561,13 +1617,22 @@ function InflightFilterBar<TData>(props: {
     [handleApply]
   )
 
+  const hasExpandedFilters =
+    !!activeDraft.model ||
+    !!activeDraft.requestId ||
+    (props.isAdmin && !!activeDraft.channel)
+
+  const expandedFilterCount = [
+    activeDraft.model,
+    activeDraft.requestId,
+    props.isAdmin ? activeDraft.channel : undefined,
+  ].filter(Boolean).length
+
   const hasActiveFilters =
     !!activeDraft.status ||
     !!activeDraft.kind ||
     !!activeDraft.stream ||
-    !!activeDraft.model ||
-    !!activeDraft.requestId ||
-    !!activeDraft.channel
+    hasExpandedFilters
 
   const dateRangeFilter = (
     <LogsFilterField wide>
@@ -1590,139 +1655,142 @@ function InflightFilterBar<TData>(props: {
     </LogsFilterField>
   )
 
+  const statusFilter = (
+    <LogsFilterField>
+      <Select
+        value={activeDraft.status || 'all'}
+        onValueChange={(value) =>
+          handleChange('status', value === 'all' ? '' : (value ?? ''))
+        }
+      >
+        <SelectTrigger className='h-8'>
+          <SelectValue>
+            {t(
+              selectDisplayLabel(activeDraft.status, statusLabel, 'All Status')
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='all'>{t('All Status')}</SelectItem>
+          {Object.entries(statusLabel).map(([value, label]) => (
+            <SelectItem key={value} value={value}>
+              {t(label)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
+
+  const kindFilter = (
+    <LogsFilterField>
+      <Select
+        value={activeDraft.kind || 'all'}
+        onValueChange={(value) =>
+          handleChange('kind', value === 'all' ? '' : (value ?? ''))
+        }
+      >
+        <SelectTrigger className='h-8'>
+          <SelectValue>
+            {t(selectDisplayLabel(activeDraft.kind, kindLabel, 'All Types'))}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='all'>{t('All Types')}</SelectItem>
+          {Object.entries(kindLabel).map(([value, label]) => (
+            <SelectItem key={value} value={value}>
+              {t(label)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
+
+  const streamFilter = (
+    <LogsFilterField>
+      <Select
+        value={activeDraft.stream || 'all'}
+        onValueChange={(value) =>
+          handleChange('stream', value === 'all' ? '' : (value ?? ''))
+        }
+      >
+        <SelectTrigger className='h-8'>
+          <SelectValue>
+            {t(selectDisplayLabel(activeDraft.stream, streamLabel, 'All'))}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='all'>{t('All')}</SelectItem>
+          {Object.entries(streamLabel).map(([value, label]) => (
+            <SelectItem key={value} value={value}>
+              {t(label)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  )
+
+  const advancedFilters = (
+    <>
+      {props.isAdmin ? (
+        <LogsFilterField>
+          <LogsFilterInput
+            placeholder={t('Channel ID')}
+            value={activeDraft.channel}
+            onChange={(event) => handleChange('channel', event.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        </LogsFilterField>
+      ) : null}
+      <LogsFilterField>
+        <LogsFilterInput
+          placeholder={t('Model name')}
+          value={activeDraft.model}
+          onChange={(event) => handleChange('model', event.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
+      <LogsFilterField wide>
+        <LogsFilterInput
+          placeholder={t('Request ID')}
+          value={activeDraft.requestId}
+          onChange={(event) => handleChange('requestId', event.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
+    </>
+  )
+
   return (
     <LogsFilterToolbar
       table={props.table}
       primaryFilters={
         <>
           {dateRangeFilter}
-          <LogsFilterField>
-            <Select
-              value={activeDraft.status || 'all'}
-              onValueChange={(value) =>
-                handleChange('status', value === 'all' ? '' : (value ?? ''))
-              }
-            >
-              <SelectTrigger className='h-8'>
-                <SelectValue>
-                  {t(
-                    selectDisplayLabel(activeDraft.status, statusLabel, 'All Status')
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>{t('All Status')}</SelectItem>
-                {Object.entries(statusLabel).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {t(label)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </LogsFilterField>
-          <LogsFilterField>
-            <Select
-              value={activeDraft.kind || 'all'}
-              onValueChange={(value) =>
-                handleChange('kind', value === 'all' ? '' : (value ?? ''))
-              }
-            >
-              <SelectTrigger className='h-8'>
-                <SelectValue>
-                  {t(selectDisplayLabel(activeDraft.kind, kindLabel, 'All Types'))}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>{t('All Types')}</SelectItem>
-                {Object.entries(kindLabel).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {t(label)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </LogsFilterField>
-          <LogsFilterField>
-            <Select
-              value={activeDraft.stream || 'all'}
-              onValueChange={(value) =>
-                handleChange('stream', value === 'all' ? '' : (value ?? ''))
-              }
-            >
-              <SelectTrigger className='h-8'>
-                <SelectValue>
-                  {t(selectDisplayLabel(activeDraft.stream, streamLabel, 'All'))}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>{t('All')}</SelectItem>
-                {Object.entries(streamLabel).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {t(label)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </LogsFilterField>
-          {props.isAdmin ? (
-            <LogsFilterField>
-              <LogsFilterInput
-                placeholder={t('Channel ID')}
-                value={activeDraft.channel}
-                onChange={(event) => handleChange('channel', event.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </LogsFilterField>
-          ) : null}
-          <LogsFilterField>
-            <LogsFilterInput
-              placeholder={t('Model name')}
-              value={activeDraft.model}
-              onChange={(event) => handleChange('model', event.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-          </LogsFilterField>
-          <LogsFilterField wide>
-            <LogsFilterInput
-              placeholder={t('Request ID')}
-              value={activeDraft.requestId}
-              onChange={(event) => handleChange('requestId', event.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-          </LogsFilterField>
+          {statusFilter}
+          {kindFilter}
+          {streamFilter}
         </>
       }
+      advancedFilters={advancedFilters}
       mobilePinnedFilters={dateRangeFilter}
       mobileFilters={
         <>
-          {props.isAdmin ? (
-            <LogsFilterField>
-              <LogsFilterInput
-                placeholder={t('Channel ID')}
-                value={activeDraft.channel}
-                onChange={(event) => handleChange('channel', event.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </LogsFilterField>
-          ) : null}
-          <LogsFilterField>
-            <LogsFilterInput
-              placeholder={t('Model name')}
-              value={activeDraft.model}
-              onChange={(event) => handleChange('model', event.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-          </LogsFilterField>
-          <LogsFilterField wide>
-            <LogsFilterInput
-              placeholder={t('Request ID')}
-              value={activeDraft.requestId}
-              onChange={(event) => handleChange('requestId', event.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-          </LogsFilterField>
+          {statusFilter}
+          {kindFilter}
+          {streamFilter}
+          {advancedFilters}
         </>
       }
+      mobileFilterCount={
+        [activeDraft.status, activeDraft.kind, activeDraft.stream].filter(
+          Boolean
+        ).length + expandedFilterCount
+      }
+      hasAdvancedActiveFilters={hasExpandedFilters}
+      advancedFilterCount={expandedFilterCount}
       hasActiveFilters={hasActiveFilters}
       onReset={handleReset}
       onSearch={handleApply}
@@ -1903,8 +1971,8 @@ export function InflightTasksTab() {
                 {t('Details')}
               </ContextMenuItem>
               {data?.meta?.trace_menu_visible === true &&
-              row.original.has_trace === true &&
-              isInflightTaskTerminal(row.original) ? (
+              (!isInflightTaskTerminal(row.original) ||
+                row.original.has_trace === true) ? (
                 <ContextMenuItem onClick={() => onOpenTrace(row.original)}>
                   <ScrollText />
                   {t('Debug Log')}
@@ -1938,6 +2006,7 @@ export function InflightTasksTab() {
                 model_name: traceTask.model_name,
                 status: traceTask.status,
                 is_stream: traceTask.is_stream,
+                has_trace: traceTask.has_trace,
               }
             : undefined
         }

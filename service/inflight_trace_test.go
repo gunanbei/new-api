@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"net/http"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,4 +93,48 @@ func TestInflightTraceMaxBytesZeroMeansUnlimited(t *testing.T) {
 	assert.False(t, wasTruncated)
 	assert.Equal(t, raw, truncated)
 	assert.Equal(t, int64(10), originalBytes)
+}
+
+func TestBuildInflightTaskTraceInProgressFlags(t *testing.T) {
+	capture := &InflightTraceCapture{
+		requestMethod:  http.MethodPost,
+		requestPath:    "/v1/chat/completions",
+		requestHeaders: http.Header{"Content-Type": []string{"application/json"}},
+		requestBody:    []byte(`{"model":"gpt-4"}`),
+		writer: &traceResponseWriter{
+			buf:        bytes.NewBufferString("data: hello\n\n"),
+			statusCode: http.StatusOK,
+			headerSnap: http.Header{"Content-Type": []string{"text/event-stream"}},
+		},
+		createdAt: 100,
+	}
+	info := &relaycommon.RelayInfo{
+		RequestId:       "req-live",
+		UserId:          1,
+		OriginModelName: "gpt-4",
+		IsStream:        true,
+	}
+
+	trace := buildInflightTaskTraceFromCapture(
+		capture,
+		info,
+		InflightTaskStatusStreaming,
+		capture.createdAt,
+		true,
+	)
+	require.NotNil(t, trace)
+	assert.True(t, trace.Flags.InProgress)
+	assert.True(t, trace.Flags.ResponseIncomplete)
+	assert.Equal(t, InflightTaskStatusStreaming, trace.Status)
+	assert.Equal(t, int64(100), trace.CreatedAt)
+	assert.NotNil(t, trace.ClientResponse)
+
+	finalTrace := buildInflightTaskTraceFromCapture(
+		capture,
+		info,
+		InflightTaskStatusCompleted,
+		capture.createdAt,
+		false,
+	)
+	assert.False(t, finalTrace.Flags.InProgress)
 }

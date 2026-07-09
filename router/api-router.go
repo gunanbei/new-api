@@ -188,6 +188,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.GET("/inflight_cleanup_cron_preview", controller.PreviewInflightTaskCleanupCron)
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
@@ -274,6 +275,7 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/inflight/stats", middleware.RootAuth(), controller.GetInflightTaskStats)
+		logRoute.GET("/inflight/cleanup-schedule", middleware.UserAuth(), controller.GetInflightTaskCleanupSchedule)
 		logRoute.GET("/inflight/self", middleware.UserAuth(), controller.GetUserInflightTasks)
 		logRoute.GET("/inflight/self/:request_id/trace", middleware.UserAuth(), controller.GetUserInflightTaskTrace)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)

@@ -373,6 +373,27 @@ export interface FetchLogsConfig {
 }
 
 // ============================================================================
+// Inflight Cleanup Schedule
+// ============================================================================
+
+export interface InflightCleanupSchedule {
+  enabled: boolean
+  schedule_mode: 'interval' | 'cron'
+  interval_minutes: number
+  cron_expression: string
+  timezone: string
+  next_run_at: number
+  running: boolean
+  last_run_at?: number
+}
+
+export interface InflightCleanupScheduleResponse {
+  success: boolean
+  message?: string
+  data?: InflightCleanupSchedule
+}
+
+// ============================================================================
 // User Info Types
 // ============================================================================
 

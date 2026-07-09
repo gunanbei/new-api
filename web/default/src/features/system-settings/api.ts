@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
+  InflightCleanupCronPreviewResponse,
   InflightTaskStatsResponse,
   LogCleanupTask,
   SystemOptionsResponse,
@@ -94,6 +95,14 @@ export async function getCurrentInflightLogCleanupTask() {
 
 export async function getInflightTaskStats() {
   const res = await api.get<InflightTaskStatsResponse>('/api/log/inflight/stats')
+  return res.data
+}
+
+export async function previewInflightCleanupCron(expr: string) {
+  const res = await api.get<InflightCleanupCronPreviewResponse>(
+    '/api/option/inflight_cleanup_cron_preview',
+    { params: { expr } }
+  )
   return res.data
 }
 

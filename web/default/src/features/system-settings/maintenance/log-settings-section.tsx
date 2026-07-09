@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
@@ -78,11 +78,29 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import type { LogCleanupTask } from '../types'
+import { InflightCleanupScheduleFields } from './inflight-cleanup-schedule-fields'
+import type { ScheduleFormValues } from './inflight-cleanup-schedule-fields'
+import {
+  INFLIGHT_CLEANUP_INTERVAL_MAX,
+  INFLIGHT_CLEANUP_INTERVAL_MIN,
+} from './inflight-cleanup-cron'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
   InflightTaskCleanupRule: z.number().int().min(1).max(2),
-  InflightTaskCleanupIntervalMinutes: z.number().int().min(1).max(1440),
+  InflightTaskCleanupScheduleMode: z.enum(['interval', 'cron']),
+  InflightTaskCleanupIntervalMinutes: z
+    .number()
+    .int()
+    .min(
+      INFLIGHT_CLEANUP_INTERVAL_MIN,
+      'Inflight log cleanup interval must be between 1 and 10080 minutes'
+    )
+    .max(
+      INFLIGHT_CLEANUP_INTERVAL_MAX,
+      'Inflight log cleanup interval must be between 1 and 10080 minutes'
+    ),
+  InflightTaskCleanupCron: z.string().min(1, 'Invalid cron expression'),
   InflightTaskTraceEnabled: z.boolean(),
   InflightTaskTraceMenuVisible: z.boolean(),
   InflightTaskTraceMaxRequestBytes: z.number().int().min(0),
@@ -95,6 +113,8 @@ type LogSettingsSectionProps = {
   defaultEnabled: boolean
   defaultInflightTaskCleanupRule: number
   defaultInflightTaskCleanupIntervalMinutes: number
+  defaultInflightTaskCleanupScheduleMode: 'interval' | 'cron'
+  defaultInflightTaskCleanupCron: string
   defaultInflightTaskTraceEnabled: boolean
   defaultInflightTaskTraceMenuVisible: boolean
   defaultInflightTaskTraceMaxRequestBytes: number
@@ -164,6 +184,8 @@ export function LogSettingsSection({
   defaultEnabled,
   defaultInflightTaskCleanupRule,
   defaultInflightTaskCleanupIntervalMinutes,
+  defaultInflightTaskCleanupScheduleMode,
+  defaultInflightTaskCleanupCron,
   defaultInflightTaskTraceEnabled,
   defaultInflightTaskTraceMenuVisible,
   defaultInflightTaskTraceMaxRequestBytes,
@@ -178,6 +200,8 @@ export function LogSettingsSection({
       InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
       InflightTaskCleanupIntervalMinutes:
         defaultInflightTaskCleanupIntervalMinutes,
+      InflightTaskCleanupScheduleMode: defaultInflightTaskCleanupScheduleMode,
+      InflightTaskCleanupCron: defaultInflightTaskCleanupCron,
       InflightTaskTraceEnabled: defaultInflightTaskTraceEnabled,
       InflightTaskTraceMenuVisible: defaultInflightTaskTraceMenuVisible,
       InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
@@ -216,6 +240,8 @@ export function LogSettingsSection({
       InflightTaskCleanupRule: defaultInflightTaskCleanupRule,
       InflightTaskCleanupIntervalMinutes:
         defaultInflightTaskCleanupIntervalMinutes,
+      InflightTaskCleanupScheduleMode: defaultInflightTaskCleanupScheduleMode,
+      InflightTaskCleanupCron: defaultInflightTaskCleanupCron,
       InflightTaskTraceEnabled: defaultInflightTaskTraceEnabled,
       InflightTaskTraceMenuVisible: defaultInflightTaskTraceMenuVisible,
       InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
@@ -226,6 +252,8 @@ export function LogSettingsSection({
     defaultEnabled,
     defaultInflightTaskCleanupIntervalMinutes,
     defaultInflightTaskCleanupRule,
+    defaultInflightTaskCleanupScheduleMode,
+    defaultInflightTaskCleanupCron,
     defaultInflightTaskTraceEnabled,
     defaultInflightTaskTraceMaxRequestBytes,
     defaultInflightTaskTraceMaxResponseBytes,
@@ -344,6 +372,21 @@ export function LogSettingsSection({
       await updateOption.mutateAsync({
         key: 'InflightTaskCleanupIntervalMinutes',
         value: values.InflightTaskCleanupIntervalMinutes,
+      })
+    }
+    if (
+      values.InflightTaskCleanupScheduleMode !==
+      defaultInflightTaskCleanupScheduleMode
+    ) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskCleanupScheduleMode',
+        value: values.InflightTaskCleanupScheduleMode,
+      })
+    }
+    if (values.InflightTaskCleanupCron !== defaultInflightTaskCleanupCron) {
+      await updateOption.mutateAsync({
+        key: 'InflightTaskCleanupCron',
+        value: values.InflightTaskCleanupCron,
       })
     }
     if (values.InflightTaskTraceEnabled !== defaultInflightTaskTraceEnabled) {
@@ -527,34 +570,11 @@ export function LogSettingsSection({
               </SettingsControlGroup>
             )}
           />
-          <FormField
-            control={form.control}
-            name='InflightTaskCleanupIntervalMinutes'
-            render={({ field }) => (
-              <SettingsControlGroup className='grid gap-2'>
-                <FormLabel>
-                  {t('Inflight log cleanup interval (minutes)')}
-                </FormLabel>
-                <FormDescription>
-                  {t(
-                    'How often the cron cleanup scans terminal inflight logs.'
-                  )}
-                </FormDescription>
-                <FormControl>
-                  <Input
-                    type='number'
-                    min={1}
-                    max={1440}
-                    className='w-[160px]'
-                    {...field}
-                    onChange={(event) =>
-                      field.onChange(event.currentTarget.valueAsNumber)
-                    }
-                  />
-                </FormControl>
-                <FormMessage />
-              </SettingsControlGroup>
-            )}
+          <InflightCleanupScheduleFields
+            form={
+              form as unknown as UseFormReturn<ScheduleFormValues>
+            }
+            enabled={form.watch('InflightTaskCleanupRule') === 2}
           />
           <Separator />
           <SettingsControlGroup className='grid gap-3'>

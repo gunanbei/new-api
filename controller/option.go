@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -331,6 +332,30 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "InflightTaskCleanupIntervalMinutes":
+		if err := service.ValidateInflightTaskCleanupIntervalMinutes(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "InflightTaskCleanupScheduleMode":
+		if err := service.ValidateInflightTaskCleanupScheduleMode(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "InflightTaskCleanupCron":
+		if err := service.ValidateInflightTaskCleanupCron(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	}
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {
@@ -344,5 +369,29 @@ func UpdateOption(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+	})
+}
+
+func PreviewInflightTaskCleanupCron(c *gin.Context) {
+	expr := strings.TrimSpace(c.Query("expr"))
+	if expr == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "cron expression is required",
+		})
+		return
+	}
+	preview, err := service.PreviewInflightTaskCleanupCron(expr, 6)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    preview,
 	})
 }

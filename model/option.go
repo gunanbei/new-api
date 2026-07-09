@@ -50,6 +50,8 @@ func InitOptionMap() {
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
 	common.OptionMap["InflightTaskCleanupRule"] = "2"
 	common.OptionMap["InflightTaskCleanupIntervalMinutes"] = "10"
+	common.OptionMap["InflightTaskCleanupScheduleMode"] = "interval"
+	common.OptionMap["InflightTaskCleanupCron"] = "0 3 * * *"
 	common.OptionMap["InflightTaskTraceEnabled"] = "false"
 	common.OptionMap["InflightTaskTraceMenuVisible"] = "false"
 	common.OptionMap["InflightTaskTraceMaxRequestBytes"] = "0"

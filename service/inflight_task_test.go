@@ -480,6 +480,57 @@ func TestUpdateInflightTaskDetailCreatesMissingRetryAttempt(t *testing.T) {
 	assert.Equal(t, 10, detail.Attempts[6].ChannelID)
 }
 
+func TestUpdateInflightTaskDetailRecoversAttemptFromFailedToCompleted(t *testing.T) {
+	detail := &InflightTaskDetail{
+		RetryIndex:  1,
+		ChannelID:   13,
+		ChannelName: "Hiyo",
+		LatestError: "bad response status code 502",
+		ChannelChain: []InflightTaskChannelAttempt{{
+			RetryIndex:  0,
+			ChannelID:   10,
+			ChannelName: "first",
+			Status:      InflightTaskStatusFailed,
+			Error:       "timeout",
+			StartedAt:   100,
+			UpdatedAt:   110,
+		}, {
+			RetryIndex:  1,
+			ChannelID:   13,
+			ChannelName: "Hiyo",
+			Status:      InflightTaskStatusFailed,
+			Error:       "bad response status code 502",
+			StartedAt:   120,
+			UpdatedAt:   125,
+		}},
+		Attempts: []InflightTaskAttempt{{
+			RetryIndex:  0,
+			ChannelID:   10,
+			ChannelName: "first",
+			Status:      InflightTaskStatusFailed,
+			Error:       "timeout",
+			StartedAt:   100,
+			UpdatedAt:   110,
+		}, {
+			RetryIndex:  1,
+			ChannelID:   13,
+			ChannelName: "Hiyo",
+			Status:      InflightTaskStatusFailed,
+			Error:       "bad response status code 502",
+			StartedAt:   120,
+			UpdatedAt:   125,
+		}},
+	}
+
+	updateInflightTaskDetail(detail, InflightTaskStatusCompleted, 130, 1)
+
+	assert.Equal(t, InflightTaskStatusCompleted, detail.Attempts[1].Status)
+	assert.Empty(t, detail.Attempts[1].Error)
+	assert.Equal(t, InflightTaskStatusCompleted, detail.ChannelChain[1].Status)
+	assert.Empty(t, detail.ChannelChain[1].Error)
+	assert.Empty(t, detail.LatestError)
+}
+
 func TestNewInflightTaskFinalizeContextIgnoresParentCancel(t *testing.T) {
 	parent, cancelParent := context.WithCancel(context.Background())
 	cancelParent()

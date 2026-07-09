@@ -46,6 +46,8 @@ const defaultOperationsSettings: OperationsSettings = {
   LogConsumeEnabled: false,
   InflightTaskCleanupRule: 2,
   InflightTaskCleanupIntervalMinutes: 10,
+  InflightTaskCleanupScheduleMode: 'interval',
+  InflightTaskCleanupCron: '0 3 * * *',
   InflightTaskTraceEnabled: false,
   InflightTaskTraceMenuVisible: false,
   InflightTaskTraceMaxRequestBytes: 0,

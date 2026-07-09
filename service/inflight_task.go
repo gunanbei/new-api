@@ -35,7 +35,7 @@ const (
 	InflightTaskCleanupRuleTerminal             = 2
 	inflightTaskCleanupRuleDefault              = InflightTaskCleanupRuleTerminal
 	inflightTaskCleanupIntervalMinutesDefault   = 10
-	inflightTaskCleanupIntervalMinutesMax       = 1440
+	inflightTaskCleanupIntervalMinutesMax       = 10080
 	inflightTaskWriteMaxRetries                 = 3
 	inflightTaskCleanupBatchSize                = 100
 )
@@ -523,6 +523,9 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 	if next.Detail.LatestError != "" {
 		detail.LatestError = next.Detail.LatestError
 	}
+	if next.Status == InflightTaskStatusCompleted {
+		detail.LatestError = ""
+	}
 	detail.CurrentStage = next.Status
 	if detail.ChannelChain == nil {
 		detail.ChannelChain = make([]InflightTaskChannelAttempt, 0)
@@ -617,10 +620,12 @@ func upsertInflightChannelAttempt(detail *InflightTaskDetail, incoming InflightT
 	if incoming.ChannelName != "" {
 		current.ChannelName = incoming.ChannelName
 	}
-	if incoming.Status != "" && !isInflightTaskTerminalStatus(current.Status) {
+	if incoming.Status != "" && shouldOverwriteInflightTaskStatus(current.Status, incoming.Status) {
 		current.Status = incoming.Status
 	}
-	if incoming.Error != "" {
+	if incoming.Status == InflightTaskStatusCompleted {
+		current.Error = ""
+	} else if incoming.Error != "" {
 		current.Error = incoming.Error
 	}
 }
@@ -647,10 +652,12 @@ func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAtte
 	if incoming.ChannelName != "" {
 		current.ChannelName = incoming.ChannelName
 	}
-	if incoming.Status != "" && !isInflightTaskTerminalStatus(current.Status) {
+	if incoming.Status != "" && shouldOverwriteInflightTaskStatus(current.Status, incoming.Status) {
 		current.Status = incoming.Status
 	}
-	if incoming.Error != "" {
+	if incoming.Status == InflightTaskStatusCompleted {
+		current.Error = ""
+	} else if incoming.Error != "" {
 		current.Error = incoming.Error
 	}
 	if len(incoming.Timeline) > len(current.Timeline) {
@@ -709,10 +716,12 @@ func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int
 			target.StartedAt = now
 		}
 		target.UpdatedAt = now
-		if status != "" && !isInflightTaskTerminalStatus(target.Status) {
+		if status != "" && shouldOverwriteInflightTaskStatus(target.Status, status) {
 			target.Status = status
 		}
-		if detail.LatestError != "" {
+		if status == InflightTaskStatusCompleted {
+			target.Error = ""
+		} else if detail.LatestError != "" {
 			target.Error = detail.LatestError
 		}
 	}
@@ -724,20 +733,25 @@ func updateInflightTaskDetail(detail *InflightTaskDetail, status string, now int
 		} else {
 			target = &detail.Attempts[idx]
 		}
-		wasTerminal := isInflightTaskTerminalStatus(target.Status)
 		if target.StartedAt == 0 {
 			target.StartedAt = now
 		}
 		target.UpdatedAt = now
-		if status != "" && !wasTerminal {
+		previousStatus := target.Status
+		if status != "" && shouldOverwriteInflightTaskStatus(target.Status, status) {
 			target.Status = status
 		}
-		if detail.LatestError != "" {
-			target.Error = detail.LatestError
-		}
-		if !wasTerminal {
+		if status != "" && (previousStatus != status || !isInflightTaskTerminalStatus(previousStatus)) {
 			updateInflightAttemptTimeline(target, status, now)
 		}
+		if status == InflightTaskStatusCompleted {
+			target.Error = ""
+		} else if detail.LatestError != "" {
+			target.Error = detail.LatestError
+		}
+	}
+	if status == InflightTaskStatusCompleted {
+		detail.LatestError = ""
 	}
 	if len(detail.Timeline) == 0 {
 		detail.Timeline = append(detail.Timeline, InflightTaskStatusStep{

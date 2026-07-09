@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -28,6 +29,7 @@ const (
 	inflightTaskTraceMenuVisibleOptionKey        = "InflightTaskTraceMenuVisible"
 	inflightTaskTraceMaxRequestBytesOptionKey    = "InflightTaskTraceMaxRequestBytes"
 	inflightTaskTraceMaxResponseBytesOptionKey   = "InflightTaskTraceMaxResponseBytes"
+	inflightTraceFlushInterval                   = 2 * time.Second
 )
 
 var sensitiveTraceHeaderNames = map[string]struct{}{
@@ -41,9 +43,8 @@ var sensitiveTraceHeaderNames = map[string]struct{}{
 }
 
 var (
-	errInflightTaskTraceNotFound   = errors.New("debug log not found")
-	errInflightTaskTraceForbidden  = errors.New("forbidden")
-	errInflightTaskTraceInProgress = errors.New("debug log is not available for in-progress requests")
+	errInflightTaskTraceNotFound  = errors.New("debug log not found")
+	errInflightTaskTraceForbidden = errors.New("forbidden")
 )
 
 type InflightTaskTrace struct {
@@ -67,6 +68,7 @@ type InflightTaskTraceFlags struct {
 	RequestTruncated    bool `json:"request_truncated"`
 	ResponseTruncated   bool `json:"response_truncated"`
 	ResponseIncomplete  bool `json:"response_incomplete"`
+	InProgress          bool `json:"in_progress,omitempty"`
 	UnsupportedRealtime bool `json:"unsupported_realtime,omitempty"`
 }
 
@@ -96,6 +98,7 @@ type traceResponseWriter struct {
 	statusCode   int
 	headerSnap   http.Header
 	wroteHeader  bool
+	owner        *InflightTraceCapture
 }
 
 func (w *traceResponseWriter) WriteHeader(code int) {
@@ -139,6 +142,9 @@ func (w *traceResponseWriter) capture(chunk []byte) {
 		}
 	}
 	_, _ = w.buf.Write(chunk)
+	if w.owner != nil {
+		w.owner.scheduleTraceFlush()
+	}
 }
 
 type InflightTraceCapture struct {
@@ -150,6 +156,11 @@ type InflightTraceCapture struct {
 	requestQuery   string
 	requestProto   string
 	requestHeaders http.Header
+	info           *relaycommon.RelayInfo
+	parentCtx      context.Context
+	createdAt      int64
+	flushMu        sync.Mutex
+	lastFlushedAt  time.Time
 }
 
 func InflightTaskTraceEnabled() bool {
@@ -278,8 +289,40 @@ func StartInflightTraceCapture(c *gin.Context, info *relaycommon.RelayInfo, rela
 	}
 	c.Writer = writer
 	capture.writer = writer
+	writer.owner = capture
+	capture.info = info
+	capture.parentCtx = c.Request.Context()
+	capture.createdAt = time.Now().Unix()
 	common.SetContextKey(c, constant.ContextKeyInflightTraceCapture, capture)
+	flushInflightTraceSnapshotAsync(capture)
 	return capture
+}
+
+func (capture *InflightTraceCapture) scheduleTraceFlush() {
+	if capture == nil {
+		return
+	}
+	capture.flushMu.Lock()
+	defer capture.flushMu.Unlock()
+	now := time.Now()
+	if !capture.lastFlushedAt.IsZero() && now.Sub(capture.lastFlushedAt) < inflightTraceFlushInterval {
+		return
+	}
+	capture.lastFlushedAt = now
+	flushInflightTraceSnapshotAsync(capture)
+}
+
+func flushInflightTraceSnapshotAsync(capture *InflightTraceCapture) {
+	if capture == nil || capture.info == nil || capture.info.UserId <= 0 || capture.info.RequestId == "" {
+		return
+	}
+	gopool.Go(func() {
+		ctx, cancel := NewInflightTaskFinalizeContext(capture.parentCtx)
+		defer cancel()
+		if err := persistInflightTraceSnapshot(ctx, capture); err != nil && !errors.Is(err, errInflightTaskUnavailable) {
+			common.SysError(fmt.Sprintf("flush inflight trace snapshot failed: %v", err))
+		}
+	})
 }
 
 func ResolveInflightTraceFinalStatus(info *relaycommon.RelayInfo, newAPIError *types.NewAPIError) string {
@@ -306,12 +349,85 @@ func PersistInflightTaskTraceAsync(parent context.Context, capture *InflightTrac
 }
 
 func persistInflightTaskTrace(ctx context.Context, capture *InflightTraceCapture, info *relaycommon.RelayInfo, status string) error {
-	client, err := inflightTaskRedis()
+	createdAt := capture.createdAt
+	if existing, err := loadInflightTaskTraceCreatedAt(ctx, info.RequestId); err == nil && existing > 0 {
+		createdAt = existing
+	}
+	trace := buildInflightTaskTraceFromCapture(capture, info, status, createdAt, false)
+	return writeInflightTaskTrace(ctx, info.RequestId, status, trace)
+}
+
+func persistInflightTraceSnapshot(ctx context.Context, capture *InflightTraceCapture) error {
+	info := capture.info
+	if info == nil || info.UserId <= 0 || info.RequestId == "" {
+		return nil
+	}
+
+	item, err := loadInflightTaskItem(ctx, info.RequestId)
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
+	if item.UserID != info.UserId {
+		return nil
+	}
+	if isInflightTaskTerminalStatus(item.Status) {
+		return nil
+	}
 
+	trace := buildInflightTaskTraceFromCapture(capture, info, item.Status, capture.createdAt, true)
+	return writeInflightTaskTrace(ctx, info.RequestId, item.Status, trace)
+}
+
+func loadInflightTaskItem(ctx context.Context, requestID string) (*InflightTask, error) {
+	client, err := inflightTaskRedis()
+	if err != nil {
+		return nil, err
+	}
+	itemRaw, err := client.Get(ctx, inflightTaskItemKey(requestID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	var item InflightTask
+	if err = common.UnmarshalJsonStr(itemRaw, &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func loadInflightTaskTraceCreatedAt(ctx context.Context, requestID string) (int64, error) {
+	client, err := inflightTaskRedis()
+	if err != nil {
+		return 0, err
+	}
+	traceRaw, err := client.Get(ctx, inflightTaskTraceKey(requestID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var trace InflightTaskTrace
+	if err = common.UnmarshalJsonStr(traceRaw, &trace); err != nil {
+		return 0, err
+	}
+	return trace.CreatedAt, nil
+}
+
+func buildInflightTaskTraceFromCapture(
+	capture *InflightTraceCapture,
+	info *relaycommon.RelayInfo,
+	status string,
+	createdAt int64,
+	inProgress bool,
+) *InflightTaskTrace {
 	now := time.Now().Unix()
+	if createdAt <= 0 {
+		createdAt = now
+	}
+
 	trace := &InflightTaskTrace{
 		RequestID:  info.RequestId,
 		UserID:     info.UserId,
@@ -319,7 +435,7 @@ func persistInflightTaskTrace(ctx context.Context, capture *InflightTraceCapture
 		Kind:       inflightTaskKindFromRelayMode(info.RelayMode),
 		ModelName:  info.OriginModelName,
 		IsStream:   info.IsStream,
-		CreatedAt:  now,
+		CreatedAt:  createdAt,
 		UpdatedAt:  now,
 		RecordedAt: now,
 	}
@@ -354,24 +470,33 @@ func persistInflightTaskTrace(ctx context.Context, capture *InflightTraceCapture
 		)
 		trace.ClientResponse = responsePart
 		trace.Flags.ResponseTruncated = responseTruncated || capture.writer.truncated
-		if capture.writer.totalWritten > 0 && capture.writer.buf.Len() == 0 && capture.writer.statusCode == 0 {
+		if inProgress {
+			trace.Flags.InProgress = true
+			trace.Flags.ResponseIncomplete = true
+		} else if capture.writer.totalWritten > 0 && capture.writer.buf.Len() == 0 && capture.writer.statusCode == 0 {
+			trace.Flags.ResponseIncomplete = true
+		} else if capture.writer.buf.Len() == 0 && capture.writer.totalWritten == 0 && capture.writer.statusCode == 0 {
 			trace.Flags.ResponseIncomplete = true
 		}
-		if capture.writer.buf.Len() == 0 && capture.writer.totalWritten == 0 && capture.writer.statusCode == 0 {
-			trace.Flags.ResponseIncomplete = true
-		}
+	} else if inProgress {
+		trace.Flags.InProgress = true
+		trace.Flags.ResponseIncomplete = true
 	}
 
+	return trace
+}
+
+func writeInflightTaskTrace(ctx context.Context, requestID, status string, trace *InflightTaskTrace) error {
+	client, err := inflightTaskRedis()
+	if err != nil {
+		return err
+	}
 	data, err := common.Marshal(trace)
 	if err != nil {
 		return err
 	}
-
 	ttl := inflightTaskRetentionTTL(status)
-	if err = client.Set(ctx, inflightTaskTraceKey(info.RequestId), string(data), ttl).Err(); err != nil {
-		return err
-	}
-	return nil
+	return client.Set(ctx, inflightTaskTraceKey(requestID), string(data), ttl).Err()
 }
 
 func attachInflightTaskHasTrace(ctx context.Context, tasks []InflightTask) error {
@@ -387,9 +512,6 @@ func attachInflightTaskHasTrace(ctx context.Context, tasks []InflightTask) error
 	cmds := make([]*redis.IntCmd, 0)
 	indices := make([]int, 0, len(tasks))
 	for i := range tasks {
-		if !isInflightTaskTerminalStatus(tasks[i].Status) {
-			continue
-		}
 		cmds = append(cmds, pipe.Exists(ctx, inflightTaskTraceKey(tasks[i].RequestID)))
 		indices = append(indices, i)
 	}
@@ -428,9 +550,6 @@ func GetInflightTaskTrace(ctx context.Context, userID int, requestID string) (*I
 	if item.UserID != userID {
 		return nil, errInflightTaskTraceForbidden
 	}
-	if !isInflightTaskTerminalStatus(item.Status) {
-		return nil, errInflightTaskTraceInProgress
-	}
 
 	traceRaw, err := client.Get(ctx, inflightTaskTraceKey(requestID)).Result()
 	if errors.Is(err, redis.Nil) {
@@ -455,8 +574,4 @@ func IsInflightTaskTraceNotFound(err error) bool {
 
 func IsInflightTaskTraceForbidden(err error) bool {
 	return errors.Is(err, errInflightTaskTraceForbidden)
-}
-
-func IsInflightTaskTraceInProgress(err error) bool {
-	return errors.Is(err, errInflightTaskTraceInProgress)
 }

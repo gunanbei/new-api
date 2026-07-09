@@ -17,9 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import axios from 'axios'
+import { Download, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   CodeBlock,
@@ -34,10 +36,20 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
+import { cn } from '@/lib/utils'
 
 import {
   InflightDetailRow,
@@ -47,6 +59,11 @@ import type {
   InflightTaskTrace,
   InflightTraceHTTPPart,
 } from '../types/inflight-trace'
+import {
+  formatSseEventsForCopy,
+  parseSseTrace,
+  type SseParseStrategy,
+} from '../lib/inflight-sse-parse'
 
 type InflightTaskTraceDialogProps = {
   requestId: string | null
@@ -57,11 +74,28 @@ type InflightTaskTraceDialogProps = {
     model_name?: string
     status?: string
     is_stream?: boolean
+    has_trace?: boolean
   }
 }
 
 type BodyViewMode = 'formatted' | 'raw'
-type SseViewMode = 'raw' | 'events'
+type SseViewMode = 'raw' | 'events' | 'parsed'
+
+function isTerminalInflightStatus(status?: string) {
+  return status === 'completed' || status === 'failed'
+}
+
+const SSE_STRATEGY_OPTIONS: Array<{
+  value: SseParseStrategy
+  labelKey: string
+}> = [
+  { value: 'openai', labelKey: 'OpenAI API compatible format' },
+  { value: 'gemini', labelKey: 'Gemini API compatible format' },
+  { value: 'claude', labelKey: 'Claude API compatible format' },
+  { value: 'ollama_generate', labelKey: 'Ollama API compatible format (Generate)' },
+  { value: 'ollama_chat', labelKey: 'Ollama API compatible format (Chat)' },
+  { value: 'custom', labelKey: 'Custom JSONPath extraction' },
+]
 
 function formatBytes(bytes?: number) {
   if (!bytes) return '0 B'
@@ -85,18 +119,62 @@ function decodeTraceBody(part?: InflightTraceHTTPPart) {
   return new TextEncoder().encode(part.body)
 }
 
+function isTraceBodyBinary(part?: InflightTraceHTTPPart) {
+  if (!part?.body || part.body_encoding === 'empty') {
+    return false
+  }
+  if (part.body_encoding === 'base64') {
+    return true
+  }
+  return isBinaryContentType(part.content_type)
+}
+
+function getTraceBodyPlainText(
+  part: InflightTraceHTTPPart | undefined,
+  options?: { formattedJson?: boolean }
+) {
+  if (!part?.body || part.body_encoding !== 'text') {
+    return ''
+  }
+  if (options?.formattedJson && isJsonContentType(part.content_type)) {
+    return formatJsonText(part.body)
+  }
+  return part.body
+}
+
 function downloadTraceBody(
   part: InflightTraceHTTPPart | undefined,
-  filename: string
+  filenameBase: string,
+  content?: string
 ) {
-  const bytes = decodeTraceBody(part)
-  const blob = new Blob([bytes], {
-    type: part?.content_type || 'application/octet-stream',
-  })
+  if (!part?.body) {
+    return
+  }
+
+  if (isTraceBodyBinary(part)) {
+    const bytes = decodeTraceBody(part)
+    const blob = new Blob([bytes], {
+      type: part.content_type || 'application/octet-stream',
+    })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${filenameBase}.bin`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    return
+  }
+
+  const text =
+    content ??
+    getTraceBodyPlainText(part, {
+      formattedJson: isJsonContentType(part.content_type),
+    })
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = filename
+  anchor.download = `${filenameBase}.txt`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -131,14 +209,6 @@ function formatJsonText(text: string) {
   }
 }
 
-function parseSseEvents(text: string) {
-  const chunks = text.split('\n\n').filter((chunk) => chunk.trim().length > 0)
-  return chunks.map((chunk, index) => ({
-    index: index + 1,
-    text: chunk,
-  }))
-}
-
 function buildHttpLine(part?: InflightTraceHTTPPart, response = false) {
   if (!part) return '-'
   if (response) {
@@ -167,7 +237,7 @@ function HeadersTable(props: {
       {entries.length === 0 ? (
         <p className='text-muted-foreground text-xs'>-</p>
       ) : (
-        <div className='overflow-x-auto rounded-md border'>
+        <div className='border-border overflow-x-auto rounded-md border'>
           <table className='w-full text-xs'>
             <thead>
               <tr className='bg-muted/40 border-b'>
@@ -190,6 +260,10 @@ function HeadersTable(props: {
   )
 }
 
+const traceInfoAlertClassName = 'border-border bg-muted/30'
+const tracePreClassName =
+  'border-border bg-muted/30 max-h-[50vh] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap'
+
 function TruncationAlert(props: {
   truncated?: boolean
   bodyBytes?: number
@@ -197,7 +271,7 @@ function TruncationAlert(props: {
   const { t } = useTranslation()
   if (!props.truncated) return null
   return (
-    <Alert>
+    <Alert className={traceInfoAlertClassName}>
       <AlertDescription>
         {t('Content truncated to first {{size}}', {
           size: formatBytes(props.bodyBytes),
@@ -210,20 +284,21 @@ function TruncationAlert(props: {
 function TraceBodyPanel(props: {
   part?: InflightTraceHTTPPart
   truncated?: boolean
-  filename: string
+  filenameBase: string
   bodyLabel: string
 }) {
   const { t } = useTranslation()
-  const { copyToClipboard } = useCopyToClipboard({ notify: false })
+  const { copyToClipboard } = useCopyToClipboard()
   const [viewMode, setViewMode] = useState<BodyViewMode>('formatted')
   const [sseViewMode, setSseViewMode] = useState<SseViewMode>('raw')
+  const [sseStrategy, setSseStrategy] = useState<SseParseStrategy>('openai')
+  const [customJsonPath, setCustomJsonPath] = useState('$.choices[0].delta.content')
   const textBody = props.part?.body_encoding === 'text' ? props.part.body || '' : ''
   const contentType = props.part?.content_type
   const isJson = isJsonContentType(contentType)
   const isMultipart = isMultipartContentType(contentType)
   const isSse = isSseContentType(contentType)
-  const isBinary =
-    props.part?.body_encoding === 'base64' || isBinaryContentType(contentType)
+  const isBinary = isTraceBodyBinary(props.part)
 
   const displayText = useMemo(() => {
     if (!textBody) return ''
@@ -233,30 +308,69 @@ function TraceBodyPanel(props: {
     return textBody
   }, [isJson, textBody, viewMode])
 
-  const sseEvents = useMemo(() => {
-    if (!isSse || !textBody) return []
-    return parseSseEvents(textBody)
-  }, [isSse, textBody])
+  const parsedSse = useMemo(() => {
+    if (!isSse || !textBody) {
+      return null
+    }
+    return parseSseTrace(textBody, sseStrategy, customJsonPath)
+  }, [customJsonPath, isSse, sseStrategy, textBody])
+
+  const currentCopyText = useMemo(() => {
+    if (!textBody) {
+      return ''
+    }
+    if (isSse) {
+      if (sseViewMode === 'raw') {
+        return textBody
+      }
+      if (sseViewMode === 'parsed') {
+        return parsedSse?.concatenated || ''
+      }
+      if (parsedSse) {
+        return formatSseEventsForCopy(parsedSse.events)
+      }
+      return textBody
+    }
+    return displayText || textBody
+  }, [displayText, isSse, parsedSse, sseViewMode, textBody])
 
   let textBodyContent: ReactNode = null
-  if (
-    !isBinary &&
-    (!isSse || sseViewMode === 'raw' || sseEvents.length === 0) &&
-    textBody
-  ) {
+  if (!isBinary && !isSse && textBody) {
     if (isJson && viewMode === 'formatted') {
       textBodyContent = (
-        <CodeBlock code={displayText} language='json' className='max-h-[50vh]'>
+        <CodeBlock
+          code={displayText}
+          language='json'
+          collapsedLines={12}
+          maxExpandedLines={32}
+          enableCollapse
+        >
           <CodeBlockCopyButton />
         </CodeBlock>
       )
     } else {
       textBodyContent = (
-        <pre className='max-h-[50vh] overflow-auto rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap'>
+        <pre className={tracePreClassName}>
           {displayText}
         </pre>
       )
     }
+  }
+
+  if (!isBinary && isSse && sseViewMode === 'raw' && textBody) {
+    textBodyContent = (
+      <pre className={tracePreClassName}>
+        {textBody}
+      </pre>
+    )
+  }
+
+  if (!isBinary && isSse && sseViewMode === 'parsed') {
+    textBodyContent = (
+      <pre className={tracePreClassName}>
+        {parsedSse?.concatenated || '-'}
+      </pre>
+    )
   }
 
   return (
@@ -264,8 +378,8 @@ function TraceBodyPanel(props: {
       <TruncationAlert truncated={props.truncated} bodyBytes={props.part?.body_bytes} />
       <div className='flex flex-wrap items-center gap-2'>
         <span className='text-sm font-medium'>{props.bodyLabel}</span>
-        <div className='ml-auto flex flex-wrap gap-2'>
-          {isJson ? (
+        <div className='ml-auto flex flex-wrap items-center justify-end gap-2'>
+          {isJson && !isSse ? (
             <>
               <Button
                 type='button'
@@ -303,14 +417,55 @@ function TraceBodyPanel(props: {
               >
                 {t('Event List')}
               </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant={sseViewMode === 'parsed' ? 'default' : 'outline'}
+                onClick={() => setSseViewMode('parsed')}
+              >
+                {t('Parsed output')}
+              </Button>
+              <Select
+                items={SSE_STRATEGY_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                value={sseStrategy}
+                onValueChange={(value) => {
+                  if (value) {
+                    setSseStrategy(value as SseParseStrategy)
+                  }
+                }}
+              >
+                <SelectTrigger className='h-8 w-[min(100%,220px)] text-xs'>
+                  <SelectValue placeholder={t('SSE parse strategy')} />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {SSE_STRATEGY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(option.labelKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {sseStrategy === 'custom' ? (
+                <Input
+                  className='h-8 w-[min(100%,260px)] font-mono text-xs'
+                  value={customJsonPath}
+                  onChange={(event) => setCustomJsonPath(event.currentTarget.value)}
+                  placeholder={t('Supports JSONPath, e.g. $.choices[0].delta.content')}
+                />
+              ) : null}
             </>
           ) : null}
-          {textBody ? (
+          {textBody || props.part?.body ? (
             <Button
               type='button'
               size='sm'
               variant='outline'
-              onClick={() => copyToClipboard(displayText || textBody)}
+              onClick={() => copyToClipboard(currentCopyText)}
             >
               {t('Copy All')}
             </Button>
@@ -320,7 +475,9 @@ function TraceBodyPanel(props: {
               type='button'
               size='sm'
               variant='outline'
-              onClick={() => downloadTraceBody(props.part, props.filename)}
+              onClick={() =>
+                downloadTraceBody(props.part, props.filenameBase, currentCopyText)
+              }
             >
               <Download />
               {t('Download')}
@@ -350,17 +507,21 @@ function TraceBodyPanel(props: {
         <p className='text-muted-foreground text-sm'>-</p>
       ) : null}
 
-      {!isBinary && isSse && sseViewMode === 'events' && sseEvents.length > 0 ? (
+      {!isBinary && isSse && sseViewMode === 'events' && parsedSse && parsedSse.events.length > 0 ? (
         <div className='space-y-2'>
-          {sseEvents.map((event) => (
+          {parsedSse.events.map((event) => (
             <Collapsible key={event.index} defaultOpen={event.index <= 3}>
-              <CollapsibleTrigger className='hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs'>
+              <CollapsibleTrigger className='border-border hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs'>
                 <span className='font-mono'>[{event.index}]</span>
-                <span className='truncate'>{event.text.split('\n')[0]}</span>
+                <span className='truncate'>
+                  {event.extracted
+                    ? `${event.raw.split('\n')[0]} → ${event.extracted}`
+                    : event.raw.split('\n')[0]}
+                </span>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <pre className='mt-2 overflow-x-auto rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap'>
-                  {event.text}
+                <pre className={cn('mt-2 overflow-x-auto', tracePreClassName)}>
+                  {event.raw}
                 </pre>
               </CollapsibleContent>
             </Collapsible>
@@ -435,20 +596,27 @@ async function fetchInflightTaskTrace(requestId: string, useMock: boolean) {
     }
     return null
   }
-  const res = await api.get<{ success: boolean; data?: InflightTaskTrace }>(
-    `/api/log/inflight/self/${requestId}/trace`,
-    { disableDuplicate: true, skipBusinessError: true }
-  )
-  if (!res.data.success) {
-    return null
+  try {
+    const res = await api.get<{ success: boolean; data?: InflightTaskTrace }>(
+      `/api/log/inflight/self/${requestId}/trace`,
+      { disableDuplicate: true, skipBusinessError: true, skipErrorHandler: true }
+    )
+    if (!res.data.success || !res.data.data) {
+      return null
+    }
+    return res.data.data
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null
+    }
+    throw error
   }
-  return res.data.data ?? null
 }
 
 export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
   const { t } = useTranslation()
-  const { copyToClipboard } = useCopyToClipboard({ notify: false })
-  const { data: trace, isLoading, isError } = useQuery({
+  const { copyToClipboard } = useCopyToClipboard()
+  const { data: trace, isLoading, isError, isFetched } = useQuery({
     queryKey: ['inflight-trace', props.requestId, props.useMock],
     queryFn: () => {
       const requestId = props.requestId
@@ -458,7 +626,91 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
       return fetchInflightTaskTrace(requestId, props.useMock)
     },
     enabled: props.open && !!props.requestId,
+    refetchInterval: (query) => {
+      if (!props.open || props.useMock || !props.requestId) {
+        return false
+      }
+      const data = query.state.data
+      if (
+        data &&
+        isTerminalInflightStatus(data.status) &&
+        !data.flags.in_progress
+      ) {
+        return false
+      }
+      const status = data?.status ?? props.summary?.status
+      if (
+        status &&
+        isTerminalInflightStatus(status) &&
+        props.summary?.has_trace === false
+      ) {
+        return false
+      }
+      return 2000
+    },
+    refetchIntervalInBackground: false,
   })
+
+  const liveStatus = trace?.status ?? props.summary?.status
+
+  const shouldPoll = useMemo(() => {
+    if (!props.open || props.useMock || !props.requestId) {
+      return false
+    }
+    if (
+      trace &&
+      isTerminalInflightStatus(trace.status) &&
+      !trace.flags.in_progress
+    ) {
+      return false
+    }
+    if (
+      liveStatus &&
+      isTerminalInflightStatus(liveStatus) &&
+      props.summary?.has_trace === false
+    ) {
+      return false
+    }
+    return true
+  }, [
+    liveStatus,
+    props.open,
+    props.requestId,
+    props.summary?.has_trace,
+    props.useMock,
+    trace,
+  ])
+
+  const awaitingSnapshot = !trace && shouldPoll && !isError
+
+  useEffect(() => {
+    if (
+      !props.open ||
+      props.useMock ||
+      !isFetched ||
+      isLoading ||
+      isError ||
+      shouldPoll
+    ) {
+      return
+    }
+    if (!trace) {
+      toast.error(
+        t('This inflight record does not exist or has been cleaned up')
+      )
+      props.onOpenChange(false)
+    }
+  }, [
+    props.open,
+    props.useMock,
+    props.onOpenChange,
+    isFetched,
+    isLoading,
+    isError,
+    shouldPoll,
+    trace,
+    t,
+  ])
 
   const description = [
     props.requestId,
@@ -488,13 +740,11 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
         </Button>
       }
     >
-      {isLoading ? (
+      {isLoading || awaitingSnapshot ? (
         <p className='text-muted-foreground py-6 text-sm'>{t('Loading...')}</p>
       ) : null}
-      {isError || (!isLoading && !trace) ? (
-        <p className='text-muted-foreground py-6 text-sm'>
-          {t('Debug log not found')}
-        </p>
+      {isError ? (
+        <p className='text-muted-foreground py-6 text-sm'>{t('Failed to load')}</p>
       ) : null}
       {trace ? (
         <Tabs defaultValue='overview' className='min-w-0'>
@@ -514,7 +764,7 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
             </div>
             {(trace.flags.request_truncated ||
               trace.flags.response_truncated) && (
-              <Alert>
+              <Alert className={traceInfoAlertClassName}>
                 <AlertDescription>
                   {t('Content truncated to first {{size}}', {
                     size: formatBytes(
@@ -526,8 +776,18 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
                 </AlertDescription>
               </Alert>
             )}
-            {trace.flags.response_incomplete ? (
-              <Alert>
+            {trace.flags.in_progress ? (
+              <Alert className={traceInfoAlertClassName}>
+                <Loader2 className='animate-spin' />
+                <AlertDescription>
+                  {t(
+                    'Response in progress. Content will update automatically.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {trace.flags.response_incomplete && !trace.flags.in_progress ? (
+              <Alert className={traceInfoAlertClassName}>
                 <AlertDescription>
                   {t('Response may be incomplete')}
                 </AlertDescription>
@@ -573,7 +833,7 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
             <TraceBodyPanel
               part={trace.client_request}
               truncated={trace.flags.request_truncated}
-              filename={`${trace.request_id}-request.bin`}
+              filenameBase={`${trace.request_id}-request`}
               bodyLabel={t('Request Body')}
             />
           </TabsContent>
@@ -593,7 +853,7 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
             <TraceBodyPanel
               part={trace.client_response}
               truncated={trace.flags.response_truncated}
-              filename={`${trace.request_id}-response.bin`}
+              filenameBase={`${trace.request_id}-response`}
               bodyLabel={t('Response Body')}
             />
           </TabsContent>

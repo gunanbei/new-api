@@ -1,0 +1,69 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+
+import {
+  formatSseEventsForCopy,
+  parseSseTrace,
+} from './inflight-sse-parse'
+
+describe('parseSseTrace', () => {
+  test('extracts OpenAI chat completion deltas', () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":" there"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n')
+
+    const result = parseSseTrace(body, 'openai', '')
+    assert.equal(result.concatenated, 'Hi there')
+    assert.equal(result.events.length, 3)
+    assert.equal(result.events[0]?.extracted, 'Hi')
+  })
+
+  test('extracts OpenAI Responses API output text deltas', () => {
+    const body = [
+      'data: {"type":"response.output_text.delta","delta":"hello"}',
+      '',
+      'data: {"type":"response.output_text.delta","delta":" world"}',
+      '',
+    ].join('\n')
+
+    const result = parseSseTrace(body, 'openai', '')
+    assert.equal(result.concatenated, 'hello world')
+  })
+
+  test('extracts with custom JSONPath', () => {
+    const body = 'data: {"message":{"content":"custom"}}\n\n'
+    const result = parseSseTrace(body, 'custom', '$.message.content')
+    assert.equal(result.concatenated, 'custom')
+  })
+
+  test('formats events for copy', () => {
+    const body = 'data: {"id":1}\n\n'
+    const parsed = parseSseTrace(body, 'openai', '')
+    const copied = formatSseEventsForCopy(parsed.events)
+    assert.match(copied, /\[1\] data:/)
+    assert.match(copied, /"id": 1/)
+  })
+})

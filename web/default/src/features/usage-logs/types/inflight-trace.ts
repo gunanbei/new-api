@@ -20,6 +20,7 @@ export type InflightTaskTraceFlags = {
   request_truncated: boolean
   response_truncated: boolean
   response_incomplete: boolean
+  in_progress?: boolean
   unsupported_realtime?: boolean
 }
 

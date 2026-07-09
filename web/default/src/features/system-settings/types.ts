@@ -98,6 +98,17 @@ export type InflightTaskStatsResponse = {
   data?: InflightTaskStats
 }
 
+export type InflightCleanupCronPreview = {
+  timezone: string
+  next_runs: number[]
+}
+
+export type InflightCleanupCronPreviewResponse = {
+  success: boolean
+  message: string
+  data?: InflightCleanupCronPreview
+}
+
 export type LogCleanupTask = SystemTask<
   LogCleanupTaskPayload,
   LogCleanupTaskState,
@@ -360,6 +371,8 @@ export type OperationsSettings = {
   LogConsumeEnabled: boolean
   InflightTaskCleanupRule: number
   InflightTaskCleanupIntervalMinutes: number
+  InflightTaskCleanupScheduleMode: 'interval' | 'cron'
+  InflightTaskCleanupCron: string
   InflightTaskTraceEnabled: boolean
   InflightTaskTraceMenuVisible: boolean
   InflightTaskTraceMaxRequestBytes: number

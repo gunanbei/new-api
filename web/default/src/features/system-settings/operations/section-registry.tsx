@@ -104,6 +104,12 @@ const OPERATIONS_SECTIONS = [
         defaultInflightTaskCleanupIntervalMinutes={
           Number(settings.InflightTaskCleanupIntervalMinutes) || 10
         }
+        defaultInflightTaskCleanupScheduleMode={
+          settings.InflightTaskCleanupScheduleMode === 'cron' ? 'cron' : 'interval'
+        }
+        defaultInflightTaskCleanupCron={
+          settings.InflightTaskCleanupCron || '0 3 * * *'
+        }
         defaultInflightTaskTraceEnabled={Boolean(
           settings.InflightTaskTraceEnabled
         )}

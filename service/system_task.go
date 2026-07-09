@@ -101,6 +101,10 @@ func (inflightLogCleanupHandler) Interval() time.Duration {
 	return InflightTaskCleanupInterval()
 }
 
+func (inflightLogCleanupHandler) IsDue(lastRunAt int64, now int64) bool {
+	return IsInflightTaskCleanupScheduleDue(lastRunAt, now)
+}
+
 func (inflightLogCleanupHandler) NewPayload() any {
 	return LogCleanupPayload{
 		TargetTimestamp: common.GetTimestamp(),
@@ -339,8 +343,16 @@ func runSystemTaskScheduler() {
 			if latest.Status == model.SystemTaskStatusPending || latest.Status == model.SystemTaskStatusRunning {
 				continue // an active row already exists
 			}
-			if now-latest.UpdatedAt < int64(scheduled.Interval().Seconds()) {
-				continue // not due yet
+			due := false
+			if dueChecker, ok := scheduled.(interface {
+				IsDue(lastRunAt int64, now int64) bool
+			}); ok {
+				due = dueChecker.IsDue(latest.UpdatedAt, now)
+			} else {
+				due = now-latest.UpdatedAt >= int64(scheduled.Interval().Seconds())
+			}
+			if !due {
+				continue
 			}
 		}
 		if _, err := model.CreateSystemTask(scheduled.Type(), scheduled.NewPayload(), nil); err != nil {

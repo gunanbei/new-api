@@ -23,10 +23,12 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
+import { InflightCleanupScheduleInfo } from './components/inflight-cleanup-schedule-info'
 import { InflightTasksTab } from './components/inflight-tasks-tab'
 import {
   UsageLogsProvider,
@@ -76,7 +78,7 @@ function UsageLogsContent() {
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
-        title: 'Task Logs',
+        title: 'Async Logs',
         items: TASK_LOG_SECTIONS.map((section) => ({
           title: SECTION_META[section].titleKey,
           url: `/usage-logs/${section}`,
@@ -121,16 +123,32 @@ function UsageLogsContent() {
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
-            {showTaskSwitcher && (
-              <Tabs value={activeCategory} onValueChange={handleSectionChange}>
-                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                  {visibleSections.map((section) => (
-                    <TabsTrigger key={section} value={section}>
-                      {t(SECTION_META[section].titleKey)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+            {(showTaskSwitcher || activeCategory === 'inflight') && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-2',
+                  showTaskSwitcher && 'justify-between'
+                )}
+              >
+                {showTaskSwitcher ? (
+                  <Tabs
+                    value={activeCategory}
+                    onValueChange={handleSectionChange}
+                    className='min-w-0'
+                  >
+                    <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+                      {visibleSections.map((section) => (
+                        <TabsTrigger key={section} value={section}>
+                          {t(SECTION_META[section].titleKey)}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                ) : null}
+                {activeCategory === 'inflight' ? (
+                  <InflightCleanupScheduleInfo className='min-w-0 sm:ms-auto' />
+                ) : null}
+              </div>
             )}
             <div className='min-h-0 flex-1'>
               {activeCategory === 'inflight' ? (

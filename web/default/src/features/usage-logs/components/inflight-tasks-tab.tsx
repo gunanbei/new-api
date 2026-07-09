@@ -1896,8 +1896,8 @@ export function InflightTasksTab() {
       )
     },
     placeholderData: (previousData) => previousData,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   })
 
   const columns = useInflightTaskColumns({

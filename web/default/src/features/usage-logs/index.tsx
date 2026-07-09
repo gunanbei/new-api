@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -62,6 +63,7 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
 function UsageLogsContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const params = route.useParams()
   const activeCategory: UsageLogsSectionId =
     params.section && isUsageLogsSectionId(params.section)
@@ -110,6 +112,21 @@ function UsageLogsContent() {
     },
     [navigate]
   )
+
+  const previousCategoryRef = useRef<UsageLogsSectionId | null>(null)
+  useEffect(() => {
+    const previous = previousCategoryRef.current
+    previousCategoryRef.current = activeCategory
+    if (previous === null) {
+      return
+    }
+    if (
+      activeCategory === 'inflight' &&
+      (previous === 'drawing' || previous === 'task')
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['inflight-tasks'] })
+    }
+  }, [activeCategory, queryClient])
 
   const pageMeta = SECTION_META[activeCategory]
   const showTaskSwitcher =

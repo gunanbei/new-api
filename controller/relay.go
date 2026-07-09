@@ -204,6 +204,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		relayInfo.InitChannelMeta(c)
 		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusRouting)
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {

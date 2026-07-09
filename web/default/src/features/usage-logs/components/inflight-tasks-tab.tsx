@@ -445,6 +445,10 @@ function isFinalFailure(task: InflightTask) {
   return task.status === 'failed'
 }
 
+function isInflightTaskTerminal(task: InflightTask) {
+  return task.status === 'completed' || task.status === 'failed'
+}
+
 function getCurrentStage(task: InflightTask) {
   return task.detail?.current_stage || task.status
 }
@@ -698,6 +702,28 @@ async function fetchInflightTasks(params: Record<string, unknown>) {
   return res.data
 }
 
+async function fetchInflightTaskByRequestId(
+  requestId: string,
+  params: Record<string, unknown>,
+  useMock: boolean
+) {
+  if (useMock) {
+    return (
+      MOCK_INFLIGHT_TASKS.find((task) => task.request_id === requestId) ?? null
+    )
+  }
+  const result = await fetchInflightTasks({
+    ...params,
+    request_id: requestId,
+    p: 1,
+    page_size: 1,
+  })
+  if (!result?.success) {
+    return null
+  }
+  return result.data?.items?.[0] ?? null
+}
+
 function getMockInflightTasksResponse(params: Record<string, unknown>): NonNullable<InflightTasksResponse['data']> {
   const page = typeof params.p === 'number' ? params.p : 1
   const pageSize = typeof params.page_size === 'number' ? params.page_size : 100
@@ -905,15 +931,37 @@ function InflightTaskDetailsDialog(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   isAdmin: boolean
+  fetchParams: Record<string, unknown>
+  useMock: boolean
 }) {
   const { t } = useTranslation()
+  const requestId = props.task?.request_id
+  const { data: liveTask } = useQuery({
+    queryKey: ['inflight-task-detail', requestId, props.fetchParams, props.useMock],
+    queryFn: () =>
+      fetchInflightTaskByRequestId(requestId!, props.fetchParams, props.useMock),
+    enabled: props.open && !!requestId,
+    placeholderData: props.task ?? undefined,
+    refetchInterval: (query) => {
+      if (!props.open) {
+        return false
+      }
+      const task = query.state.data
+      if (task && isInflightTaskTerminal(task)) {
+        return false
+      }
+      return 2000
+    },
+    refetchIntervalInBackground: false,
+  })
+  const task = liveTask ?? props.task
 
   return (
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Details')}
-      description={props.task ? buildDetailsSummary(props.task, t) : undefined}
+      description={task ? buildDetailsSummary(task, t) : undefined}
       contentClassName='max-h-[calc(100dvh-2rem)] overflow-hidden max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-3xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -927,9 +975,9 @@ function InflightTaskDetailsDialog(props: {
         </Button>
       }
     >
-      {props.task ? (
+      {task ? (
         <div className='max-h-[calc(100dvh-8.5rem)] space-y-3 overflow-y-auto py-2 pr-1 sm:max-h-[72vh] sm:space-y-4'>
-          <InflightTaskDetails task={props.task} isAdmin={props.isAdmin} />
+          <InflightTaskDetails task={task} isAdmin={props.isAdmin} />
         </div>
       ) : null}
     </Dialog>
@@ -1752,6 +1800,16 @@ export function InflightTasksTab() {
     setDetailsTask(task)
   }, [])
 
+  const detailFetchParams = useMemo(
+    () =>
+      buildParams({
+        page: 1,
+        pageSize: 1,
+        searchParams,
+      }),
+    [searchParams]
+  )
+
   const columns = useInflightTaskColumns({
     onOpenDetails,
     isAdmin,
@@ -1876,6 +1934,8 @@ export function InflightTasksTab() {
           if (!open) setDetailsTask(null)
         }}
         isAdmin={isAdmin}
+        fetchParams={detailFetchParams}
+        useMock={searchParams.mock === 'inflight'}
       />
     </>
   )

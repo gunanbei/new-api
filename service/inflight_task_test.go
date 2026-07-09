@@ -99,6 +99,36 @@ func TestShouldApplyReconciledTerminalStatus(t *testing.T) {
 	assert.False(t, shouldApplyReconciledTerminalStatus(inflight, InflightTaskStatusRouting))
 }
 
+func TestInflightTaskDetailFromRelayInfoIncludesChannelWhenMetaSet(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		RetryIndex: 0,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:   16,
+			ChannelName: "Hiyo",
+		},
+	}
+
+	detail := inflightTaskDetailFromRelayInfo(info, InflightTaskStatusUpstreamPending, 100)
+	require.NotNil(t, detail)
+	assert.Equal(t, 16, detail.ChannelID)
+	assert.Equal(t, "Hiyo", detail.ChannelName)
+	require.Len(t, detail.ChannelChain, 1)
+	assert.Equal(t, 16, detail.ChannelChain[0].ChannelID)
+	require.Len(t, detail.Attempts, 1)
+	assert.Equal(t, InflightTaskStatusUpstreamPending, detail.Attempts[0].Status)
+}
+
+func TestInflightTaskDetailFromRelayInfoOmitsChannelWithoutMeta(t *testing.T) {
+	info := &relaycommon.RelayInfo{RetryIndex: 0}
+
+	detail := inflightTaskDetailFromRelayInfo(info, InflightTaskStatusUpstreamPending, 100)
+	require.NotNil(t, detail)
+	assert.Zero(t, detail.ChannelID)
+	assert.Empty(t, detail.ChannelName)
+	assert.Empty(t, detail.ChannelChain)
+	assert.Empty(t, detail.Attempts)
+}
+
 func TestUpdateInflightTaskDetailBuildsAttemptTimeline(t *testing.T) {
 	detail := &InflightTaskDetail{
 		RetryIndex: 0,
@@ -195,8 +225,65 @@ func TestMergeInflightTaskDetailSplitsAttemptsByRetryIndex(t *testing.T) {
 	assert.Equal(t, 0, next.Detail.Attempts[0].RetryIndex)
 	assert.Equal(t, 1, next.Detail.Attempts[1].RetryIndex)
 	assert.Equal(t, "second", next.Detail.Attempts[1].ChannelName)
+	assert.Equal(t, 20, next.Detail.ChannelID)
+	assert.Equal(t, "second", next.Detail.ChannelName)
+	require.Len(t, next.Detail.ChannelChain, 2)
+	assert.Equal(t, 10, next.Detail.ChannelChain[0].ChannelID)
+	assert.Equal(t, 20, next.Detail.ChannelChain[1].ChannelID)
 	require.Len(t, next.Detail.Attempts[1].Timeline, 1)
 	assert.Equal(t, InflightTaskStatusRouting, next.Detail.Attempts[1].Timeline[0].Status)
+}
+
+func TestMergeInflightTaskDetailRetryUpstreamPendingShowsCurrentChannel(t *testing.T) {
+	stored := &InflightTask{
+		Status: InflightTaskStatusRouting,
+		Detail: &InflightTaskDetail{
+			RetryIndex:  1,
+			ChannelID:   20,
+			ChannelName: "second",
+			ChannelChain: []InflightTaskChannelAttempt{
+				{RetryIndex: 0, ChannelID: 10, ChannelName: "first", Status: InflightTaskStatusFailed, StartedAt: 100, UpdatedAt: 110},
+				{RetryIndex: 1, ChannelID: 20, ChannelName: "second", Status: InflightTaskStatusRouting, StartedAt: 120, UpdatedAt: 120},
+			},
+			Attempts: []InflightTaskAttempt{
+				{
+					RetryIndex: 0, ChannelID: 10, ChannelName: "first", Status: InflightTaskStatusFailed,
+					StartedAt: 100, UpdatedAt: 110,
+					Timeline: []InflightTaskStatusStep{
+						{Status: InflightTaskStatusRouting, StartedAt: 100, UpdatedAt: 100},
+						{Status: InflightTaskStatusUpstreamPending, StartedAt: 100, UpdatedAt: 105},
+						{Status: InflightTaskStatusFailed, StartedAt: 105, UpdatedAt: 110},
+					},
+				},
+				{
+					RetryIndex: 1, ChannelID: 20, ChannelName: "second", Status: InflightTaskStatusRouting,
+					StartedAt: 120, UpdatedAt: 120,
+					Timeline: []InflightTaskStatusStep{
+						{Status: InflightTaskStatusRouting, StartedAt: 120, UpdatedAt: 120},
+					},
+				},
+			},
+		},
+	}
+	next := inflightTaskFromRelayInfo(&relaycommon.RelayInfo{
+		RetryIndex: 1,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:   20,
+			ChannelName: "second",
+		},
+	}, InflightTaskStatusUpstreamPending)
+	next.UpdatedAt = 125
+
+	mergeInflightTaskDetail(stored, next)
+
+	assert.Equal(t, InflightTaskStatusUpstreamPending, next.Status)
+	assert.Equal(t, 1, next.Detail.RetryIndex)
+	assert.Equal(t, 20, next.Detail.ChannelID)
+	assert.Equal(t, "second", next.Detail.ChannelName)
+	require.Len(t, next.Detail.Attempts, 2)
+	assert.Equal(t, InflightTaskStatusUpstreamPending, next.Detail.Attempts[1].Status)
+	require.GreaterOrEqual(t, len(next.Detail.Attempts[1].Timeline), 2)
+	assert.Equal(t, InflightTaskStatusUpstreamPending, next.Detail.Attempts[1].Timeline[len(next.Detail.Attempts[1].Timeline)-1].Status)
 }
 
 func TestShouldPersistInflightTaskUpdateAllowsRetryAdvance(t *testing.T) {

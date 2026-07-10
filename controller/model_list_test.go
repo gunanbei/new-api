@@ -38,16 +38,16 @@ type imagePlaygroundBootstrapResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
 		Tokens []struct {
-			ID       int    `json:"id"`
-			Group    string `json:"group"`
-			Disabled bool   `json:"disabled"`
-			Groups   []struct {
-				Name     string `json:"name"`
-				Disabled bool   `json:"disabled"`
-				Models   []struct {
-					Name string `json:"name"`
-				} `json:"models"`
-			} `json:"groups"`
+			ID               int     `json:"id"`
+			Group            string  `json:"group"`
+			GroupDisplayName string  `json:"group_display_name"`
+			GroupRatio       float64 `json:"group_ratio"`
+			Disabled         bool    `json:"disabled"`
+			Models           []struct {
+				Name          string `json:"name"`
+				AdapterType   string `json:"adapter_type"`
+				DisplayVendor string `json:"display_vendor"`
+			} `json:"models"`
 		} `json:"tokens"`
 	} `json:"data"`
 }
@@ -229,6 +229,9 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 
 func TestGetImagePlaygroundBootstrapUsesTokenOwnGroupAndImageModels(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
+	common.OptionMap = map[string]string{
+		"image_playground.model_registry": `{"version":1,"items":[{"model_name":"gpt-image-1","enabled":true,"adapter_type":"openai_images","display_vendor":"OpenAI Images"},{"model_name":"GPT-IMAGE-1","enabled":true,"adapter_type":"custom","display_vendor":"Duplicate"}]}`,
+	}
 	require.NoError(t, db.Create(&model.User{
 		Id:        1003,
 		Username:  "bootstrap-user",
@@ -261,16 +264,16 @@ func TestGetImagePlaygroundBootstrapUsesTokenOwnGroupAndImageModels(t *testing.T
 	require.Len(t, payload.Data.Tokens, 2)
 
 	tokensByID := map[int]struct {
-		ID       int    `json:"id"`
-		Group    string `json:"group"`
-		Disabled bool   `json:"disabled"`
-		Groups   []struct {
-			Name     string `json:"name"`
-			Disabled bool   `json:"disabled"`
-			Models   []struct {
-				Name string `json:"name"`
-			} `json:"models"`
-		} `json:"groups"`
+		ID               int     `json:"id"`
+		Group            string  `json:"group"`
+		GroupDisplayName string  `json:"group_display_name"`
+		GroupRatio       float64 `json:"group_ratio"`
+		Disabled         bool    `json:"disabled"`
+		Models           []struct {
+			Name          string `json:"name"`
+			AdapterType   string `json:"adapter_type"`
+			DisplayVendor string `json:"display_vendor"`
+		} `json:"models"`
 	}{}
 	for _, token := range payload.Data.Tokens {
 		tokensByID[token.ID] = token
@@ -278,15 +281,126 @@ func TestGetImagePlaygroundBootstrapUsesTokenOwnGroupAndImageModels(t *testing.T
 
 	imageToken := tokensByID[2001]
 	assert.Equal(t, "default", imageToken.Group)
-	require.Len(t, imageToken.Groups, 1)
-	assert.Equal(t, "default", imageToken.Groups[0].Name)
-	require.Len(t, imageToken.Groups[0].Models, 1)
-	assert.Equal(t, "gpt-image-1", imageToken.Groups[0].Models[0].Name)
+	assert.Equal(t, "默认分组", imageToken.GroupDisplayName)
+	assert.Equal(t, 1.0, imageToken.GroupRatio)
+	require.Len(t, imageToken.Models, 1)
+	assert.Equal(t, "gpt-image-1", imageToken.Models[0].Name)
+	assert.Equal(t, "openai_images", imageToken.Models[0].AdapterType)
+	assert.Equal(t, "OpenAI Images", imageToken.Models[0].DisplayVendor)
 
 	disabledToken := tokensByID[2002]
 	assert.True(t, disabledToken.Disabled)
-	assert.True(t, disabledToken.Groups[0].Disabled)
-	assert.Empty(t, disabledToken.Groups[0].Models)
+	assert.Empty(t, disabledToken.Models)
+}
+
+func setupImagePlaygroundBootstrapBaseFixture(t *testing.T, db *gorm.DB, token model.Token) {
+	t.Helper()
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       1004,
+		Username: "registry-bootstrap-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-image-1", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "gpt-4o", ChannelId: 1, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&token).Error)
+}
+
+func requestImagePlaygroundBootstrap(t *testing.T, userID int) imagePlaygroundBootstrapResponse {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/image-playground/bootstrap", nil)
+	ctx.Set("id", userID)
+
+	GetImagePlaygroundBootstrap(ctx)
+
+	return decodeImagePlaygroundBootstrapResponse(t, recorder)
+}
+
+func TestGetImagePlaygroundBootstrapRegistryEdgeCases(t *testing.T) {
+	baseToken := model.Token{
+		Id: 2101, UserId: 1004, Name: "registry-key", Key: "sk-registry-key",
+		Status: common.TokenStatusEnabled, Group: "default",
+		ModelLimitsEnabled: false,
+	}
+
+	tests := []struct {
+		name          string
+		registry      string
+		token         model.Token
+		wantDisabled  bool
+		wantModelLen  int
+		wantModelName string
+	}{
+		{
+			name:         "empty registry returns no models",
+			registry:     "",
+			token:        baseToken,
+			wantDisabled: true,
+			wantModelLen: 0,
+		},
+		{
+			name:         "invalid registry json returns no models",
+			registry:     `{not-json`,
+			token:        baseToken,
+			wantDisabled: true,
+			wantModelLen: 0,
+		},
+		{
+			name:     "disabled registry item is filtered",
+			registry: `{"version":1,"items":[{"model_name":"gpt-image-1","enabled":false,"adapter_type":"openai_images","display_vendor":"OpenAI Images"}]}`,
+			token:    baseToken,
+			wantDisabled: true,
+			wantModelLen: 0,
+		},
+		{
+			name:     "channel model not in registry is filtered",
+			registry: `{"version":1,"items":[{"model_name":"gpt-image-1","enabled":true,"adapter_type":"openai_images","display_vendor":"OpenAI Images"}]}`,
+			token:    baseToken,
+			wantDisabled:  false,
+			wantModelLen:  1,
+			wantModelName: "gpt-image-1",
+		},
+		{
+			name:     "model limits match case insensitively",
+			registry: `{"version":1,"items":[{"model_name":"gpt-image-1","enabled":true,"adapter_type":"openai_images","display_vendor":"OpenAI Images"}]}`,
+			token: model.Token{
+				Id: 2101, UserId: 1004, Name: "registry-key", Key: "sk-registry-key",
+				Status: common.TokenStatusEnabled, Group: "default",
+				ModelLimitsEnabled: true, ModelLimits: "GPT-IMAGE-1",
+			},
+			wantDisabled:  false,
+			wantModelLen:  1,
+			wantModelName: "gpt-image-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupModelListControllerTestDB(t)
+			setupImagePlaygroundBootstrapBaseFixture(t, db, tt.token)
+			common.OptionMap = map[string]string{}
+			if tt.registry != "" {
+				common.OptionMap["image_playground.model_registry"] = tt.registry
+			}
+
+			payload := requestImagePlaygroundBootstrap(t, 1004)
+			require.Len(t, payload.Data.Tokens, 1)
+
+			token := payload.Data.Tokens[0]
+			assert.Equal(t, tt.wantDisabled, token.Disabled)
+			assert.Len(t, token.Models, tt.wantModelLen)
+			if tt.wantModelLen > 0 {
+				assert.Equal(t, tt.wantModelName, token.Models[0].Name)
+			}
+		})
+	}
 }
 
 func TestListModelsIncludesTieredBillingModel(t *testing.T) {

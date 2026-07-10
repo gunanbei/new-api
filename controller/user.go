@@ -39,30 +39,38 @@ var (
 )
 
 type imagePlaygroundBootstrapModel struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Ratio    float64 `json:"ratio"`
-	Disabled bool    `json:"disabled"`
-}
-
-type imagePlaygroundBootstrapGroup struct {
-	Name        string                          `json:"name"`
-	DisplayName string                          `json:"display_name"`
-	Ratio       float64                         `json:"ratio"`
-	Disabled    bool                            `json:"disabled"`
-	Models      []imagePlaygroundBootstrapModel `json:"models"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Type          string  `json:"type"`
+	Ratio         float64 `json:"ratio"`
+	Disabled      bool    `json:"disabled"`
+	AdapterType   string  `json:"adapter_type"`
+	DisplayVendor string  `json:"display_vendor"`
 }
 
 type imagePlaygroundBootstrapToken struct {
 	ID                 int                             `json:"id"`
 	Name               string                          `json:"name"`
 	Group              string                          `json:"group"`
+	GroupDisplayName   string                          `json:"group_display_name"`
+	GroupRatio         float64                         `json:"group_ratio"`
 	ModelLimitsEnabled bool                            `json:"model_limits_enabled"`
 	ModelLimits        string                          `json:"model_limits"`
 	MaskedKey          string                          `json:"masked_key"`
 	Disabled           bool                            `json:"disabled"`
-	Groups             []imagePlaygroundBootstrapGroup `json:"groups"`
+	Models             []imagePlaygroundBootstrapModel `json:"models"`
+}
+
+type imagePlaygroundModelRegistry struct {
+	Version int                                `json:"version"`
+	Items   []imagePlaygroundModelRegistryItem `json:"items"`
+}
+
+type imagePlaygroundModelRegistryItem struct {
+	ModelName     string `json:"model_name"`
+	Enabled       bool   `json:"enabled"`
+	AdapterType   string `json:"adapter_type"`
+	DisplayVendor string `json:"display_vendor"`
 }
 
 func Login(c *gin.Context) {
@@ -712,8 +720,7 @@ func GetImagePlaygroundBootstrap(c *gin.Context) {
 		}
 		displayName, groupEnabled := groups[group]
 		models := imagePlaygroundModelsForToken(token, group, groupEnabled)
-		groupDisabled := !groupEnabled || len(models) == 0
-		tokenDisabled := groupDisabled
+		tokenDisabled := !groupEnabled || len(models) == 0
 
 		if defaults == nil && !tokenDisabled {
 			defaults = gin.H{
@@ -732,17 +739,13 @@ func GetImagePlaygroundBootstrap(c *gin.Context) {
 			ID:                 token.Id,
 			Name:               token.Name,
 			Group:              group,
+			GroupDisplayName:   displayName,
+			GroupRatio:         service.GetUserGroupRatio(user.Group, group),
 			ModelLimitsEnabled: token.ModelLimitsEnabled,
 			ModelLimits:        token.ModelLimits,
 			MaskedKey:          token.GetMaskedKey(),
 			Disabled:           tokenDisabled,
-			Groups: []imagePlaygroundBootstrapGroup{{
-				Name:        group,
-				DisplayName: displayName,
-				Ratio:       service.GetUserGroupRatio(user.Group, group),
-				Disabled:    groupDisabled,
-				Models:      models,
-			}},
+			Models:             models,
 		})
 	}
 
@@ -768,28 +771,73 @@ func imagePlaygroundModelsForToken(token *model.Token, group string, groupEnable
 		return []imagePlaygroundBootstrapModel{}
 	}
 
-	limitMap := token.GetModelLimitsMap()
+	limitMap := make(map[string]bool)
+	for limit := range token.GetModelLimitsMap() {
+		limitMap[strings.ToLower(strings.TrimSpace(limit))] = true
+	}
+	registry := getImagePlaygroundModelRegistryMap()
 	models := make([]imagePlaygroundBootstrapModel, 0)
 	seen := make(map[string]bool)
 	for _, modelName := range model.GetGroupEnabledModels(group) {
 		modelName = strings.TrimSpace(modelName)
-		if modelName == "" || seen[modelName] || !common.IsImageGenerationModel(modelName) {
+		registryKey := strings.ToLower(modelName)
+		if modelName == "" || seen[registryKey] {
 			continue
 		}
-		if token.ModelLimitsEnabled && !limitMap[modelName] {
+		registryItem, ok := registry[registryKey]
+		if !ok || !registryItem.Enabled {
 			continue
 		}
-		seen[modelName] = true
+		if token.ModelLimitsEnabled && !limitMap[registryKey] {
+			continue
+		}
+		seen[registryKey] = true
 		ratio, _ := ratio_setting.GetImageRatio(modelName)
 		models = append(models, imagePlaygroundBootstrapModel{
-			ID:       modelName,
-			Name:     modelName,
-			Type:     "image",
-			Ratio:    ratio,
-			Disabled: false,
+			ID:            modelName,
+			Name:          modelName,
+			Type:          "image",
+			Ratio:         ratio,
+			Disabled:      false,
+			AdapterType:   strings.TrimSpace(registryItem.AdapterType),
+			DisplayVendor: strings.TrimSpace(registryItem.DisplayVendor),
 		})
 	}
 	return models
+}
+
+func getImagePlaygroundModelRegistryMap() map[string]imagePlaygroundModelRegistryItem {
+	common.OptionMapRWMutex.RLock()
+	raw := strings.TrimSpace(common.OptionMap["image_playground.model_registry"])
+	common.OptionMapRWMutex.RUnlock()
+	if raw == "" {
+		return map[string]imagePlaygroundModelRegistryItem{}
+	}
+
+	var registry imagePlaygroundModelRegistry
+	if err := common.Unmarshal([]byte(raw), &registry); err != nil {
+		common.SysError("failed to parse image playground model registry: " + err.Error())
+		return map[string]imagePlaygroundModelRegistryItem{}
+	}
+
+	items := make(map[string]imagePlaygroundModelRegistryItem, len(registry.Items))
+	for _, item := range registry.Items {
+		modelName := strings.TrimSpace(item.ModelName)
+		if modelName == "" {
+			continue
+		}
+		key := strings.ToLower(modelName)
+		if _, exists := items[key]; exists {
+			continue
+		}
+		items[key] = imagePlaygroundModelRegistryItem{
+			ModelName:     modelName,
+			Enabled:       item.Enabled,
+			AdapterType:   strings.TrimSpace(item.AdapterType),
+			DisplayVendor: strings.TrimSpace(item.DisplayVendor),
+		}
+	}
+	return items
 }
 
 func UpdateUser(c *gin.Context) {

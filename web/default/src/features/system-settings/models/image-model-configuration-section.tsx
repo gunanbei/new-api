@@ -27,7 +27,7 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { ComboboxInput, type ComboboxInputOption } from '@/components/ui/combobox'
+import { ComboboxInput, type ComboboxInputOption } from '@/components/ui/combobox-input'
 import {
   Form,
   FormControl,

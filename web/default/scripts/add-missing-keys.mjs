@@ -16,639 +16,115 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import fs from "node:fs/promises";
-import path from "node:path";
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
-const LOCALES_DIR = path.resolve("src/i18n/locales");
-
-function stableStringify(obj) {
-  return JSON.stringify(obj, null, 2) + "\n";
+const localesDir = path.resolve('src/i18n/locales')
+const newKeys = {
+  en: { 'Asynchronous': 'Asynchronous', 'Capability': 'Capability', 'Channel {{name}} is already bound.': 'Channel {{name}} is already bound.', 'Channel routing': 'Channel routing', 'Click to view full JSON': 'Click to view full JSON', 'Default parameters': 'Default parameters', 'Execution mode': 'Execution mode', 'Generate': 'Generate', 'Group default parameters': 'Group default parameters', 'Input schema': 'Input schema', 'Media format': 'Media format', 'Model directory': 'Model directory', 'Model key': 'Model key', Publishing: 'Publishing', 'Protocol': 'Protocol', 'Raster image': 'Raster image', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Raster: standard bitmap images, recommended for most image generation and editing models.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.', 'Remix': 'Remix', 'Sort order': 'Sort order', 'Synchronous': 'Synchronous', 'Synchronous artifact': 'Synchronous artifact', 'The media format of generated results.': 'The media format of generated results.', 'Validation message': 'Validation message', 'Vector graphic': 'Vector graphic', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.', 'Video: video files, only for video capabilities.': 'Video: video files, only for video capabilities.' },
+  'zh-TW': { 'Asynchronous': '非同步', 'Capability': '能力', 'Click to view full JSON': '點擊查看完整 JSON', 'Execution mode': '執行方式', 'Generate': '生成', 'Media format': '媒體格式', 'Protocol': '協議', 'Raster image': '點陣圖', 'Raster: standard bitmap images, recommended for most image generation and editing models.': '點陣圖：標準圖片格式，建議用於大多數圖片生成與編輯模型。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '建議：一般圖片選點陣圖；僅在模型明確輸出 SVG 時選 SVG 向量圖；影片能力選影片。', 'Remix': '重混', 'Synchronous': '同步', 'Synchronous artifact': '同步產出檔案', 'The media format of generated results.': '生成結果的媒體格式。', 'Vector graphic': 'SVG 向量圖', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'SVG 向量圖：可無損縮放，僅用於明確支援 SVG 輸出的模型。', 'Video: video files, only for video capabilities.': '影片：影片檔案，僅用於影片能力。' },
+  zh: { 'Asynchronous': '异步', 'Capability': '能力', 'Channel {{name}} is already bound.': '渠道 {{name}} 已存在绑定。', 'Channel routing': '渠道路由', 'Click to view full JSON': '点击查看完整 JSON', 'Default parameters': '默认参数', 'Execution mode': '执行方式', 'Generate': '生成', 'Group default parameters': '分组默认参数', 'Input schema': '输入结构', 'Media format': '媒体格式', 'Model directory': '模型目录', 'Model key': '模型键', Publishing: '分组发布', 'Protocol': '协议', 'Raster image': '位图', 'Raster: standard bitmap images, recommended for most image generation and editing models.': '位图：标准图片格式，推荐用于大多数图片生成和编辑模型。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '建议：常规图片选位图；仅在模型明确输出 SVG 时选 SVG 矢量图；视频能力选视频。', 'Remix': '重混', 'Sort order': '排序', 'Synchronous': '同步', 'Synchronous artifact': '同步产出文件', 'The media format of generated results.': '生成结果的媒体格式。', 'Validation message': '校验信息', 'Vector graphic': 'SVG 矢量图', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'SVG 矢量图：可无损缩放，仅用于明确支持 SVG 输出的模型。', 'Video: video files, only for video capabilities.': '视频：视频文件，仅用于视频能力。' },
+  fr: { 'Asynchronous': 'Asynchrone', 'Capability': 'Capacité', 'Channel {{name}} is already bound.': 'Le canal {{name}} est déjà lié.', 'Channel routing': 'Routage de canal', 'Click to view full JSON': 'Cliquez pour afficher le JSON complet', 'Default parameters': 'Paramètres par défaut', 'Execution mode': 'Mode d’exécution', 'Generate': 'Générer', 'Group default parameters': 'Paramètres par défaut du groupe', 'Input schema': 'Schéma d’entrée', 'Media format': 'Format multimédia', 'Model directory': 'Catalogue de modèles', 'Model key': 'Clé du modèle', Publishing: 'Publication', 'Protocol': 'Protocole', 'Raster image': 'Image matricielle', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Image matricielle : format d’image standard, recommandé pour la plupart des modèles de génération et d’édition d’images.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Recommandation : choisissez une image matricielle pour les images standard, un graphique vectoriel uniquement pour une sortie SVG explicite et une vidéo pour les capacités vidéo.', 'Remix': 'Remixer', 'Sort order': 'Ordre de tri', 'Synchronous': 'Synchrone', 'Synchronous artifact': 'Artefact synchrone', 'The media format of generated results.': 'Le format multimédia des résultats générés.', 'Validation message': 'Message de validation', 'Vector graphic': 'Graphique vectoriel', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Graphique vectoriel : SVG redimensionnable sans perte, uniquement pour les modèles prenant explicitement en charge la sortie SVG.', 'Video: video files, only for video capabilities.': 'Vidéo : fichier vidéo, uniquement pour les capacités vidéo.' },
+  ja: { 'Asynchronous': '非同期', 'Capability': '能力', 'Channel {{name}} is already bound.': 'チャネル {{name}} はすでに紐付けられています。', 'Channel routing': 'チャネルルーティング', 'Click to view full JSON': 'クリックして完全な JSON を表示', 'Default parameters': 'デフォルトパラメータ', 'Execution mode': '実行方式', 'Generate': '生成', 'Group default parameters': 'グループのデフォルトパラメータ', 'Input schema': '入力スキーマ', 'Media format': 'メディア形式', 'Model directory': 'モデルカタログ', 'Model key': 'モデルキー', Publishing: '公開設定', 'Protocol': 'プロトコル', 'Raster image': 'ラスター画像', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'ラスター画像：標準的な画像形式で、ほとんどの画像生成・編集モデルに推奨されます。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '推奨：通常の画像にはラスター画像、モデルが SVG 出力を明示する場合のみベクター画像、動画機能には動画を選択してください。', 'Remix': 'リミックス', 'Sort order': '並び順', 'Synchronous': '同期', 'Synchronous artifact': '同期アーティファクト', 'The media format of generated results.': '生成結果のメディア形式です。', 'Validation message': '検証メッセージ', 'Vector graphic': 'ベクター画像', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'ベクター画像：劣化なく拡大できる SVG で、SVG 出力を明示的にサポートするモデルでのみ使用します。', 'Video: video files, only for video capabilities.': '動画：動画ファイル。動画機能でのみ使用します。' },
+  ru: { 'Asynchronous': 'Асинхронный', 'Capability': 'Возможность', 'Channel {{name}} is already bound.': 'Канал {{name}} уже привязан.', 'Channel routing': 'Маршрутизация канала', 'Click to view full JSON': 'Нажмите, чтобы просмотреть полный JSON', 'Default parameters': 'Параметры по умолчанию', 'Execution mode': 'Режим выполнения', 'Generate': 'Создать', 'Group default parameters': 'Параметры группы по умолчанию', 'Input schema': 'Схема ввода', 'Media format': 'Формат медиа', 'Model directory': 'Каталог моделей', 'Model key': 'Ключ модели', Publishing: 'Публикация', 'Protocol': 'Протокол', 'Raster image': 'Растровое изображение', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Растровое изображение: стандартный формат изображения, рекомендуемый для большинства моделей генерации и редактирования изображений.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Рекомендация: для обычных изображений выбирайте растровое изображение, векторную графику — только при явном выводе SVG, а видео — для видеовозможностей.', 'Remix': 'Ремикс', 'Sort order': 'Порядок сортировки', 'Synchronous': 'Синхронный', 'Synchronous artifact': 'Синхронный артефакт', 'The media format of generated results.': 'Формат медиа сгенерированных результатов.', 'Validation message': 'Сообщение проверки', 'Vector graphic': 'Векторная графика', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Векторная графика: SVG без потери качества при масштабировании; только для моделей с явной поддержкой вывода SVG.', 'Video: video files, only for video capabilities.': 'Видео: видеофайл, только для возможностей видео.' },
+  vi: { 'Asynchronous': 'Bất đồng bộ', 'Capability': 'Khả năng', 'Channel {{name}} is already bound.': 'Kenh {{name}} da duoc lien ket.', 'Channel routing': 'Dinh tuyen kenh', 'Click to view full JSON': 'Nhấp để xem JSON đầy đủ', 'Default parameters': 'Tham so mac dinh', 'Execution mode': 'Chế độ thực thi', 'Generate': 'Tạo', 'Group default parameters': 'Tham so mac dinh cua nhom', 'Input schema': 'Luoc do dau vao', 'Media format': 'Định dạng phương tiện', 'Model directory': 'Danh muc mo hinh', 'Model key': 'Khoa mo hinh', Publishing: 'Cong bo', 'Protocol': 'Giao thức', 'Raster image': 'Ảnh raster', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Ảnh raster: định dạng ảnh tiêu chuẩn, nên dùng cho hầu hết mô hình tạo và chỉnh sửa ảnh.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Khuyến nghị: chọn ảnh raster cho ảnh thông thường, chỉ chọn đồ họa vector khi có đầu ra SVG rõ ràng và chọn video cho khả năng video.', 'Remix': 'Phối lại', 'Sort order': 'Thu tu sap xep', 'Synchronous': 'Đồng bộ', 'Synchronous artifact': 'Sản phẩm đồng bộ', 'The media format of generated results.': 'Định dạng phương tiện của kết quả được tạo.', 'Validation message': 'Thong bao kiem tra', 'Vector graphic': 'Đồ họa vector', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Đồ họa vector: SVG có thể phóng to không mất chất lượng, chỉ dùng cho mô hình hỗ trợ rõ ràng đầu ra SVG.', 'Video: video files, only for video capabilities.': 'Video: tệp video, chỉ dùng cho khả năng video.' },
 }
 
-const newKeys = {
-  en: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "Allowed range: {{min}}-{{max}} minutes (up to 7 days)",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "Choose a fixed interval or a cron schedule for cleanup scans.",
-    "Cron schedule": "Cron schedule",
-    "Every N hours": "Every N hours",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "Execution times use the server local timezone. Preview below follows the server clock.",
-    "Fixed interval": "Fixed interval",
-    Friday: "Friday",
-    "Generated cron expression": "Generated cron expression",
-    "Hour interval": "Hour interval",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "Inflight log cleanup interval must be between 1 and 10080 minutes",
-    "Inflight log cleanup schedule mode": "Inflight log cleanup schedule mode",
-    "Invalid cron expression": "Invalid cron expression",
-    Monday: "Monday",
-    "Next 6 scheduled runs": "Next 6 scheduled runs",
-    Saturday: "Saturday",
-    "Schedule preset": "Schedule preset",
-    "Server timezone: {{timezone}}": "Server timezone: {{timezone}}",
-    "Start live refresh": "Start live refresh",
-    "Stop live refresh": "Stop live refresh",
-    Sunday: "Sunday",
-    Thursday: "Thursday",
-    Tuesday: "Tuesday",
-    Wednesday: "Wednesday",
-    Weekday: "Weekday",
-    "Automatic inflight log cleanup is disabled":
-      "Automatic inflight log cleanup is disabled",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "Clean terminal inflight logs every {{minutes}} minutes",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "Clean terminal inflight logs on schedule: {{expr}}",
-    "Cleanup in progress": "Cleanup in progress",
-    "Loading cleanup schedule...": "Loading cleanup schedule...",
-    "Next cleanup: {{time}}": "Next cleanup: {{time}}",
-    "Async Logs": "Async Logs",
-    "Showing the latest {{count}} events while response is in progress":
-      "Showing the latest {{count}} events while response is in progress",
-    "API token": "API token",
-    "Access key ID": "Access key ID",
-    "Add Channel": "Add Channel",
-    "Auth type": "Auth type",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "Bucket",
-    "Chunk size": "Chunk size",
-    "Chunk threshold": "Chunk threshold",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "Configure file upload channels and keep secrets server-side only.",
-    "Current default": "Current default",
-    "Data Management": "Data Management",
-    "Default channel updated": "Default channel updated",
-    'Delete "{{name}}"? This cannot be undone.':
-      'Delete "{{name}}"? This cannot be undone.',
-    "Force path style": "Force path style",
-    Full: "Full",
-    "Key prefix": "Key prefix",
-    "Max size": "Max size",
-    "No file upload channels configured yet.":
-      "No file upload channels configured yet.",
-    "Path prefix": "Path prefix",
-    Probe: "Probe",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "Probe uploaded the built-in temporary file and returned the final address.",
-    "Probe result": "Probe result",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.",
-    "Probe succeeded": "Probe succeeded",
-    "Public base URL": "Public base URL",
-    "Response URL": "Response URL",
-    Region: "Region",
-    "Return format": "Return format",
-    "S3 Compatible Storage": "S3 Compatible Storage",
-    "Secret access key": "Secret access key",
-    "Secrets stay on the server and are never shown in full.":
-      "Secrets stay on the server and are never shown in full.",
-    "Set default": "Set default",
-    "Status updated": "Status updated",
-    "Timeout ms": "Timeout ms",
-    "Confirm probe": "Confirm probe",
-    File: "File",
-    "File size": "File size",
-    Latency: "Latency",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "Unit: B. Files above this threshold use chunked upload.",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "Unit: B. Maximum allowed file size. 0 means unlimited.",
-    "Unit: B. Size of each uploaded chunk.":
-      "Unit: B. Size of each uploaded chunk.",
-    "Upstream upload channel": "Upstream upload channel",
-    "Upload channel": "Upload channel",
-    "Upload folder": "Upload folder",
-    WebDAV: "WebDAV",
-  },
-  zh: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "可设置范围：{{min}}–{{max}} 分钟（最长 7 天）",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "选择固定间隔或 CRON 计划来扫描清理终态在途日志。",
-    "Cron schedule": "CRON 计划",
-    "Every N hours": "每 N 小时",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "执行时间以服务器本地时区为准，下方预览基于服务器时钟计算。",
-    "Fixed interval": "固定间隔",
-    Friday: "周五",
-    "Generated cron expression": "生成的 CRON 表达式",
-    "Hour interval": "小时间隔",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "在途日志清理间隔必须在 1–10080 分钟之间",
-    "Inflight log cleanup schedule mode": "在途日志清理调度方式",
-    "Invalid cron expression": "CRON 表达式无效",
-    Monday: "周一",
-    "Next 6 scheduled runs": "未来 6 次计划执行时间",
-    Saturday: "周六",
-    "Schedule preset": "计划预设",
-    "Server timezone: {{timezone}}": "服务器时区：{{timezone}}",
-    "Start live refresh": "开始实时刷新",
-    "Stop live refresh": "停止实时刷新",
-    Sunday: "周日",
-    Thursday: "周四",
-    Tuesday: "周二",
-    Wednesday: "周三",
-    Weekday: "星期",
-    "Automatic inflight log cleanup is disabled": "在途日志自动清理已关闭",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "每 {{minutes}} 分钟清理终态在途日志",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "按计划清理终态在途日志：{{expr}}",
-    "Cleanup in progress": "清理进行中",
-    "Loading cleanup schedule...": "正在加载清理计划...",
-    "Next cleanup: {{time}}": "下次清理：{{time}}",
-    "Async Logs": "异步日志",
-    "Showing the latest {{count}} events while response is in progress":
-      "响应进行中，仅显示最近 {{count}} 条事件",
-    "API token": "API 令牌",
-    "Access key ID": "Access Key ID",
-    "Add Channel": "添加渠道",
-    "Auth type": "认证方式",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "存储桶",
-    "Chunk size": "分片大小",
-    "Chunk threshold": "分片阈值",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "配置文件上传渠道，敏感密钥仅保留在服务端。",
-    "Current default": "当前默认渠道",
-    "Data Management": "数据管理",
-    "Default channel updated": "默认渠道已更新",
-    'Delete "{{name}}"? This cannot be undone.':
-      "删除“{{name}}”？此操作无法撤销。",
-    "Force path style": "强制路径风格",
-    Full: "完整",
-    "Key prefix": "对象前缀",
-    "Max size": "最大大小",
-    "No file upload channels configured yet.": "暂无文件上传渠道配置。",
-    "Path prefix": "路径前缀",
-    Probe: "探测",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "探测已上传内置临时文件，并返回最终访问地址。",
-    "Probe result": "探测结果",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "探测将上传临时文件 {{name}}，文件大小为：{{size}}，请确认或取消。",
-    "Probe succeeded": "探测成功",
-    "Public base URL": "公开访问地址",
-    "Response URL": "响应地址",
-    Region: "区域",
-    "Return format": "返回格式",
-    "S3 Compatible Storage": "S3 兼容存储",
-    "Secret access key": "Secret Access Key",
-    "Secrets stay on the server and are never shown in full.":
-      "敏感密钥仅保留在服务端，不会完整回显。",
-    "Set default": "设为默认",
-    "Status updated": "状态已更新",
-    "Timeout ms": "超时时间（毫秒）",
-    "Confirm probe": "确认探测",
-    File: "文件",
-    "File size": "文件大小",
-    Latency: "延迟",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "单位：B。超过该阈值后将使用分片上传。",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "单位：B。允许上传的最大文件大小，0 表示不限。",
-    "Unit: B. Size of each uploaded chunk.": "单位：B。每个分片的大小。",
-    "Upstream upload channel": "上游上传通道",
-    "Upload channel": "上传通道",
-    "Upload folder": "上传目录",
-    WebDAV: "WebDAV",
-  },
-  fr: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "Plage autorisee : {{min}}-{{max}} minutes (jusqu a 7 jours)",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "Choisissez un intervalle fixe ou une planification cron pour les scans de nettoyage.",
-    "Cron schedule": "Planification cron",
-    "Every N hours": "Toutes les N heures",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "Les heures d'execution utilisent le fuseau horaire local du serveur. L'apercu ci-dessous suit l'horloge du serveur.",
-    "Fixed interval": "Intervalle fixe",
-    Friday: "Vendredi",
-    "Generated cron expression": "Expression cron generee",
-    "Hour interval": "Intervalle horaire",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "L'intervalle de nettoyage des journaux en cours doit etre compris entre 1 et 10080 minutes",
-    "Inflight log cleanup schedule mode":
-      "Mode de planification du nettoyage des journaux en cours",
-    "Invalid cron expression": "Expression cron invalide",
-    Monday: "Lundi",
-    "Next 6 scheduled runs": "6 prochaines executions planifiees",
-    Saturday: "Samedi",
-    "Schedule preset": "Preset de planification",
-    "Server timezone: {{timezone}}": "Fuseau horaire du serveur : {{timezone}}",
-    "Start live refresh": "Demarrer le rafraichissement en direct",
-    "Stop live refresh": "Arreter le rafraichissement en direct",
-    Sunday: "Dimanche",
-    Thursday: "Jeudi",
-    Tuesday: "Mardi",
-    Wednesday: "Mercredi",
-    Weekday: "Jour de la semaine",
-    "Automatic inflight log cleanup is disabled":
-      "Le nettoyage automatique des journaux en cours est desactive",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "Nettoyer les journaux en cours termines toutes les {{minutes}} minutes",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "Nettoyer les journaux en cours termines selon le planning : {{expr}}",
-    "Cleanup in progress": "Nettoyage en cours",
-    "Loading cleanup schedule...": "Chargement du planning de nettoyage...",
-    "Next cleanup: {{time}}": "Prochain nettoyage : {{time}}",
-    "Async Logs": "Journaux asynchrones",
-    "Showing the latest {{count}} events while response is in progress":
-      "Affichage des {{count}} derniers evenements pendant la reponse en cours",
-    "API token": "Jeton API",
-    "Access key ID": "ID de cle d'acces",
-    "Add Channel": "Ajouter un canal",
-    "Auth type": "Type d'authentification",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "Bucket",
-    "Chunk size": "Taille des segments",
-    "Chunk threshold": "Seuil de segmentation",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "Configurez les canaux d'upload de fichiers et conservez les secrets uniquement cote serveur.",
-    "Current default": "Canal par defaut actuel",
-    "Data Management": "Gestion des donnees",
-    "Default channel updated": "Canal par defaut mis a jour",
-    'Delete "{{name}}"? This cannot be undone.':
-      'Supprimer "{{name}}" ? Cette action est irreversible.',
-    "Force path style": "Forcer le style de chemin",
-    Full: "Complet",
-    "Key prefix": "Prefixe de cle",
-    "Max size": "Taille maximale",
-    "No file upload channels configured yet.":
-      "Aucun canal d'upload de fichiers n'est configure.",
-    "Path prefix": "Prefixe de chemin",
-    Probe: "Verifier",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "Le test a televerse le fichier temporaire integre et a retourne l'adresse finale.",
-    "Probe result": "Resultat du test",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "Le test televersera le fichier temporaire {{name}}, taille : {{size}}. Veuillez confirmer ou annuler.",
-    "Probe succeeded": "Verification reussie",
-    "Public base URL": "URL publique de base",
-    "Response URL": "URL retournee",
-    Region: "Region",
-    "Return format": "Format de retour",
-    "S3 Compatible Storage": "Stockage compatible S3",
-    "Secret access key": "Cle secrete d'acces",
-    "Secrets stay on the server and are never shown in full.":
-      "Les secrets restent cote serveur et ne sont jamais affiches en entier.",
-    "Set default": "Definir par defaut",
-    "Status updated": "Statut mis a jour",
-    "Timeout ms": "Delai en ms",
-    "Confirm probe": "Confirmer le test",
-    File: "Fichier",
-    "File size": "Taille du fichier",
-    Latency: "Latence",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "Unite : B. Au-dela de ce seuil, l'envoi passe en mode segmente.",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "Unite : B. Taille maximale autorisee pour un fichier. 0 signifie illimite.",
-    "Unit: B. Size of each uploaded chunk.":
-      "Unite : B. Taille de chaque segment televerse.",
-    "Upstream upload channel": "Canal d'upload amont",
-    "Upload channel": "Canal d'upload",
-    "Upload folder": "Dossier d'upload",
-    WebDAV: "WebDAV",
-  },
-  ja: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "設定可能範囲：{{min}}〜{{max}} 分（最長 7 日）",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "クリーンアップ走査には固定間隔または cron スケジュールを選択します。",
-    "Cron schedule": "cron スケジュール",
-    "Every N hours": "N 時間ごと",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "実行時刻はサーバーのローカルタイムゾーンを使用します。下のプレビューはサーバー時計に基づきます。",
-    "Fixed interval": "固定間隔",
-    Friday: "金曜日",
-    "Generated cron expression": "生成された cron 式",
-    "Hour interval": "時間間隔",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "進行中ログのクリーンアップ間隔は 1〜10080 分の範囲で設定してください",
-    "Inflight log cleanup schedule mode": "進行中ログのクリーンアップ方式",
-    "Invalid cron expression": "cron 式が無効です",
-    Monday: "月曜日",
-    "Next 6 scheduled runs": "今後 6 回の実行予定",
-    Saturday: "土曜日",
-    "Schedule preset": "スケジュールプリセット",
-    "Server timezone: {{timezone}}": "サーバータイムゾーン：{{timezone}}",
-    "Start live refresh": "リアルタイム更新を開始",
-    "Stop live refresh": "リアルタイム更新を停止",
-    Sunday: "日曜日",
-    Thursday: "木曜日",
-    Tuesday: "火曜日",
-    Wednesday: "水曜日",
-    Weekday: "曜日",
-    "Automatic inflight log cleanup is disabled":
-      "進行中ログの自動クリーンアップは無効です",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "終了した進行中ログを {{minutes}} 分ごとにクリーンアップ",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "スケジュールに従って終了した進行中ログをクリーンアップ：{{expr}}",
-    "Cleanup in progress": "クリーンアップ実行中",
-    "Loading cleanup schedule...": "クリーンアップ予定を読み込み中...",
-    "Next cleanup: {{time}}": "次回クリーンアップ：{{time}}",
-    "Async Logs": "非同期ログ",
-    "Showing the latest {{count}} events while response is in progress":
-      "応答進行中は直近 {{count}} 件のイベントのみ表示します",
-    "API token": "API トークン",
-    "Access key ID": "アクセスキー ID",
-    "Add Channel": "チャネルを追加",
-    "Auth type": "認証方式",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "バケット",
-    "Chunk size": "チャンクサイズ",
-    "Chunk threshold": "チャンク閾値",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "ファイルアップロードチャネルを設定し、シークレットはサーバー側のみに保持します。",
-    "Current default": "現在のデフォルト",
-    "Data Management": "データ管理",
-    "Default channel updated": "デフォルトチャネルを更新しました",
-    'Delete "{{name}}"? This cannot be undone.':
-      "「{{name}}」を削除しますか？この操作は元に戻せません。",
-    "Force path style": "パススタイルを強制",
-    Full: "完全",
-    "Key prefix": "キープレフィックス",
-    "Max size": "最大サイズ",
-    "No file upload channels configured yet.":
-      "ファイルアップロードチャネルはまだ設定されていません。",
-    "Path prefix": "パスプレフィックス",
-    Probe: "疎通確認",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "疎通確認は内蔵の一時ファイルをアップロードし、最終URLを返しました。",
-    "Probe result": "疎通確認結果",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "疎通確認は一時ファイル {{name}} をアップロードします。ファイルサイズ: {{size}}。確認またはキャンセルしてください。",
-    "Probe succeeded": "疎通確認に成功しました",
-    "Public base URL": "公開ベース URL",
-    "Response URL": "応答URL",
-    Region: "リージョン",
-    "Return format": "返却形式",
-    "S3 Compatible Storage": "S3 互換ストレージ",
-    "Secret access key": "シークレットアクセスキー",
-    "Secrets stay on the server and are never shown in full.":
-      "シークレットはサーバー側にのみ保持され、完全な内容は表示されません。",
-    "Set default": "デフォルトに設定",
-    "Status updated": "ステータスを更新しました",
-    "Timeout ms": "タイムアウト（ms）",
-    "Confirm probe": "疎通確認",
-    File: "ファイル",
-    "File size": "ファイルサイズ",
-    Latency: "レイテンシ",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "単位: B。このしきい値を超えると分割アップロードを使用します。",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "単位: B。アップロード可能な最大ファイルサイズです。0 は無制限を意味します。",
-    "Unit: B. Size of each uploaded chunk.":
-      "単位: B。各チャンクのサイズです。",
-    "Upstream upload channel": "上游アップロードチャネル",
-    "Upload channel": "アップロードチャネル",
-    "Upload folder": "アップロードフォルダ",
-    WebDAV: "WebDAV",
-  },
-  ru: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "Допустимый диапазон: {{min}}–{{max}} минут (до 7 дней)",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "Выберите фиксированный интервал или cron-расписание для сканирования очистки.",
-    "Cron schedule": "Cron-расписание",
-    "Every N hours": "Каждые N часов",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "Время выполнения использует локальный часовой пояс сервера. Предпросмотр ниже основан на часах сервера.",
-    "Fixed interval": "Фиксированный интервал",
-    Friday: "Пятница",
-    "Generated cron expression": "Сгенерированное cron-выражение",
-    "Hour interval": "Интервал в часах",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "Интервал очистки журналов в процессе должен быть от 1 до 10080 минут",
-    "Inflight log cleanup schedule mode":
-      "Режим расписания очистки журналов в процессе",
-    "Invalid cron expression": "Недопустимое cron-выражение",
-    Monday: "Понедельник",
-    "Next 6 scheduled runs": "Следующие 6 запланированных запусков",
-    Saturday: "Суббота",
-    "Schedule preset": "Предустановка расписания",
-    "Server timezone: {{timezone}}": "Часовой пояс сервера: {{timezone}}",
-    "Start live refresh": "Включить обновление в реальном времени",
-    "Stop live refresh": "Остановить обновление в реальном времени",
-    Sunday: "Воскресенье",
-    Thursday: "Четверг",
-    Tuesday: "Вторник",
-    Wednesday: "Среда",
-    Weekday: "День недели",
-    "Automatic inflight log cleanup is disabled":
-      "Автоматическая очистка журналов в процессе отключена",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "Очищать завершенные журналы в процессе каждые {{minutes}} минут",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "Очищать завершенные журналы в процессе по расписанию: {{expr}}",
-    "Cleanup in progress": "Очистка выполняется",
-    "Loading cleanup schedule...": "Загрузка расписания очистки...",
-    "Next cleanup: {{time}}": "Следующая очистка: {{time}}",
-    "Async Logs": "Асинхронные журналы",
-    "Showing the latest {{count}} events while response is in progress":
-      "Показаны последние {{count}} событий, пока ответ еще выполняется",
-    "API token": "API-токен",
-    "Access key ID": "ID ключа доступа",
-    "Add Channel": "Добавить канал",
-    "Auth type": "Тип аутентификации",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "Бакет",
-    "Chunk size": "Размер чанка",
-    "Chunk threshold": "Порог чанков",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "Настройте каналы загрузки файлов, а секреты храните только на стороне сервера.",
-    "Current default": "Текущий канал по умолчанию",
-    "Data Management": "Управление данными",
-    "Default channel updated": "Канал по умолчанию обновлен",
-    'Delete "{{name}}"? This cannot be undone.':
-      'Удалить "{{name}}"? Это действие нельзя отменить.',
-    "Force path style": "Принудительный path-style",
-    Full: "Полный",
-    "Key prefix": "Префикс ключа",
-    "Max size": "Максимальный размер",
-    "No file upload channels configured yet.":
-      "Каналы загрузки файлов еще не настроены.",
-    "Path prefix": "Префикс пути",
-    Probe: "Проверить",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "Проверка загрузила встроенный временный файл и вернула итоговый адрес.",
-    "Probe result": "Результат проверки",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "Проверка загрузит временный файл {{name}}, размер файла: {{size}}. Подтвердите или отмените.",
-    "Probe succeeded": "Проверка прошла успешно",
-    "Public base URL": "Публичный базовый URL",
-    "Response URL": "URL ответа",
-    Region: "Регион",
-    "Return format": "Формат возврата",
-    "S3 Compatible Storage": "S3-совместимое хранилище",
-    "Secret access key": "Секретный ключ доступа",
-    "Secrets stay on the server and are never shown in full.":
-      "Секреты остаются на сервере и никогда не показываются полностью.",
-    "Set default": "Сделать по умолчанию",
-    "Status updated": "Статус обновлен",
-    "Timeout ms": "Таймаут (мс)",
-    "Confirm probe": "Подтвердить проверку",
-    File: "Файл",
-    "File size": "Размер файла",
-    Latency: "Задержка",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "Единица: B. Файлы больше этого порога загружаются по частям.",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "Единица: B. Максимально допустимый размер файла. 0 означает без ограничений.",
-    "Unit: B. Size of each uploaded chunk.":
-      "Единица: B. Размер каждой части загрузки.",
-    "Upstream upload channel": "Верхний канал загрузки",
-    "Upload channel": "Канал загрузки",
-    "Upload folder": "Папка загрузки",
-    WebDAV: "WebDAV",
-  },
-  vi: {
-    "Allowed range: {{min}}-{{max}} minutes (up to 7 days)":
-      "Pham vi cho phep: {{min}}-{{max}} phut (toi da 7 ngay)",
-    "Choose a fixed interval or a cron schedule for cleanup scans.":
-      "Chon khoang thoi gian co dinh hoac lich cron de quet don dep.",
-    "Cron schedule": "Lich cron",
-    "Every N hours": "Moi N gio",
-    "Execution times use the server local timezone. Preview below follows the server clock.":
-      "Thoi gian thuc thi dung mui gio cuc bo cua may chu. Xem truoc ben duoi theo dong ho may chu.",
-    "Fixed interval": "Khoang thoi gian co dinh",
-    Friday: "Thu Sau",
-    "Generated cron expression": "Bieu thuc cron duoc tao",
-    "Hour interval": "Khoang gio",
-    "Inflight log cleanup interval must be between 1 and 10080 minutes":
-      "Khoang thoi gian don dep nhat ky dang xu ly phai tu 1 den 10080 phut",
-    "Inflight log cleanup schedule mode":
-      "Che do lich don dep nhat ky dang xu ly",
-    "Invalid cron expression": "Bieu thuc cron khong hop le",
-    Monday: "Thu Hai",
-    "Next 6 scheduled runs": "6 lan chay ke hoach tiep theo",
-    Saturday: "Thu Bay",
-    "Schedule preset": "Mau lich",
-    "Server timezone: {{timezone}}": "Mui gio may chu: {{timezone}}",
-    "Start live refresh": "Bat dau lam moi thoi gian thuc",
-    "Stop live refresh": "Dung lam moi thoi gian thuc",
-    Sunday: "Chu Nhat",
-    Thursday: "Thu Tu",
-    Tuesday: "Thu Ba",
-    Wednesday: "Thu Tu",
-    Weekday: "Ngay trong tuan",
-    "Automatic inflight log cleanup is disabled":
-      "Tat don dep tu dong nhat ky dang xu ly",
-    "Clean terminal inflight logs every {{minutes}} minutes":
-      "Don dep nhat ky dang xu ly da ket thuc moi {{minutes}} phut",
-    "Clean terminal inflight logs on schedule: {{expr}}":
-      "Don dep nhat ky dang xu ly da ket thuc theo lich: {{expr}}",
-    "Cleanup in progress": "Dang don dep",
-    "Loading cleanup schedule...": "Dang tai lich don dep...",
-    "Next cleanup: {{time}}": "Lan don dep tiep theo: {{time}}",
-    "Async Logs": "Nhat ky bat dong bo",
-    "Showing the latest {{count}} events while response is in progress":
-      "Dang xu ly phan hoi, chi hien thi {{count}} su kien moi nhat",
-    "API token": "API token",
-    "Access key ID": "ID khoa truy cap",
-    "Add Channel": "Them kenh",
-    "Auth type": "Kieu xac thuc",
-    Basic: "Basic",
-    Bearer: "Bearer",
-    Bucket: "Bucket",
-    "Chunk size": "Kich thuoc chunk",
-    "Chunk threshold": "Nguong chunk",
-    "Cloudflare ImageBed": "Cloudflare ImageBed",
-    "Configure file upload channels and keep secrets server-side only.":
-      "Cau hinh kenh tai tep len va chi giu bi mat o phia may chu.",
-    "Current default": "Kenh mac dinh hien tai",
-    "Data Management": "Quan ly du lieu",
-    "Default channel updated": "Da cap nhat kenh mac dinh",
-    'Delete "{{name}}"? This cannot be undone.':
-      'Xoa "{{name}}"? Hanh dong nay khong the hoan tac.',
-    "Force path style": "Bat buoc kieu duong dan",
-    Full: "Day du",
-    "Key prefix": "Tien to khoa",
-    "Max size": "Kich thuoc toi da",
-    "No file upload channels configured yet.":
-      "Chua co kenh tai tep len nao duoc cau hinh.",
-    "Path prefix": "Tien to duong dan",
-    Probe: "Kiem tra",
-    "Probe uploaded the built-in temporary file and returned the final address.":
-      "Kiem tra da tai len tep tam thoi tich hop san va tra ve dia chi cuoi cung.",
-    "Probe result": "Ket qua kiem tra",
-    "Probe will upload temporary file {{name}}, file size: {{size}}. Please confirm or cancel.":
-      "Kiem tra se tai len tep tam thoi {{name}}, kich thuoc tep: {{size}}. Vui long xac nhan hoac huy.",
-    "Probe succeeded": "Kiem tra thanh cong",
-    "Public base URL": "URL cong khai co so",
-    "Response URL": "URL phan hoi",
-    Region: "Vung",
-    "Return format": "Dinh dang tra ve",
-    "S3 Compatible Storage": "Luu tru tuong thich S3",
-    "Secret access key": "Khoa truy cap bi mat",
-    "Secrets stay on the server and are never shown in full.":
-      "Bi mat chi duoc giu tren may chu va khong bao gio hien day du.",
-    "Set default": "Dat mac dinh",
-    "Status updated": "Da cap nhat trang thai",
-    "Timeout ms": "Thoi gian cho (ms)",
-    "Confirm probe": "Xac nhan kiem tra",
-    File: "Tep",
-    "File size": "Kich thuoc tep",
-    Latency: "Do tre",
-    "Unit: B. Files above this threshold use chunked upload.":
-      "Don vi: B. Tep vuot nguong nay se duoc tai len theo tung phan.",
-    "Unit: B. Maximum allowed file size. 0 means unlimited.":
-      "Don vi: B. Kich thuoc tep toi da duoc phep. 0 co nghia la khong gioi han.",
-    "Unit: B. Size of each uploaded chunk.":
-      "Don vi: B. Kich thuoc moi phan tai len.",
-    "Upstream upload channel": "Kenh tai len phia tren",
-    "Upload channel": "Kenh tai len",
-    "Upload folder": "Thu muc tai len",
-    WebDAV: "WebDAV",
-  },
-};
+Object.assign(newKeys.en, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'A friendly label for administrators and future user-facing lists. It does not change routing.', 'Add group': 'Add group', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Disabled: hide this directory entry from normal use without deleting its configuration.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Enabled: keep this model directory entry available for Creative Studio configuration.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.', 'Group configuration': 'Group configuration', 'Lower values appear first. Use 0 for the default order.': 'Lower values appear first. Use 0 for the default order.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.', 'Optional administrative notes. It does not change routing.': 'Optional administrative notes. It does not change routing.', 'Requested model': 'Requested model', 'Select group': 'Select group', 'The upstream model identifier. It must match the model name configured on a channel.': 'The upstream model identifier. It must match the model name configured on a channel.', 'Validation': 'Validation', 'awaiting protocol validation': 'awaiting protocol validation', '{{type}}: {{name}} already exists': '{{type}}: {{name}} already exists' })
+Object.assign(newKeys['zh-TW'], { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '供管理員與後續使用者清單顯示的易讀名稱，不會改變路由。', 'Add group': '新增群組', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '僅用於提供者分類與顯示。協議在能力中設定，渠道路由在綁定中設定。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '停用：從一般使用中隱藏此目錄項目，不刪除其設定。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '啟用：讓此模型目錄項目可用於創作台設定。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': '由模型名稱去除前後空白並轉為小寫後產生，是不可編輯的唯一內部鍵。', 'Group configuration': '群組設定', 'Lower values appear first. Use 0 for the default order.': '數值較小者優先顯示；使用 0 為預設排序。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': '標記此目錄項目是否可在創作台中使用，不取代能力、群組發布或渠道的啟用狀態。', 'Optional administrative notes. It does not change routing.': '選填的管理備註，不會改變路由。', 'Requested model': '請求模型', 'Select group': '選擇群組', 'The upstream model identifier. It must match the model name configured on a channel.': '上游模型識別字，必須與渠道中設定的模型名稱一致。', 'Validation': '驗證狀態', 'awaiting protocol validation': '等待協議驗證', '{{type}}: {{name}} already exists': '{{type}}：{{name}} 已存在' })
+Object.assign(newKeys.zh, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '供管理员和后续用户端列表展示的友好名称，不影响路由。', 'Add group': '添加分组', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '仅用于提供商分类和展示。协议在能力中配置，渠道路由在绑定中配置。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '已禁用：从常规使用中隐藏该目录项，不删除其配置。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '已启用：该模型目录项可用于创作台配置。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': '由模型名称去除首尾空格并转为小写后生成，是不可编辑的唯一内部键。', 'Group configuration': '分组配置', 'Lower values appear first. Use 0 for the default order.': '数值越小越靠前；使用 0 为默认排序。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': '标记该目录项是否可在创作台中使用，不替代能力、分组发布或渠道的启用状态。', 'Optional administrative notes. It does not change routing.': '可选的管理备注，不影响路由。', 'Requested model': '请求模型', 'Select group': '选择分组', 'The upstream model identifier. It must match the model name configured on a channel.': '上游模型标识，必须与渠道中配置的模型名称一致。', 'Validation': '校验状态', 'awaiting protocol validation': '等待协议校验', '{{type}}: {{name}} already exists': '{{type}}：{{name}} 已存在' })
+Object.assign(newKeys.fr, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Libellé clair pour les administrateurs et les futures listes utilisateur. Il ne modifie pas le routage.', 'Add group': 'Ajouter un groupe', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Classe le fournisseur uniquement pour l’affichage. Le protocole est configuré sur la capacité et le routage du canal sur la liaison.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Désactivé : masque cette entrée du catalogue sans supprimer sa configuration.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Activé : conserve cette entrée de catalogue disponible pour la configuration de Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Générée à partir du nom du modèle après suppression des espaces et conversion en minuscules. C’est la clé interne unique et elle ne peut pas être modifiée.', 'Group configuration': 'Configuration du groupe', 'Lower values appear first. Use 0 for the default order.': 'Les valeurs les plus basses apparaissent d’abord. Utilisez 0 pour l’ordre par défaut.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Indique si cette entrée de catalogue est disponible dans Creative Studio. Cela ne remplace pas l’activation de la capacité, de la publication ou du canal.', 'Optional administrative notes. It does not change routing.': 'Notes administratives facultatives. Elles ne modifient pas le routage.', 'Requested model': 'Modèle demandé', 'Select group': 'Sélectionner un groupe', 'The upstream model identifier. It must match the model name configured on a channel.': 'Identifiant du modèle en amont. Il doit correspondre au nom du modèle configuré sur un canal.', 'Validation': 'Validation', 'awaiting protocol validation': 'En attente de validation du protocole', '{{type}}: {{name}} already exists': '{{type}} : {{name}} existe déjà' })
+Object.assign(newKeys.ja, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '管理者および今後のユーザー向けリストに表示するわかりやすい名称です。ルーティングには影響しません。', 'Add group': 'グループを追加', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '表示用のプロバイダー分類です。プロトコルは能力で、チャネルルーティングはバインディングで設定します。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '無効：設定を削除せず、このカタログ項目を通常利用から非表示にします。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '有効：このモデルカタログ項目を Creative Studio の設定で利用可能にします。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'モデル名の前後の空白を除去して小文字化した値から生成される、一意で編集不可の内部キーです。', 'Group configuration': 'グループ設定', 'Lower values appear first. Use 0 for the default order.': '小さい値ほど先に表示されます。既定の順序には 0 を使用してください。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'このカタログ項目を Creative Studio で利用可能にするかを示します。能力、公開、チャネルの有効化を置き換えるものではありません。', 'Optional administrative notes. It does not change routing.': '任意の管理メモです。ルーティングには影響しません。', 'Requested model': 'リクエストモデル', 'Select group': 'グループを選択', 'The upstream model identifier. It must match the model name configured on a channel.': '上流モデルの識別子です。チャネルに設定したモデル名と一致させる必要があります。', 'Validation': '検証', 'awaiting protocol validation': 'プロトコル検証待ち', '{{type}}: {{name}} already exists': '{{type}}：{{name}} はすでに存在します' })
+Object.assign(newKeys.ru, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Понятное название для администраторов и будущих пользовательских списков. Оно не меняет маршрутизацию.', 'Add group': 'Добавить группу', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Классифицирует поставщика только для отображения. Протокол настраивается в возможности, а маршрутизация канала — в привязке.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Отключено: скрывает эту запись каталога из обычного использования, не удаляя ее настройки.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Включено: оставляет эту запись каталога моделей доступной для настройки Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Создается из имени модели после удаления пробелов и приведения к нижнему регистру. Это уникальный внутренний ключ, который нельзя изменить.', 'Group configuration': 'Настройка группы', 'Lower values appear first. Use 0 for the default order.': 'Меньшие значения отображаются первыми. Используйте 0 для порядка по умолчанию.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Отмечает, доступна ли эта запись каталога в Creative Studio. Это не заменяет включение возможности, публикации или канала.', 'Optional administrative notes. It does not change routing.': 'Необязательные заметки администратора. Они не меняют маршрутизацию.', 'Requested model': 'Запрошенная модель', 'Select group': 'Выбрать группу', 'The upstream model identifier. It must match the model name configured on a channel.': 'Идентификатор модели у провайдера. Он должен совпадать с именем модели, настроенным на канале.', 'Validation': 'Проверка', 'awaiting protocol validation': 'Ожидание проверки протокола', '{{type}}: {{name}} already exists': '{{type}}: {{name}} уже существует' })
+Object.assign(newKeys.vi, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Tên dễ đọc cho quản trị viên và các danh sách người dùng sau này. Không làm thay đổi định tuyến.', 'Add group': 'Thêm nhóm', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Chỉ phân loại nhà cung cấp để hiển thị. Giao thức được cấu hình ở khả năng; định tuyến kênh được cấu hình ở liên kết.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Đã tắt: ẩn mục danh mục này khỏi sử dụng thông thường mà không xóa cấu hình.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Đã bật: giữ mục danh mục mô hình này khả dụng cho cấu hình Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Được tạo từ tên mô hình sau khi bỏ khoảng trắng và chuyển sang chữ thường. Đây là khóa nội bộ duy nhất, không thể chỉnh sửa.', 'Group configuration': 'Cấu hình nhóm', 'Lower values appear first. Use 0 for the default order.': 'Giá trị nhỏ hơn xuất hiện trước. Dùng 0 cho thứ tự mặc định.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Đánh dấu mục danh mục này có dùng được trong Creative Studio hay không. Không thay thế trạng thái bật của khả năng, phát hành hoặc kênh.', 'Optional administrative notes. It does not change routing.': 'Ghi chú quản trị tùy chọn. Không làm thay đổi định tuyến.', 'Requested model': 'Mô hình yêu cầu', 'Select group': 'Chọn nhóm', 'The upstream model identifier. It must match the model name configured on a channel.': 'Định danh mô hình thượng nguồn. Phải khớp với tên mô hình đã cấu hình trên kênh.', 'Validation': 'Xác thực', 'awaiting protocol validation': 'Đang chờ xác thực giao thức', '{{type}}: {{name}} already exists': '{{type}}: {{name}} đã tồn tại' })
+
+Object.assign(newKeys.en, {
+  'Defines whether this capability creates images or videos.': 'Defines whether this capability creates images or videos.',
+  'Defines the action this capability performs.': 'Defines the action this capability performs.',
+  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Identifies the upstream request protocol. It is part of this capability’s unique identity.',
+  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Describes whether the result is returned immediately, later, or as a synchronous artifact.',
+  'Enables this capability for later publication and routing.': 'Enables this capability for later publication and routing.',
+  'JSON object that describes supported inputs.': 'JSON object that describes supported inputs.',
+  'JSON object applied before group defaults.': 'JSON object applied before group defaults.',
+  'Selects the user group that can see this capability.': 'Selects the user group that can see this capability.',
+  'Controls whether this group publication is available to users.': 'Controls whether this group publication is available to users.',
+  'JSON object merged after capability defaults.': 'JSON object merged after capability defaults.',
+  'Selects the existing enabled channel used for this group publication.': 'Selects the existing enabled channel used for this group publication.',
+  'The internal ID of the selected channel.': 'The internal ID of the selected channel.',
+  'Inherited from the model directory in this stage and sent to the selected channel.': 'Inherited from the model directory in this stage and sent to the selected channel.',
+  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.',
+  'New bindings remain disabled until protocol verification is available.': 'New bindings remain disabled until protocol verification is available.',
+  'Shows the current basic validation result for this channel binding.': 'Shows the current basic validation result for this channel binding.',
+  'Details the latest validation result without exposing credentials or upstream response bodies.': 'Details the latest validation result without exposing credentials or upstream response bodies.',
+})
+Object.assign(newKeys.zh, {
+  'Defines whether this capability creates images or videos.': '定义此能力生成图片还是视频。',
+  'Defines the action this capability performs.': '定义此能力执行的操作。',
+  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '标识上游请求协议，是此能力唯一标识的一部分。',
+  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '说明结果是立即返回、稍后返回，还是同步产出文件。',
+  'Enables this capability for later publication and routing.': '启用后，此能力可用于后续分组发布和路由。',
+  'JSON object that describes supported inputs.': '描述支持输入的 JSON 对象。',
+  'JSON object applied before group defaults.': '在分组默认参数前应用的 JSON 对象。',
+  'Selects the user group that can see this capability.': '选择可看到此能力的用户分组。',
+  'Controls whether this group publication is available to users.': '控制此分组发布是否对用户可用。',
+  'JSON object merged after capability defaults.': '在能力默认参数后合并的 JSON 对象。',
+  'Selects the existing enabled channel used for this group publication.': '选择供此分组发布使用的现有已启用渠道。',
+  'The internal ID of the selected channel.': '所选渠道的内部 ID。',
+  'Inherited from the model directory in this stage and sent to the selected channel.': '本阶段继承模型目录中的模型名，并发送给所选渠道。',
+  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '选择候选渠道时数值越大越优先，不改变渠道的全局优先级。',
+  'New bindings remain disabled until protocol verification is available.': '协议校验可用前，新建绑定保持禁用。',
+  'Shows the current basic validation result for this channel binding.': '显示此渠道绑定当前的基础校验结果。',
+  'Details the latest validation result without exposing credentials or upstream response bodies.': '展示最近一次校验详情，不暴露凭据或上游响应正文。',
+})
+Object.assign(newKeys['zh-TW'], {
+  'Defines whether this capability creates images or videos.': '定義此能力生成圖片或影片。',
+  'Defines the action this capability performs.': '定義此能力執行的操作。',
+  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '標識上游請求協議，是此能力唯一識別的一部分。',
+  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '說明結果是立即返回、稍後返回，或同步產出檔案。',
+  'Enables this capability for later publication and routing.': '啟用後，此能力可用於後續群組發布與路由。',
+  'JSON object that describes supported inputs.': '描述支援輸入的 JSON 物件。',
+  'JSON object applied before group defaults.': '在群組預設參數前套用的 JSON 物件。',
+  'Selects the user group that can see this capability.': '選擇可看到此能力的使用者群組。',
+  'Controls whether this group publication is available to users.': '控制此群組發布是否對使用者可用。',
+  'JSON object merged after capability defaults.': '在能力預設參數後合併的 JSON 物件。',
+  'Selects the existing enabled channel used for this group publication.': '選擇供此群組發布使用的現有已啟用渠道。',
+  'The internal ID of the selected channel.': '所選渠道的內部 ID。',
+  'Inherited from the model directory in this stage and sent to the selected channel.': '本階段繼承模型目錄中的模型名，並傳送給所選渠道。',
+  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '選擇候選渠道時數值越大越優先，不改變渠道的全域優先級。',
+  'New bindings remain disabled until protocol verification is available.': '協議驗證可用前，新建綁定保持停用。',
+  'Shows the current basic validation result for this channel binding.': '顯示此渠道綁定目前的基礎驗證結果。',
+  'Details the latest validation result without exposing credentials or upstream response bodies.': '顯示最近一次驗證詳情，不暴露憑證或上游回應正文。',
+})
+Object.assign(newKeys.fr, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
+Object.assign(newKeys.ja, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
+Object.assign(newKeys.ru, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
+Object.assign(newKeys.vi, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
+Object.assign(newKeys.fr, {
+  'Defines whether this capability creates images or videos.': 'Définit si cette capacité crée des images ou des vidéos.', 'Defines the action this capability performs.': 'Définit l’action réalisée par cette capacité.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Identifie le protocole de requête amont, qui fait partie de l’identité unique de cette capacité.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Indique si le résultat est renvoyé immédiatement, plus tard ou comme artefact synchrone.', 'Enables this capability for later publication and routing.': 'Active cette capacité pour la publication et le routage ultérieurs.', 'JSON object that describes supported inputs.': 'Objet JSON décrivant les entrées prises en charge.', 'JSON object applied before group defaults.': 'Objet JSON appliqué avant les paramètres par défaut du groupe.', 'Selects the user group that can see this capability.': 'Sélectionne le groupe utilisateur qui peut voir cette capacité.', 'Controls whether this group publication is available to users.': 'Contrôle si cette publication de groupe est disponible pour les utilisateurs.', 'JSON object merged after capability defaults.': 'Objet JSON fusionné après les paramètres par défaut de la capacité.', 'Selects the existing enabled channel used for this group publication.': 'Sélectionne le canal existant activé pour cette publication de groupe.', 'The internal ID of the selected channel.': 'Identifiant interne du canal sélectionné.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'Hérité du catalogue de modèles à cette étape et envoyé au canal sélectionné.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Les valeurs plus élevées sont préférées lors de la sélection. Cela ne modifie pas la priorité globale du canal.', 'New bindings remain disabled until protocol verification is available.': 'Les nouvelles liaisons restent désactivées jusqu’à ce que la vérification du protocole soit disponible.', 'Shows the current basic validation result for this channel binding.': 'Affiche le résultat de validation de base actuel pour cette liaison de canal.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Détaille la dernière validation sans exposer les identifiants ni les réponses amont.',
+})
+Object.assign(newKeys.ja, {
+  'Defines whether this capability creates images or videos.': 'この能力が画像または動画を生成するかを定義します。', 'Defines the action this capability performs.': 'この能力が実行する操作を定義します。', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '上流リクエストのプロトコルを識別します。これは能力の一意性の一部です。', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '結果を即時、後で、または同期アーティファクトとして返すかを示します。', 'Enables this capability for later publication and routing.': '後続の公開とルーティングでこの能力を有効にします。', 'JSON object that describes supported inputs.': 'サポートする入力を記述する JSON オブジェクトです。', 'JSON object applied before group defaults.': 'グループのデフォルト前に適用する JSON オブジェクトです。', 'Selects the user group that can see this capability.': 'この能力を表示できるユーザーグループを選択します。', 'Controls whether this group publication is available to users.': 'このグループ公開をユーザーに提供するかを制御します。', 'JSON object merged after capability defaults.': '能力のデフォルト後にマージする JSON オブジェクトです。', 'Selects the existing enabled channel used for this group publication.': 'このグループ公開で使用する既存の有効なチャネルを選択します。', 'The internal ID of the selected channel.': '選択したチャネルの内部 ID です。', 'Inherited from the model directory in this stage and sent to the selected channel.': 'この段階ではモデルカタログから継承し、選択したチャネルへ送信します。', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '候補選択では高い値を優先します。チャネルのグローバル優先度は変更しません。', 'New bindings remain disabled until protocol verification is available.': 'プロトコル検証が利用可能になるまで、新しいバインディングは無効のままです。', 'Shows the current basic validation result for this channel binding.': 'このチャネルバインディングの現在の基本検証結果を表示します。', 'Details the latest validation result without exposing credentials or upstream response bodies.': '認証情報や上流応答本文を公開せず、最新の検証結果を詳述します。',
+})
+Object.assign(newKeys.ru, {
+  'Defines whether this capability creates images or videos.': 'Определяет, создает ли эта возможность изображения или видео.', 'Defines the action this capability performs.': 'Определяет действие, выполняемое этой возможностью.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Определяет протокол запроса к провайдеру; он является частью уникальности этой возможности.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Указывает, возвращается ли результат сразу, позже или как синхронный артефакт.', 'Enables this capability for later publication and routing.': 'Включает эту возможность для последующей публикации и маршрутизации.', 'JSON object that describes supported inputs.': 'JSON-объект, описывающий поддерживаемые входные данные.', 'JSON object applied before group defaults.': 'JSON-объект, применяемый до параметров группы по умолчанию.', 'Selects the user group that can see this capability.': 'Выбирает группу пользователей, которая может видеть эту возможность.', 'Controls whether this group publication is available to users.': 'Управляет доступностью этой групповой публикации для пользователей.', 'JSON object merged after capability defaults.': 'JSON-объект, объединяемый после параметров возможности по умолчанию.', 'Selects the existing enabled channel used for this group publication.': 'Выбирает существующий включенный канал для этой групповой публикации.', 'The internal ID of the selected channel.': 'Внутренний ID выбранного канала.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'На этом этапе наследуется из каталога моделей и отправляется в выбранный канал.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'При выборе кандидатов предпочтительны более высокие значения. Это не меняет глобальный приоритет канала.', 'New bindings remain disabled until protocol verification is available.': 'Новые привязки остаются отключенными, пока не станет доступна проверка протокола.', 'Shows the current basic validation result for this channel binding.': 'Показывает текущий результат базовой проверки для этой привязки канала.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Подробно показывает последнюю проверку без раскрытия учетных данных или тел ответов провайдера.',
+})
+Object.assign(newKeys.vi, {
+  'Defines whether this capability creates images or videos.': 'Xác định khả năng này tạo ảnh hay video.', 'Defines the action this capability performs.': 'Xác định thao tác mà khả năng này thực hiện.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Xác định giao thức yêu cầu thượng nguồn, là một phần định danh duy nhất của khả năng này.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Mô tả kết quả trả về ngay, sau đó hay dưới dạng sản phẩm đồng bộ.', 'Enables this capability for later publication and routing.': 'Bật khả năng này để phát hành và định tuyến sau đó.', 'JSON object that describes supported inputs.': 'Đối tượng JSON mô tả đầu vào được hỗ trợ.', 'JSON object applied before group defaults.': 'Đối tượng JSON được áp dụng trước mặc định của nhóm.', 'Selects the user group that can see this capability.': 'Chọn nhóm người dùng có thể xem khả năng này.', 'Controls whether this group publication is available to users.': 'Kiểm soát việc phát hành nhóm này có sẵn cho người dùng hay không.', 'JSON object merged after capability defaults.': 'Đối tượng JSON được hợp nhất sau mặc định của khả năng.', 'Selects the existing enabled channel used for this group publication.': 'Chọn kênh hiện có đã bật cho phát hành nhóm này.', 'The internal ID of the selected channel.': 'ID nội bộ của kênh đã chọn.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'Ở giai đoạn này được kế thừa từ danh mục mô hình và gửi tới kênh đã chọn.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Ưu tiên giá trị cao hơn khi chọn ứng viên. Điều này không đổi ưu tiên toàn cục của kênh.', 'New bindings remain disabled until protocol verification is available.': 'Liên kết mới vẫn bị tắt cho đến khi có xác thực giao thức.', 'Shows the current basic validation result for this channel binding.': 'Hiển thị kết quả xác thực cơ bản hiện tại cho liên kết kênh này.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Nêu chi tiết kết quả xác thực mới nhất mà không lộ thông tin xác thực hoặc nội dung phản hồi thượng nguồn.',
+})
 
 async function main() {
-  let totalAdded = 0;
-
-  for (const [locale, trans] of Object.entries(newKeys)) {
-    const filePath = path.join(LOCALES_DIR, `${locale}.json`);
-    const json = JSON.parse(await fs.readFile(filePath, "utf8"));
-
-    let count = 0;
-    for (const [key, value] of Object.entries(trans)) {
-      if (!Object.prototype.hasOwnProperty.call(json.translation, key)) {
-        json.translation[key] = value;
-        count++;
-      } else if (json.translation[key] !== value) {
-        json.translation[key] = value;
-        count++;
-      }
-    }
-
-    if (count > 0) {
-      json.translation = Object.fromEntries(
-        Object.entries(json.translation).sort(([a], [b]) => a.localeCompare(b)),
-      );
-      await fs.writeFile(filePath, stableStringify(json), "utf8");
-    }
-
-    console.log(`${locale}: ${count} translations applied`);
-    totalAdded += count;
+  for (const [locale, translations] of Object.entries(newKeys)) {
+    const filePath = path.join(localesDir, `${locale}.json`)
+    const content = JSON.parse(await fs.readFile(filePath, 'utf8'))
+    Object.assign(content.translation, translations)
+    content.translation = Object.fromEntries(
+      Object.entries(content.translation).sort(([left], [right]) => left.localeCompare(right))
+    )
+    await fs.writeFile(filePath, `${JSON.stringify(content, null, 2)}\n`)
   }
-
-  console.log(`\nTotal: ${totalAdded} translations applied`);
 }
 
 main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+  console.error(error)
+  process.exitCode = 1
+})

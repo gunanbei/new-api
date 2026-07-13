@@ -64,6 +64,29 @@ func SetApiRouter(router *gin.Engine) {
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 		apiRouter.GET("/image-playground/bootstrap", middleware.UserAuth(), controller.GetImagePlaygroundBootstrap)
+		creativeAdminRoute := apiRouter.Group("/creative/admin")
+		creativeAdminRoute.Use(middleware.AdminAuth())
+		{
+			creativeAdminRoute.GET("/bootstrap", controller.GetCreativeStudioBootstrap)
+			creativeAdminRoute.GET("/models", controller.GetCreativeModels)
+			creativeAdminRoute.POST("/models", controller.CreateCreativeModel)
+			creativeAdminRoute.PUT("/models/:id", controller.UpdateCreativeModel)
+			creativeAdminRoute.DELETE("/models/:id", controller.DeleteCreativeModel)
+			creativeAdminRoute.GET("/models/:id/capabilities", controller.GetCreativeCapabilities)
+			creativeAdminRoute.POST("/models/:id/capabilities", controller.CreateCreativeCapability)
+			creativeAdminRoute.PUT("/capabilities/:id", controller.UpdateCreativeCapability)
+			creativeAdminRoute.DELETE("/capabilities/:id", controller.DeleteCreativeCapability)
+			creativeAdminRoute.GET("/capabilities/:id/publications", controller.GetCreativePublications)
+			creativeAdminRoute.POST("/capabilities/:id/publications", controller.CreateCreativePublication)
+			creativeAdminRoute.PUT("/publications/:id", controller.UpdateCreativePublication)
+			creativeAdminRoute.DELETE("/publications/:id", controller.DeleteCreativePublication)
+			creativeAdminRoute.GET("/publications/:id/bindings", controller.GetCreativeBindings)
+			creativeAdminRoute.POST("/publications/:id/bindings", controller.CreateCreativeBinding)
+			creativeAdminRoute.PUT("/bindings/:id", controller.UpdateCreativeBinding)
+			creativeAdminRoute.DELETE("/bindings/:id", controller.DeleteCreativeBinding)
+			creativeAdminRoute.GET("/settings", controller.GetCreativeStudioSettings)
+			creativeAdminRoute.PUT("/settings", controller.UpdateCreativeStudioSettings)
+		}
 
 		userRoute := apiRouter.Group("/user")
 		{

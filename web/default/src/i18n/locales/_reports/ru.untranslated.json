@@ -1,6 +1,10 @@
 {
+  "awaiting protocol validation": "awaiting protocol validation",
   "Bearer": "Bearer",
+  "Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.": "Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.",
   "Cloudflare ImageBed": "Cloudflare ImageBed",
   "Current Attempt": "Current Attempt",
+  "Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.": "Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.",
+  "The upstream model identifier. It must match the model name configured on a channel.": "The upstream model identifier. It must match the model name configured on a channel.",
   "WebDAV": "WebDAV"
 }

@@ -82,7 +82,7 @@ export function useSidebarData(): SidebarData {
             icon: LayoutDashboard,
           },
           {
-            title: t('Online Image Generation'),
+            title: t('Creative Studio'),
             url: '/imgen',
             icon: ImageIcon,
             native: true,

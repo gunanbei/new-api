@@ -24,6 +24,7 @@ import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { DataManagementSection } from '../maintenance/file-upload-channel/data-management-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
+import { CreativeStudioSection } from './creative-studio-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -130,6 +131,11 @@ const OPERATIONS_SECTIONS = [
     id: 'data-management',
     titleKey: 'Data Management',
     build: () => <DataManagementSection />,
+  },
+  {
+    id: 'creative-studio',
+    titleKey: 'Creative Studio Management',
+    build: () => <CreativeStudioSection />,
   },
   {
     id: 'performance',

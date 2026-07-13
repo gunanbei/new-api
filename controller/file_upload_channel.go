@@ -176,6 +176,17 @@ func UpdateFileUploadChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if existing.Status == service.FileUploadChannelStatusDisabled {
+		referenced, err := model.IsCreativeStudioFileChannel(existing.Id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if referenced {
+			common.ApiErrorMsg(c, "channel is the creative studio default; choose another channel first")
+			return
+		}
+	}
 	if existing.IsDefault == service.FileUploadChannelIsDefault && existing.Status != service.FileUploadChannelStatusEnabled {
 		common.ApiErrorMsg(c, "only enabled channels can be set as default")
 		return
@@ -265,6 +276,17 @@ func UpdateFileUploadChannelStatus(c *gin.Context) {
 	if req.Status == service.FileUploadChannelStatusDisabled && channel.IsDefault == service.FileUploadChannelIsDefault {
 		if err := ensureAnotherDefaultFileUploadChannel(model.DB, channel.Id); err != nil {
 			common.ApiError(c, err)
+			return
+		}
+	}
+	if req.Status == service.FileUploadChannelStatusDisabled {
+		referenced, err := model.IsCreativeStudioFileChannel(channel.Id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if referenced {
+			common.ApiErrorMsg(c, "channel is the creative studio default; choose another channel first")
 			return
 		}
 	}
@@ -612,6 +634,13 @@ func ensureAnotherDefaultFileUploadChannel(db *gorm.DB, excludedID uint64) error
 }
 
 func ensureFileUploadChannelNotReferenced(channelID uint64) error {
+	referenced, err := model.IsCreativeStudioFileChannel(channelID)
+	if err != nil {
+		return err
+	}
+	if referenced {
+		return fmt.Errorf("channel is the creative studio default; choose another channel first")
+	}
 	for _, tableName := range []string{"file", "user_file"} {
 		if !model.DB.Migrator().HasTable(tableName) {
 			continue

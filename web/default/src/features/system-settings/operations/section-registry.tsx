@@ -21,6 +21,7 @@ import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
+import { DataManagementSection } from '../maintenance/file-upload-channel/data-management-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
@@ -124,6 +125,11 @@ const OPERATIONS_SECTIONS = [
         }
       />
     ),
+  },
+  {
+    id: 'data-management',
+    titleKey: 'Data Management',
+    build: () => <DataManagementSection />,
   },
   {
     id: 'performance',

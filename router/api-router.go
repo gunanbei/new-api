@@ -201,6 +201,47 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
 		}
+		apiRouter.GET("/file-upload-channel/default", middleware.UserAuth(), controller.GetDefaultFileUploadChannel)
+		apiRouter.GET("/file-upload-channel/resolve", middleware.UserAuth(), controller.ResolveFileUploadChannel)
+		storageUserRoute := apiRouter.Group("/storage")
+		storageUserRoute.Use(middleware.UserAuth())
+		{
+			storageUserRoute.POST("/prepare", controller.StoragePrepare)
+			storageUserRoute.POST("/presign-part", controller.StoragePresignPart)
+			storageUserRoute.POST("/complete", controller.StorageComplete)
+			storageUserRoute.POST("/abort", controller.StorageAbort)
+			storageUserRoute.GET("/self", controller.GetStorageSelf)
+			storageUserRoute.GET("/self/suffixes", controller.GetStorageSelfSuffixes)
+			storageUserRoute.GET("/self/:id", controller.GetStorageSelfFile)
+			storageUserRoute.DELETE("/self/:id", controller.DeleteStorageSelfFile)
+			storageUserRoute.DELETE("/self", controller.DeleteStorageSelfFiles)
+		}
+		storageAdminRoute := apiRouter.Group("/storage")
+		storageAdminRoute.Use(middleware.AdminAuth())
+		{
+			storageAdminRoute.GET("/stats/by-channel", controller.GetStorageChannelStats)
+			storageAdminRoute.GET("/stats/summary", controller.GetStorageSummary)
+			storageAdminRoute.GET("/suffixes", controller.GetStorageSuffixes)
+			storageAdminRoute.GET("/user/:user_id", controller.GetStorageUserFiles)
+			storageAdminRoute.GET("/", controller.GetStorageFiles)
+			storageAdminRoute.DELETE("/", controller.DeleteStorageFiles)
+			storageAdminRoute.GET("/:id", controller.GetStorageFile)
+			storageAdminRoute.DELETE("/:id", controller.DeleteStorageFile)
+		}
+		fileUploadChannelRoute := apiRouter.Group("/file-upload-channel")
+		fileUploadChannelRoute.Use(middleware.RootAuth())
+		{
+			fileUploadChannelRoute.GET("/", controller.GetFileUploadChannels)
+			fileUploadChannelRoute.GET("/probe-file-info", controller.GetFileUploadChannelProbeFileInfo)
+			fileUploadChannelRoute.GET("/:id", controller.GetFileUploadChannel)
+			fileUploadChannelRoute.POST("/", controller.CreateFileUploadChannel)
+			fileUploadChannelRoute.PUT("/:id", controller.UpdateFileUploadChannel)
+			fileUploadChannelRoute.PUT("/:id/default", controller.SetDefaultFileUploadChannel)
+			fileUploadChannelRoute.PUT("/:id/status", controller.UpdateFileUploadChannelStatus)
+			fileUploadChannelRoute.DELETE("/:id", controller.DeleteFileUploadChannel)
+			fileUploadChannelRoute.POST("/probe", controller.ProbeDraftFileUploadChannel)
+			fileUploadChannelRoute.POST("/:id/probe", controller.ProbeSavedFileUploadChannel)
+		}
 
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")

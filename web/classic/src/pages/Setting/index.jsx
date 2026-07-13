@@ -40,6 +40,7 @@ import SystemSetting from '../../components/settings/SystemSetting';
 import { isRoot } from '../../helpers';
 import OtherSetting from '../../components/settings/OtherSetting';
 import OperationSetting from '../../components/settings/OperationSetting';
+import FileUploadChannelSetting from '../../components/settings/FileUploadChannelSetting';
 import RateLimitSetting from '../../components/settings/RateLimitSetting';
 import ModelSetting from '../../components/settings/ModelSetting';
 import DashboardSetting from '../../components/settings/DashboardSetting';
@@ -147,6 +148,16 @@ const Setting = () => {
       ),
       content: <ModelDeploymentSetting />,
       itemKey: 'model-deployment',
+    });
+    panes.push({
+      tab: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <Server size={18} />
+          {t('Data Management')}
+        </span>
+      ),
+      content: <FileUploadChannelSetting />,
+      itemKey: 'data-management',
     });
     panes.push({
       tab: (

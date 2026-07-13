@@ -167,9 +167,9 @@ function getDefaultVendor(adapterType: string) {
 export function ImageModelConfigurationSection(
   props: ImageModelConfigurationSectionProps
 ) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const registrySchema = useMemo(() => createRegistrySchema(), [i18n.language])
+  const registrySchema = useMemo(() => createRegistrySchema(), [])
   const defaultValues = useMemo(
     () => normalizeRegistryValue(props.defaultValue),
     [props.defaultValue]
@@ -284,15 +284,19 @@ export function ImageModelConfigurationSection(
                     render={({ field: adapterField }) => (
                       <FormItem>
                         <FormLabel>{t('Adapter Type')}</FormLabel>
-                        <Select
+                          <Select
                           value={adapterField.value}
                           onValueChange={(value) => {
                             adapterField.onChange(value)
                             const vendorPath = `items.${index}.display_vendor` as const
                             if (!form.getValues(vendorPath).trim()) {
-                              form.setValue(vendorPath, getDefaultVendor(value), {
+                              form.setValue(
+                                vendorPath,
+                                getDefaultVendor(typeof value === 'string' ? value : ''),
+                                {
                                 shouldDirty: true,
-                              })
+                                }
+                              )
                             }
                           }}
                         >

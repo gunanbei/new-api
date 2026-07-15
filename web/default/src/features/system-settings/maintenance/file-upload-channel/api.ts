@@ -34,6 +34,14 @@ export async function createFileUploadChannel(data: Record<string, unknown>) {
   return res.data;
 }
 
+export async function copyFileUploadChannel(id: number, suffix: string) {
+  const res = await api.post<FileUploadChannelMutationResponse>(
+    `/api/file-upload-channel/${id}/copy`,
+    { suffix },
+  );
+  return res.data;
+}
+
 export async function updateFileUploadChannel(
   id: number,
   data: Record<string, unknown>,

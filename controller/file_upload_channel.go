@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -32,6 +33,10 @@ type FileUploadChannelProbeRequest struct {
 
 type FileUploadChannelStatusRequest struct {
 	Status string `json:"status"`
+}
+
+type FileUploadChannelCopyRequest struct {
+	Suffix *string `json:"suffix"`
 }
 
 func GetFileUploadChannelProbeFileInfo(c *gin.Context) {
@@ -141,6 +146,46 @@ func CreateFileUploadChannel(c *gin.Context) {
 	}
 
 	response, err := buildFileUploadChannelResponse(channel, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, response)
+}
+
+func CopyFileUploadChannel(c *gin.Context) {
+	original, err := getFileUploadChannelByParamID(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	var req FileUploadChannelCopyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "invalid request body: "+err.Error())
+		return
+	}
+
+	suffix := "_copy"
+	if req.Suffix != nil {
+		suffix = *req.Suffix
+	}
+
+	copy := *original
+	copy.Id = 0
+	copy.Name = original.Name + suffix
+	copy.IsDefault = service.FileUploadChannelNotDefault
+	copy.CreateTime = time.Time{}
+	copy.UpdateTime = time.Time{}
+	copy.CreateUserId = int64(c.GetInt("id"))
+	copy.UpdateUserId = copy.CreateUserId
+
+	if err := model.DB.Create(&copy).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	response, err := buildFileUploadChannelResponse(&copy, true)
 	if err != nil {
 		common.ApiError(c, err)
 		return

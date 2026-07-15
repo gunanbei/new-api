@@ -271,6 +271,7 @@ func SetApiRouter(router *gin.Engine) {
 			fileUploadChannelRoute.GET("/probe-file-info", controller.GetFileUploadChannelProbeFileInfo)
 			fileUploadChannelRoute.GET("/:id", controller.GetFileUploadChannel)
 			fileUploadChannelRoute.POST("/", controller.CreateFileUploadChannel)
+			fileUploadChannelRoute.POST("/:id/copy", controller.CopyFileUploadChannel)
 			fileUploadChannelRoute.PUT("/:id", controller.UpdateFileUploadChannel)
 			fileUploadChannelRoute.PUT("/:id/default", controller.SetDefaultFileUploadChannel)
 			fileUploadChannelRoute.PUT("/:id/status", controller.UpdateFileUploadChannelStatus)

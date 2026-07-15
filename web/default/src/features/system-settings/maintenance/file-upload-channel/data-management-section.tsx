@@ -1,5 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Pencil, Power, Radar, Star, Trash2, UserRoundPen } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  Pencil,
+  Power,
+  Radar,
+  Star,
+  Trash2,
+  UserRoundPen,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +25,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -32,6 +42,7 @@ import {
   SettingsSwitchItem,
 } from "../../components/settings-form-layout";
 import {
+  copyFileUploadChannel,
   createFileUploadChannel,
   deleteFileUploadChannel,
   getFileUploadChannelProbeFileInfo,
@@ -359,6 +370,8 @@ export function DataManagementSection() {
   const [deleteTarget, setDeleteTarget] = useState<FileUploadChannel | null>(
     null,
   );
+  const [copyTarget, setCopyTarget] = useState<FileUploadChannel | null>(null);
+  const [copySuffix, setCopySuffix] = useState("_copy");
   const [formOpen, setFormOpen] = useState(false);
   const [probeIntent, setProbeIntent] = useState<ProbeIntent | null>(null);
   const [probeResult, setProbeResult] =
@@ -452,6 +465,25 @@ export function DataManagementSection() {
     onSuccess: async (res) => {
       if (res.success) {
         toast.success(t("Deleted"));
+        await refresh();
+      }
+    },
+  });
+
+  const copyMutation = useMutation({
+    mutationFn: async ({
+      channel,
+      suffix,
+    }: {
+      channel: FileUploadChannel;
+      suffix: string;
+    }) => copyFileUploadChannel(channel.id, suffix),
+    onSuccess: async (res) => {
+      if (res.success && res.data) {
+        toast.success(t("Copied"));
+        upsertChannelInCache(res.data);
+        setCopyTarget(null);
+        setCopySuffix("_copy");
         await refresh();
       }
     },
@@ -623,6 +655,15 @@ export function DataManagementSection() {
                 <Button
                   size="icon-sm"
                   variant="ghost"
+                  onClick={() => setCopyTarget(channel)}
+                  title={t("Copy Channel")}
+                  aria-label={t("Copy Channel")}
+                >
+                  <Copy className="size-4" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   onClick={() => setDefaultMutation.mutate(channel)}
                   disabled={
                     channel.status !== "1" || channel.is_default === "1"
@@ -697,6 +738,71 @@ export function DataManagementSection() {
         }}
         isLoading={deleteMutation.isPending}
       />
+
+      <Dialog
+        open={!!copyTarget}
+        onOpenChange={(open) => {
+          if (!open && !copyMutation.isPending) {
+            setCopyTarget(null);
+            setCopySuffix("_copy");
+          }
+        }}
+        title={t("Copy Channel")}
+        description={
+          copyTarget ? (
+            <>
+              {t("Create a copy of:")}
+              <strong>{copyTarget.name}</strong>
+            </>
+          ) : undefined
+        }
+        contentHeight="auto"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setCopyTarget(null)}
+              disabled={copyMutation.isPending}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                if (!copyTarget) return;
+                copyMutation.mutate({
+                  channel: copyTarget,
+                  suffix: copySuffix,
+                });
+              }}
+              disabled={copyMutation.isPending}
+            >
+              {copyMutation.isPending && (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              )}
+              {copyMutation.isPending ? t("Copying...") : t("Copy Channel")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="file-upload-channel-copy-suffix">
+              {t("Name Suffix")}
+            </Label>
+            <Input
+              id="file-upload-channel-copy-suffix"
+              placeholder={t("_copy")}
+              value={copySuffix}
+              onChange={(event) => setCopySuffix(event.target.value)}
+              disabled={copyMutation.isPending}
+            />
+            <p className="text-muted-foreground text-xs">
+              {t("New name will be:")} {copyTarget?.name}
+              {copySuffix}
+            </p>
+          </div>
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         open={!!probeIntent}

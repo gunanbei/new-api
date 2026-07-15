@@ -32,7 +32,9 @@ import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import { InflightCleanupScheduleInfo } from './components/inflight-cleanup-schedule-info'
 import { InflightTasksTab } from './components/inflight-tasks-tab'
 import {
+  type LogsViewScope,
   UsageLogsProvider,
+  useLogsViewScope,
   useUsageLogsContext,
 } from './components/usage-logs-provider'
 import { UsageLogsTable } from './components/usage-logs-table'
@@ -77,6 +79,7 @@ function UsageLogsContent() {
     affinityDialogOpen,
     setAffinityDialogOpen,
   } = useUsageLogsContext()
+  const { canManageScope, viewScope, setViewScope } = useLogsViewScope()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
@@ -129,6 +132,16 @@ function UsageLogsContent() {
   }, [activeCategory, queryClient])
 
   const pageMeta = SECTION_META[activeCategory]
+  const handleViewScopeChange = useCallback(
+    (scope: string) => {
+      if (scope === 'all' || scope === 'self') {
+        setViewScope(scope as LogsViewScope)
+      }
+    },
+    [setViewScope]
+  )
+
+    activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
   const showTaskSwitcher =
     activeCategory !== 'common' && visibleSections.length > 1
 
@@ -138,6 +151,16 @@ function UsageLogsContent() {
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
+        {canManageScope && (
+          <SectionPageLayout.Actions>
+            <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
+              <TabsList>
+                <TabsTrigger value='all'>{t('All')}</TabsTrigger>
+                <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </SectionPageLayout.Actions>
+        )}
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
             {(showTaskSwitcher || activeCategory === 'inflight') && (

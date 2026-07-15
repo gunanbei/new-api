@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
-import { Eye, GitBranch, RefreshCw, ScrollText } from 'lucide-react'
+import { Eye, FolderOpen, GitBranch, RefreshCw, ScrollText, Trash2 } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -40,6 +40,7 @@ import {
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -77,6 +78,12 @@ import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 
 import { getDefaultTimeRange } from '../lib/utils'
+import {
+  deleteInflightTraceLocalCacheFiles,
+  listInflightTraceLocalCacheFiles,
+  selectInflightTraceLocalCacheDirectory,
+  supportsInflightTraceLocalCache,
+} from '../lib/inflight-trace-local-cache'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   InflightDetailRow,
@@ -1490,6 +1497,7 @@ function InflightFilterBar<TData>(props: {
   isFetching: boolean
   liveRefresh: boolean
   onToggleLiveRefresh: () => void
+  onOpenLocalCache: () => void
   isAdmin: boolean
 }) {
   const { t } = useTranslation()
@@ -1784,7 +1792,12 @@ function InflightFilterBar<TData>(props: {
       onSearch={handleApply}
       searchLoading={props.isFetching && !props.liveRefresh}
       actionStart={
-        <Tooltip>
+        <div className='flex items-center gap-2'>
+          <Button type='button' variant='outline' size='sm' onClick={props.onOpenLocalCache}>
+            <FolderOpen />
+            {t('Local cache files')}
+          </Button>
+          <Tooltip>
           <TooltipTrigger
             render={
               <Button
@@ -1808,7 +1821,8 @@ function InflightFilterBar<TData>(props: {
           <TooltipContent>
             {props.liveRefresh ? t('Stop live refresh') : t('Start live refresh')}
           </TooltipContent>
-        </Tooltip>
+          </Tooltip>
+        </div>
       }
     />
   )
@@ -1822,6 +1836,26 @@ export function InflightTasksTab() {
   const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
   const [traceTask, setTraceTask] = useState<InflightTask | null>(null)
   const [liveRefresh, setLiveRefresh] = useState(false)
+  const [localCacheOpen, setLocalCacheOpen] = useState(false)
+  const [localCacheFiles, setLocalCacheFiles] = useState<string[]>([])
+  const [selectedLocalCacheFiles, setSelectedLocalCacheFiles] = useState<string[]>([])
+
+  const refreshLocalCacheFiles = useCallback(async () => {
+    if (!supportsInflightTraceLocalCache()) {
+      toast.error(t('Local cache is only supported in Chromium browsers.'))
+      return
+    }
+    try {
+      setLocalCacheFiles(await listInflightTraceLocalCacheFiles())
+    } catch {
+      toast.error(t('Failed to load local cache files'))
+    }
+  }, [t])
+
+  const openLocalCache = useCallback(async () => {
+    setLocalCacheOpen(true)
+    await refreshLocalCacheFiles()
+  }, [refreshLocalCacheFiles])
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -1953,6 +1987,7 @@ export function InflightTasksTab() {
             liveRefresh={liveRefresh}
             onToggleLiveRefresh={handleToggleLiveRefresh}
             isAdmin={isAdmin}
+            onOpenLocalCache={openLocalCache}
           />
         }
         renderRow={(row, helpers) => (
@@ -1993,6 +2028,29 @@ export function InflightTasksTab() {
         )}
         tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
       />
+      <Dialog
+        open={localCacheOpen}
+        onOpenChange={setLocalCacheOpen}
+        title={t('Local cache files')}
+        description={t('Manage CSV archives downloaded by this browser.')}
+        footer={<Button variant='outline' onClick={() => setLocalCacheOpen(false)}>{t('Close')}</Button>}
+      >
+        <div className='flex flex-wrap gap-2'>
+          <Button type='button' variant='outline' size='sm' onClick={async () => { await selectInflightTraceLocalCacheDirectory(); await refreshLocalCacheFiles() }}>
+            {t('Choose cache directory')}
+          </Button>
+          <Button type='button' variant='outline' size='sm' onClick={() => setSelectedLocalCacheFiles(localCacheFiles)}>{t('Select all')}</Button>
+          <Button type='button' variant='outline' size='sm' onClick={() => setSelectedLocalCacheFiles((selected) => localCacheFiles.filter((file) => !selected.includes(file)))}>{t('Invert selection')}</Button>
+          <Button type='button' variant='destructive' size='sm' disabled={!selectedLocalCacheFiles.length} onClick={async () => { await deleteInflightTraceLocalCacheFiles(selectedLocalCacheFiles); setSelectedLocalCacheFiles([]); await refreshLocalCacheFiles() }}>
+            <Trash2 />{t('Delete selected')}
+          </Button>
+        </div>
+        <div className='mt-4 max-h-80 space-y-2 overflow-auto rounded-md border p-3'>
+          {localCacheFiles.length === 0 ? <p className='text-muted-foreground text-sm'>{t('No local cache files.')}</p> : localCacheFiles.map((file) => (
+            <label key={file} className='flex items-center gap-2 text-sm'><Checkbox checked={selectedLocalCacheFiles.includes(file)} onCheckedChange={(checked) => setSelectedLocalCacheFiles((selected) => checked ? [...selected, file] : selected.filter((value) => value !== file))} />{file}</label>
+          ))}
+        </div>
+      </Dialog>
       <InflightTaskDetailsDialog
         task={detailsTask}
         open={detailsTask !== null}

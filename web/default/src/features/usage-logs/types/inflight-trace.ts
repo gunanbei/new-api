@@ -32,7 +32,7 @@ export type InflightTraceHTTPPart = {
   status_code?: number
   headers?: Record<string, string>
   body?: string
-  body_encoding?: 'text' | 'base64' | 'empty'
+  body_encoding?: 'text' | 'base64' | 'empty' | 'disk'
   body_bytes?: number
   content_type?: string
 }
@@ -47,6 +47,12 @@ export type InflightTaskTrace = {
   created_at: number
   updated_at: number
   recorded_at: number
+  archive?: {
+    id: number
+    file_name: string
+    status: string
+    remote_url?: string
+  }
   client_request?: InflightTraceHTTPPart
   client_response?: InflightTraceHTTPPart
   flags: InflightTaskTraceFlags

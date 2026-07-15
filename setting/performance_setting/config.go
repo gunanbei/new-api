@@ -14,7 +14,8 @@ type PerformanceSetting struct {
 	// DiskCacheMaxSizeMB 磁盘缓存最大总大小（MB）
 	DiskCacheMaxSizeMB int `json:"disk_cache_max_size_mb"`
 	// DiskCachePath 磁盘缓存目录
-	DiskCachePath string `json:"disk_cache_path"`
+	DiskCachePath     string `json:"disk_cache_path"`
+	InflightTracePath string `json:"inflight_trace_path"`
 
 	// MonitorEnabled 是否启用性能监控
 	MonitorEnabled bool `json:"monitor_enabled"`
@@ -32,6 +33,7 @@ var performanceSetting = PerformanceSetting{
 	DiskCacheThresholdMB: 10,   // 超过 10MB 使用磁盘缓存
 	DiskCacheMaxSizeMB:   1024, // 最大 1GB 磁盘缓存
 	DiskCachePath:        "",   // 空表示使用系统临时目录
+	InflightTracePath:    "",   // 空表示使用磁盘缓存目录
 
 	MonitorEnabled:         true,
 	MonitorCPUThreshold:    90,
@@ -49,10 +51,11 @@ func init() {
 // syncToCommon 将配置同步到 common 包
 func syncToCommon() {
 	common.SetDiskCacheConfig(common.DiskCacheConfig{
-		Enabled:     performanceSetting.DiskCacheEnabled,
-		ThresholdMB: performanceSetting.DiskCacheThresholdMB,
-		MaxSizeMB:   performanceSetting.DiskCacheMaxSizeMB,
-		Path:        performanceSetting.DiskCachePath,
+		Enabled:           performanceSetting.DiskCacheEnabled,
+		ThresholdMB:       performanceSetting.DiskCacheThresholdMB,
+		MaxSizeMB:         performanceSetting.DiskCacheMaxSizeMB,
+		Path:              performanceSetting.DiskCachePath,
+		InflightTracePath: performanceSetting.InflightTracePath,
 	})
 
 	common.SetPerformanceMonitorConfig(common.PerformanceMonitorConfig{

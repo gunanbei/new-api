@@ -353,9 +353,11 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/inflight/stats", middleware.RootAuth(), controller.GetInflightTaskStats)
+		logRoute.POST("/inflight/trace-archives/upload", middleware.RootAuth(), controller.TriggerInflightTraceArchiveUploads)
 		logRoute.GET("/inflight/cleanup-schedule", middleware.UserAuth(), controller.GetInflightTaskCleanupSchedule)
 		logRoute.GET("/inflight/self", middleware.UserAuth(), controller.GetUserInflightTasks)
 		logRoute.GET("/inflight/self/:request_id/trace", middleware.UserAuth(), controller.GetUserInflightTaskTrace)
+		logRoute.GET("/inflight/self/:request_id/trace/archive", middleware.UserAuth(), controller.DownloadUserInflightTaskTraceArchive)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 

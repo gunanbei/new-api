@@ -91,6 +91,12 @@ export type InflightTaskStats = {
   user_count: number
   item_count: number
   total_size: number
+  trace_count?: number
+  trace_total_size?: number
+  trace_directory?: string
+  trace_file_count?: number
+  trace_disk_size?: number
+  trace_pending_upload_count?: number
 }
 export type InflightTaskStatsResponse = {
   success: boolean
@@ -378,10 +384,18 @@ export type OperationsSettings = {
   InflightTaskTraceMenuVisible: boolean
   InflightTaskTraceMaxRequestBytes: number
   InflightTaskTraceMaxResponseBytes: number
+  InflightTaskTraceStorageMode: 'memory' | 'disk'
+  InflightTaskTraceArchiveChannelID: number
+  InflightTaskTraceArchiveThresholdBytes: number
+  InflightTaskTraceArchiveRetentionYears: number
+  InflightTaskTraceArchiveRetentionMonths: number
+  InflightTaskTraceArchiveRetentionDays: number
+  InflightTaskTraceArchiveRetentionHours: number
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number
   'performance_setting.disk_cache_path': string
+  'performance_setting.inflight_trace_path': string
   'performance_setting.monitor_enabled': boolean
   'performance_setting.monitor_cpu_threshold': number
   'performance_setting.monitor_memory_threshold': number

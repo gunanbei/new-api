@@ -507,10 +507,19 @@ func runInflightLogCleanupTask(ctx context.Context, task *model.SystemTask, runn
 		failSystemTask(task, runnerID, err)
 		return
 	}
+	archiveDeleted, err := DeleteInflightTraceArchivesBefore(ctx, payload.TargetTimestamp)
+	if err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
+	if err := CleanupExpiredInflightTraceArchives(ctx); err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
 
 	state := LogCleanupState{
-		Total:     deleted,
-		Processed: deleted,
+		Total:     deleted + archiveDeleted,
+		Processed: deleted + archiveDeleted,
 		Progress:  100,
 		Remaining: 0,
 	}
@@ -519,7 +528,7 @@ func runInflightLogCleanupTask(ctx context.Context, task *model.SystemTask, runn
 		return
 	}
 
-	result := LogCleanupResult{DeletedCount: deleted}
+	result := LogCleanupResult{DeletedCount: deleted + archiveDeleted}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
 		logSystemTaskLockError(ctx, task, err)
 	}

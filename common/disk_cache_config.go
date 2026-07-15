@@ -14,7 +14,8 @@ type DiskCacheConfig struct {
 	// MaxSizeMB 磁盘缓存最大总大小（MB）
 	MaxSizeMB int
 	// Path 磁盘缓存目录
-	Path string
+	Path              string
+	InflightTracePath string
 }
 
 // 全局磁盘缓存配置
@@ -66,6 +67,12 @@ func GetDiskCachePath() string {
 	diskCacheConfigMu.RLock()
 	defer diskCacheConfigMu.RUnlock()
 	return diskCacheConfig.Path
+}
+
+func GetInflightTracePath() string {
+	diskCacheConfigMu.RLock()
+	defer diskCacheConfigMu.RUnlock()
+	return diskCacheConfig.InflightTracePath
 }
 
 // DiskCacheStats 磁盘缓存统计信息

@@ -1033,11 +1033,15 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 }
 
 type InflightTaskStats struct {
-	UserCount      int64 `json:"user_count"`
-	ItemCount      int64 `json:"item_count"`
-	TotalSize      int64 `json:"total_size"`
-	TraceCount     int64 `json:"trace_count"`
-	TraceTotalSize int64 `json:"trace_total_size"`
+	UserCount               int64  `json:"user_count"`
+	ItemCount               int64  `json:"item_count"`
+	TotalSize               int64  `json:"total_size"`
+	TraceCount              int64  `json:"trace_count"`
+	TraceTotalSize          int64  `json:"trace_total_size"`
+	TraceDirectory          string `json:"trace_directory"`
+	TraceFileCount          int64  `json:"trace_file_count"`
+	TraceDiskSize           int64  `json:"trace_disk_size"`
+	TracePendingUploadCount int64  `json:"trace_pending_upload_count"`
 }
 
 func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
@@ -1070,6 +1074,14 @@ func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
 			}
 		}
 		if cursor == 0 {
+			archiveStats, archiveErr := GetInflightTraceArchiveStats()
+			if archiveErr != nil {
+				return stats, archiveErr
+			}
+			stats.TraceDirectory = archiveStats.Directory
+			stats.TraceFileCount = archiveStats.FileCount
+			stats.TraceDiskSize = archiveStats.TotalSize
+			stats.TracePendingUploadCount = archiveStats.PendingUploadCount
 			return stats, nil
 		}
 	}

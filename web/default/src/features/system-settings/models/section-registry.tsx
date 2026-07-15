@@ -24,7 +24,6 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
-import { ImageModelConfigurationSection } from './image-model-configuration-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -63,15 +62,6 @@ const MODELS_SECTIONS = [
               settings['general_setting.ping_interval_seconds'],
           },
         }}
-      />
-    ),
-  },
-  {
-    id: 'image-model-configuration',
-    titleKey: 'Image Model Configuration',
-    build: (settings: ModelSettings) => (
-      <ImageModelConfigurationSection
-        defaultValue={settings['image_playground.model_registry']}
       />
     ),
   },

@@ -56,6 +56,13 @@ func InitOptionMap() {
 	common.OptionMap["InflightTaskTraceMenuVisible"] = "false"
 	common.OptionMap["InflightTaskTraceMaxRequestBytes"] = "0"
 	common.OptionMap["InflightTaskTraceMaxResponseBytes"] = "0"
+	common.OptionMap["InflightTaskTraceStorageMode"] = "memory"
+	common.OptionMap["InflightTaskTraceArchiveChannelID"] = "0"
+	common.OptionMap["InflightTaskTraceArchiveThresholdBytes"] = "10485760"
+	common.OptionMap["InflightTaskTraceArchiveRetentionYears"] = "0"
+	common.OptionMap["InflightTaskTraceArchiveRetentionMonths"] = "0"
+	common.OptionMap["InflightTaskTraceArchiveRetentionDays"] = "0"
+	common.OptionMap["InflightTaskTraceArchiveRetentionHours"] = "0"
 	common.OptionMap["DisplayInCurrencyEnabled"] = strconv.FormatBool(common.DisplayInCurrencyEnabled)
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)

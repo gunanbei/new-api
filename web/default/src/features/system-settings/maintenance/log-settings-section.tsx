@@ -67,6 +67,7 @@ import {
   getInflightTaskStats,
   getSystemTask,
   startInflightLogCleanupTask,
+  triggerInflightTraceArchiveUploads,
 } from '../api'
 import {
   SettingsControlGroup,
@@ -78,8 +79,10 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import type { LogCleanupTask } from '../types'
-import { InflightCleanupScheduleFields } from './inflight-cleanup-schedule-fields'
-import type { ScheduleFormValues } from './inflight-cleanup-schedule-fields'
+import {
+  InflightCleanupScheduleFields,
+  type ScheduleFormValues,
+} from './inflight-cleanup-schedule-fields'
 import {
   INFLIGHT_CLEANUP_INTERVAL_MAX,
   INFLIGHT_CLEANUP_INTERVAL_MIN,
@@ -105,6 +108,14 @@ const logSettingsSchema = z.object({
   InflightTaskTraceMenuVisible: z.boolean(),
   InflightTaskTraceMaxRequestBytes: z.number().int().min(0),
   InflightTaskTraceMaxResponseBytes: z.number().int().min(0),
+  InflightTaskTraceStorageMode: z.enum(['memory', 'disk']),
+  InflightTaskTraceArchiveChannelID: z.number().int().min(0),
+  InflightTaskTraceArchiveThresholdBytes: z.number().int().min(1),
+  InflightTaskTraceArchiveRetentionYears: z.number().int().min(0),
+  InflightTaskTraceArchiveRetentionMonths: z.number().int().min(0),
+  InflightTaskTraceArchiveRetentionDays: z.number().int().min(0),
+  InflightTaskTraceArchiveRetentionHours: z.number().int().min(0),
+  InflightTracePath: z.string(),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
@@ -119,6 +130,14 @@ type LogSettingsSectionProps = {
   defaultInflightTaskTraceMenuVisible: boolean
   defaultInflightTaskTraceMaxRequestBytes: number
   defaultInflightTaskTraceMaxResponseBytes: number
+  defaultInflightTaskTraceStorageMode: 'memory' | 'disk'
+  defaultInflightTaskTraceArchiveChannelID: number
+  defaultInflightTaskTraceArchiveThresholdBytes: number
+  defaultInflightTaskTraceArchiveRetentionYears: number
+  defaultInflightTaskTraceArchiveRetentionMonths: number
+  defaultInflightTaskTraceArchiveRetentionDays: number
+  defaultInflightTaskTraceArchiveRetentionHours: number
+  defaultInflightTracePath: string
 }
 
 type ServerLogInfo = {
@@ -136,6 +155,17 @@ type InflightTaskStats = {
   total_size: number
   trace_count?: number
   trace_total_size?: number
+  trace_directory?: string
+  trace_file_count?: number
+  trace_disk_size?: number
+  trace_pending_upload_count?: number
+}
+
+type FileUploadChannel = {
+  id: number
+  name: string
+  type: string
+  status: string
 }
 
 const HOURS_IN_DAY = 24
@@ -190,6 +220,14 @@ export function LogSettingsSection({
   defaultInflightTaskTraceMenuVisible,
   defaultInflightTaskTraceMaxRequestBytes,
   defaultInflightTaskTraceMaxResponseBytes,
+  defaultInflightTaskTraceStorageMode,
+  defaultInflightTaskTraceArchiveChannelID,
+  defaultInflightTaskTraceArchiveThresholdBytes,
+  defaultInflightTaskTraceArchiveRetentionYears,
+  defaultInflightTaskTraceArchiveRetentionMonths,
+  defaultInflightTaskTraceArchiveRetentionDays,
+  defaultInflightTaskTraceArchiveRetentionHours,
+  defaultInflightTracePath,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -207,6 +245,14 @@ export function LogSettingsSection({
       InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
       InflightTaskTraceMaxResponseBytes:
         defaultInflightTaskTraceMaxResponseBytes,
+      InflightTaskTraceStorageMode: defaultInflightTaskTraceStorageMode,
+      InflightTaskTraceArchiveChannelID: defaultInflightTaskTraceArchiveChannelID,
+      InflightTaskTraceArchiveThresholdBytes: defaultInflightTaskTraceArchiveThresholdBytes,
+      InflightTaskTraceArchiveRetentionYears: defaultInflightTaskTraceArchiveRetentionYears,
+      InflightTaskTraceArchiveRetentionMonths: defaultInflightTaskTraceArchiveRetentionMonths,
+      InflightTaskTraceArchiveRetentionDays: defaultInflightTaskTraceArchiveRetentionDays,
+      InflightTaskTraceArchiveRetentionHours: defaultInflightTaskTraceArchiveRetentionHours,
+      InflightTracePath: defaultInflightTracePath,
     },
   })
 
@@ -224,6 +270,7 @@ export function LogSettingsSection({
   const [serverLogCleanupMode, setServerLogCleanupMode] = useState('by_count')
   const [serverLogCleanupValue, setServerLogCleanupValue] = useState(10)
   const [serverLogCleanupLoading, setServerLogCleanupLoading] = useState(false)
+  const [archiveChannels, setArchiveChannels] = useState<FileUploadChannel[]>([])
 
   const fetchServerLogInfo = useCallback(async () => {
     try {
@@ -247,6 +294,14 @@ export function LogSettingsSection({
       InflightTaskTraceMaxRequestBytes: defaultInflightTaskTraceMaxRequestBytes,
       InflightTaskTraceMaxResponseBytes:
         defaultInflightTaskTraceMaxResponseBytes,
+      InflightTaskTraceStorageMode: defaultInflightTaskTraceStorageMode,
+      InflightTaskTraceArchiveChannelID: defaultInflightTaskTraceArchiveChannelID,
+      InflightTaskTraceArchiveThresholdBytes: defaultInflightTaskTraceArchiveThresholdBytes,
+      InflightTaskTraceArchiveRetentionYears: defaultInflightTaskTraceArchiveRetentionYears,
+      InflightTaskTraceArchiveRetentionMonths: defaultInflightTaskTraceArchiveRetentionMonths,
+      InflightTaskTraceArchiveRetentionDays: defaultInflightTaskTraceArchiveRetentionDays,
+      InflightTaskTraceArchiveRetentionHours: defaultInflightTaskTraceArchiveRetentionHours,
+      InflightTracePath: defaultInflightTracePath,
     })
   }, [
     defaultEnabled,
@@ -258,12 +313,29 @@ export function LogSettingsSection({
     defaultInflightTaskTraceMaxRequestBytes,
     defaultInflightTaskTraceMaxResponseBytes,
     defaultInflightTaskTraceMenuVisible,
+    defaultInflightTaskTraceStorageMode,
+    defaultInflightTaskTraceArchiveChannelID,
+    defaultInflightTaskTraceArchiveThresholdBytes,
+    defaultInflightTaskTraceArchiveRetentionYears,
+    defaultInflightTaskTraceArchiveRetentionMonths,
+    defaultInflightTaskTraceArchiveRetentionDays,
+    defaultInflightTaskTraceArchiveRetentionHours,
+    defaultInflightTracePath,
     form,
   ])
 
   useEffect(() => {
     fetchServerLogInfo()
   }, [fetchServerLogInfo])
+
+  useEffect(() => {
+    api
+      .get<{ success: boolean; data?: FileUploadChannel[] }>('/api/file-upload-channel/', {
+        params: { status: '1' },
+      })
+      .then((res) => setArchiveChannels(res.data.data ?? []))
+      .catch(() => setArchiveChannels([]))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -422,6 +494,23 @@ export function LogSettingsSection({
         value: values.InflightTaskTraceMaxResponseBytes,
       })
     }
+    for (const [key, value, defaultValue] of [
+      ['InflightTaskTraceStorageMode', values.InflightTaskTraceStorageMode, defaultInflightTaskTraceStorageMode],
+      ['InflightTaskTraceArchiveChannelID', values.InflightTaskTraceArchiveChannelID, defaultInflightTaskTraceArchiveChannelID],
+      ['InflightTaskTraceArchiveThresholdBytes', values.InflightTaskTraceArchiveThresholdBytes, defaultInflightTaskTraceArchiveThresholdBytes],
+      ['InflightTaskTraceArchiveRetentionYears', values.InflightTaskTraceArchiveRetentionYears, defaultInflightTaskTraceArchiveRetentionYears],
+      ['InflightTaskTraceArchiveRetentionMonths', values.InflightTaskTraceArchiveRetentionMonths, defaultInflightTaskTraceArchiveRetentionMonths],
+      ['InflightTaskTraceArchiveRetentionDays', values.InflightTaskTraceArchiveRetentionDays, defaultInflightTaskTraceArchiveRetentionDays],
+      ['InflightTaskTraceArchiveRetentionHours', values.InflightTaskTraceArchiveRetentionHours, defaultInflightTaskTraceArchiveRetentionHours],
+    ] as const) {
+      if (value !== defaultValue) await updateOption.mutateAsync({ key, value })
+    }
+    if (values.InflightTracePath !== defaultInflightTracePath) {
+      await updateOption.mutateAsync({
+        key: 'performance_setting.inflight_trace_path',
+        value: values.InflightTracePath,
+      })
+    }
   }
 
   const handleRequestCleanLogs = () => {
@@ -495,6 +584,18 @@ export function LogSettingsSection({
       toast.error(t('Cleanup failed'))
     } finally {
       setServerLogCleanupLoading(false)
+    }
+  }
+
+  const triggerArchiveUpload = async () => {
+    try {
+      const res = await triggerInflightTraceArchiveUploads()
+      if (!res.success) throw new Error(res.message)
+      toast.success(t('Archive upload started.'))
+      const statsRes = await getInflightTaskStats()
+      if (statsRes.success && statsRes.data) setInflightTaskStats(statsRes.data)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('Failed to start archive upload'))
     }
   }
 
@@ -630,6 +731,72 @@ export function LogSettingsSection({
             />
             <FormField
               control={form.control}
+              name='InflightTaskTraceStorageMode'
+              render={({ field }) => (
+                <SettingsControlGroup className='grid gap-2'>
+                  <FormLabel>{t('Debug log body storage')}</FormLabel>
+                  <FormDescription>{t('Store request and response bodies in memory or per-user CSV files.')}</FormDescription>
+                  <FormControl>
+                    <Select
+                      items={[
+                        { value: 'memory', label: t('Memory') },
+                        { value: 'disk', label: t('Disk CSV') },
+                      ]}
+                      value={field.value}
+                      onValueChange={(value) => value && field.onChange(value)}
+                    >
+                      <SelectTrigger className='w-[220px]'><SelectValue /></SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectItem value='memory'>{t('Memory')}</SelectItem>
+                        <SelectItem value='disk'>{t('Disk CSV')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  {field.value === 'memory' ? <Alert><AlertDescription>{t('Memory storage increases Redis usage.')}</AlertDescription></Alert> : null}
+                </SettingsControlGroup>
+              )}
+            />
+            {form.watch('InflightTaskTraceStorageMode') === 'disk' ? (
+              <>
+                <FormField control={form.control} name='InflightTaskTraceArchiveChannelID' render={({ field }) => (
+                  <SettingsControlGroup className='grid gap-2'>
+                    <FormLabel>{t('Archive storage channel')}</FormLabel>
+                    <FormControl><Select items={archiveChannels.map((channel) => ({ value: String(channel.id), label: channel.name }))} value={String(field.value || '')} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger className='w-[320px]'><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}>{archiveChannels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}</SelectContent></Select></FormControl>
+                    <FormMessage />
+                  </SettingsControlGroup>
+                )} />
+                <FormField control={form.control} name='InflightTaskTraceArchiveThresholdBytes' render={({ field }) => (
+                  <SettingsControlGroup className='grid gap-2'><FormLabel>{t('Archive upload threshold (KB)')}</FormLabel><FormControl><Input type='number' min={1} step='any' className='w-[220px]' value={field.value / 1024} onChange={(event) => field.onChange(Math.round(event.currentTarget.valueAsNumber * 1024))} /></FormControl><FormMessage /></SettingsControlGroup>
+                )} />
+                <FormField control={form.control} name='InflightTracePath' render={({ field }) => (
+                  <SettingsControlGroup className='grid gap-2'>
+                    <FormLabel>{t('Inflight trace directory')}</FormLabel>
+                    <FormDescription>{t('Stores disk-mode inflight trace CSV archives separately from request-body cache files.')}</FormDescription>
+                    <FormControl><Input placeholder={t('Leave empty to use the disk cache directory')} {...field} /></FormControl>
+                    <FormMessage />
+                  </SettingsControlGroup>
+                )} />
+                <SettingsControlGroup className='grid gap-2'>
+                  <FormLabel>{t('Archive retention')}</FormLabel>
+                  <FormDescription>{t('Set all values to 0 to keep archives permanently.')}</FormDescription>
+                  <div className='grid max-w-2xl gap-3 sm:grid-cols-4'>
+                    {([
+                      ['InflightTaskTraceArchiveRetentionYears', t('Years')],
+                      ['InflightTaskTraceArchiveRetentionMonths', t('Months')],
+                      ['InflightTaskTraceArchiveRetentionDays', t('Days')],
+                      ['InflightTaskTraceArchiveRetentionHours', t('Hours')],
+                    ] as const).map(([name, label]) => (
+                      <div key={name} className='grid gap-1'>
+                        <Label>{label}</Label>
+                        <Input type='number' min={0} {...form.register(name, { valueAsNumber: true })} />
+                      </div>
+                    ))}
+                  </div>
+                </SettingsControlGroup>
+              </>
+            ) : null}
+            <FormField
+              control={form.control}
               name='InflightTaskTraceMaxRequestBytes'
               render={({ field }) => (
                 <SettingsControlGroup className='grid gap-2'>
@@ -691,6 +858,43 @@ export function LogSettingsSection({
                   {inflightTaskStats?.user_count ?? '-'}
                 </div>
               </div>
+              {inflightTaskStats?.trace_directory ? (
+                <div className='rounded-md border p-3 md:col-span-3'>
+                  <div className='text-muted-foreground text-xs'>
+                    {t('Inflight trace directory')}
+                  </div>
+                  <div className='mt-1 break-all font-mono text-xs'>
+                    {inflightTaskStats.trace_directory}
+                  </div>
+                </div>
+              ) : null}
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Inflight CSV files')}
+                </div>
+                <div className='font-medium'>
+                  {inflightTaskStats?.trace_file_count ?? '-'}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Inflight CSV disk usage')}
+                </div>
+                <div className='font-medium'>
+                  {formatBytes(inflightTaskStats?.trace_disk_size ?? 0)}
+                </div>
+              </div>
+              <div className='rounded-md border p-3'>
+                <div className='text-muted-foreground text-xs'>
+                  {t('Pending archive uploads')}
+                </div>
+                <div className='flex items-center justify-between gap-2 font-medium'>
+                  <span>{inflightTaskStats?.trace_pending_upload_count ?? '-'}</span>
+                  <Button type='button' size='sm' variant='outline' onClick={triggerArchiveUpload} disabled={!inflightTaskStats?.trace_pending_upload_count}>
+                    {t('Upload pending archives')}
+                  </Button>
+                </div>
+              </div>
               <div className='rounded-md border p-3'>
                 <div className='text-muted-foreground text-xs'>
                   {t('Inflight log entries')}
@@ -732,9 +936,9 @@ export function LogSettingsSection({
                 {t('Clean inflight logs')}
               </h4>
               <p className='text-muted-foreground text-sm'>
-                {t(
-                  'Remove terminal inflight logs updated before the selected timestamp.'
-                )}
+                  {t(
+                    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.'
+                  )}
               </p>
             </div>
             <DateTimePicker value={purgeDate} onChange={setPurgeDate} />

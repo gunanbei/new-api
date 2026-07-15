@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 
@@ -94,6 +95,23 @@ func GetUserInflightTaskTrace(c *gin.Context) {
 		"data":    trace,
 	})
 }
+
+func DownloadUserInflightTaskTraceArchive(c *gin.Context) {
+	trace, err := service.GetInflightTaskTrace(c.Request.Context(), c.GetInt("id"), c.Param("request_id"))
+	if err != nil || trace.Archive == nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Debug log archive not found"})
+		return
+	}
+	reader, fileName, err := service.OpenInflightTraceArchive(c.Request.Context(), c.GetInt("id"), trace.Archive.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	defer reader.Close()
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+	_, _ = io.Copy(c.Writer, reader)
+}
 func GetInflightTaskStats(c *gin.Context) {
 	stats, err := service.GetInflightTaskStats(c.Request.Context())
 	if err != nil {
@@ -116,6 +134,15 @@ func GetInflightTaskStats(c *gin.Context) {
 		"message": "",
 		"data":    stats,
 	})
+}
+
+func TriggerInflightTraceArchiveUploads(c *gin.Context) {
+	started, err := service.TriggerInflightTraceArchiveUploads()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"started": started}})
 }
 
 func GetInflightTaskCleanupSchedule(c *gin.Context) {

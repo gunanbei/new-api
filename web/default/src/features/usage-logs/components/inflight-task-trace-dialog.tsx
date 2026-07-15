@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Download, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -30,7 +30,18 @@ import {
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Collapsible,
   CollapsibleContent,
@@ -50,6 +61,12 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
+
+import {
+  cacheInflightTraceArchive,
+  readInflightTraceArchiveRecord,
+  supportsInflightTraceLocalCache,
+} from '../lib/inflight-trace-local-cache'
 
 import {
   InflightDetailRow,
@@ -89,6 +106,8 @@ type InflightTaskTraceDialogProps = {
 
 type BodyViewMode = 'formatted' | 'raw'
 type SseViewMode = 'raw' | 'events' | 'parsed'
+
+const archiveAutoDownloadStorageKey = 'usage-logs:inflight-trace:auto-download'
 
 function isTerminalInflightStatus(status?: string) {
   return status === 'completed' || status === 'failed'
@@ -683,8 +702,18 @@ async function fetchInflightTaskTrace(requestId: string, useMock: boolean) {
 export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
+  const queryClient = useQueryClient()
+  const [isCachingArchive, setIsCachingArchive] = useState(false)
+  const [showArchiveDownloadConfirm, setShowArchiveDownloadConfirm] = useState(false)
+  const [autoDownloadArchive, setAutoDownloadArchive] = useState(
+    () => localStorage.getItem(archiveAutoDownloadStorageKey) === 'true'
+  )
+  const traceQueryKey = useMemo(
+    () => ['inflight-trace', props.requestId, props.useMock],
+    [props.requestId, props.useMock]
+  )
   const { data: trace, isLoading, isError, isFetched } = useQuery({
-    queryKey: ['inflight-trace', props.requestId, props.useMock],
+    queryKey: traceQueryKey,
     queryFn: () => {
       const requestId = props.requestId
       if (!requestId) {
@@ -749,11 +778,36 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
   ])
 
   const awaitingSnapshot = !trace && shouldPoll && !isError
+  const isDialogOpen = props.open
+  const isMockTrace = props.useMock
+  const closeDialog = props.onOpenChange
 
   useEffect(() => {
     if (
-      !props.open ||
-      props.useMock ||
+      !props.requestId ||
+      !trace?.archive ||
+      trace.client_request?.body_encoding !== 'disk'
+    ) {
+      return
+    }
+    let cancelled = false
+    void readInflightTraceArchiveRecord(trace.archive.file_name, props.requestId)
+      .then((cachedTrace) => {
+        if (cancelled || !cachedTrace) return
+        queryClient.setQueryData<InflightTaskTrace>(traceQueryKey, {
+          ...cachedTrace,
+          archive: trace.archive,
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [props.requestId, queryClient, trace, traceQueryKey])
+
+  useEffect(() => {
+    if (
+      !isDialogOpen ||
+      isMockTrace ||
       !isFetched ||
       isLoading ||
       isError ||
@@ -765,12 +819,12 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
       toast.error(
         t('This inflight record does not exist or has been cleaned up')
       )
-      props.onOpenChange(false)
+      closeDialog(false)
     }
   }, [
-    props.open,
-    props.useMock,
-    props.onOpenChange,
+    isDialogOpen,
+    isMockTrace,
+    closeDialog,
     isFetched,
     isLoading,
     isError,
@@ -787,6 +841,32 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
   ]
     .filter(Boolean)
     .join(' · ')
+
+  const cacheArchive = async () => {
+    if (!props.requestId || !trace?.archive) return
+    if (!supportsInflightTraceLocalCache()) {
+      toast.error(t('Local cache is only supported in Chromium browsers.'))
+      return
+    }
+    setShowArchiveDownloadConfirm(false)
+    setIsCachingArchive(true)
+    try {
+      const response = await api.get(`/api/log/inflight/self/${props.requestId}/trace/archive`, { responseType: 'blob' })
+      await cacheInflightTraceArchive(trace.archive.file_name, response.data)
+      const cachedTrace = await readInflightTraceArchiveRecord(trace.archive.file_name, props.requestId)
+      if (cachedTrace) {
+        queryClient.setQueryData<InflightTaskTrace>(traceQueryKey, {
+          ...cachedTrace,
+          archive: trace.archive,
+        })
+      }
+      toast.success(t('Archive downloaded to local cache.'))
+    } catch {
+      toast.error(t('Failed to download archive'))
+    } finally {
+      setIsCachingArchive(false)
+    }
+  }
 
   return (
     <Dialog
@@ -815,6 +895,52 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
       ) : null}
       {trace ? (
         <Tabs defaultValue='overview' className='min-w-0'>
+          {trace.archive && trace.client_request?.body_encoding === 'disk' ? (
+            <Alert className='mb-3'>
+              <AlertDescription className='flex flex-wrap items-center justify-between gap-2'>
+                <span>{t('This debug log is archived remotely. Download it locally to load request and response bodies.')}</span>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={() => {
+                    if (autoDownloadArchive) {
+                      cacheArchive()
+                      return
+                    }
+                    setShowArchiveDownloadConfirm(true)
+                  }}
+                  disabled={isCachingArchive}
+                >
+                  {isCachingArchive ? <Loader2 className='animate-spin' /> : <Download />}
+                  {t('Download archive')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <AlertDialog open={showArchiveDownloadConfirm} onOpenChange={setShowArchiveDownloadConfirm}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('Download archive')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('Download this archive to your selected local cache directory?')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <label className='mr-auto flex items-center gap-2 text-sm'>
+                  <Checkbox
+                    checked={autoDownloadArchive}
+                    onCheckedChange={(checked) => {
+                      const enabled = checked === true
+                      setAutoDownloadArchive(enabled)
+                      localStorage.setItem(archiveAutoDownloadStorageKey, String(enabled))
+                    }}
+                  />
+                  {t('Download archives automatically in this browser')}
+                </label>
+                <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={cacheArchive}>{t('Download archive')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <TabsList>
             <TabsTrigger value='overview'>{t('Overview')}</TabsTrigger>
             <TabsTrigger value='request'>{t('Request')}</TabsTrigger>

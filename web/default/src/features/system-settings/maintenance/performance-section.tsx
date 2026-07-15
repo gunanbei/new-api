@@ -76,6 +76,7 @@ const perfSchema = z.object({
     disk_cache_threshold_mb: z.coerce.number().min(1),
     disk_cache_max_size_mb: z.coerce.number().min(100),
     disk_cache_path: z.string(),
+    inflight_trace_path: z.string(),
     monitor_enabled: z.boolean(),
     monitor_cpu_threshold: z.coerce.number().min(0),
     monitor_memory_threshold: z.coerce.number().min(0).max(100),
@@ -91,6 +92,7 @@ type FlatPerfDefaults = {
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number
   'performance_setting.disk_cache_path': string
+  'performance_setting.inflight_trace_path': string
   'performance_setting.monitor_enabled': boolean
   'performance_setting.monitor_cpu_threshold': number
   'performance_setting.monitor_memory_threshold': number
@@ -105,6 +107,7 @@ const buildFormDefaults = (defaults: FlatPerfDefaults): PerfFormInput => ({
     disk_cache_max_size_mb:
       defaults['performance_setting.disk_cache_max_size_mb'],
     disk_cache_path: defaults['performance_setting.disk_cache_path'] ?? '',
+    inflight_trace_path: defaults['performance_setting.inflight_trace_path'] ?? '',
     monitor_enabled: defaults['performance_setting.monitor_enabled'],
     monitor_cpu_threshold:
       defaults['performance_setting.monitor_cpu_threshold'],
@@ -124,6 +127,8 @@ const normalizeFormValues = (values: PerfFormValues): FlatPerfDefaults => ({
     values.performance_setting.disk_cache_max_size_mb,
   'performance_setting.disk_cache_path':
     values.performance_setting.disk_cache_path ?? '',
+  'performance_setting.inflight_trace_path':
+    values.performance_setting.inflight_trace_path ?? '',
   'performance_setting.monitor_enabled':
     values.performance_setting.monitor_enabled,
   'performance_setting.monitor_cpu_threshold':

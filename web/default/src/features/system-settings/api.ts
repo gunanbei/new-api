@@ -98,6 +98,11 @@ export async function getInflightTaskStats() {
   return res.data
 }
 
+export async function triggerInflightTraceArchiveUploads() {
+  const res = await api.post('/api/log/inflight/trace-archives/upload')
+  return res.data
+}
+
 export async function previewInflightCleanupCron(expr: string) {
   const res = await api.get<InflightCleanupCronPreviewResponse>(
     '/api/option/inflight_cleanup_cron_preview',

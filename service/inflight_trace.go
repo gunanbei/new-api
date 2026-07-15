@@ -15,6 +15,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 
@@ -24,13 +25,13 @@ import (
 )
 
 const (
-	inflightTaskTraceKeyPrefix                   = "inflight:trace:"
-	inflightTaskTraceEnabledOptionKey            = "InflightTaskTraceEnabled"
-	inflightTaskTraceMenuVisibleOptionKey        = "InflightTaskTraceMenuVisible"
-	inflightTaskTraceMaxRequestBytesOptionKey    = "InflightTaskTraceMaxRequestBytes"
-	inflightTaskTraceMaxResponseBytesOptionKey   = "InflightTaskTraceMaxResponseBytes"
-	inflightTraceFlushInterval                   = 2 * time.Second
-	inflightTraceFlushMinBytes                   = 64 * 1024
+	inflightTaskTraceKeyPrefix                 = "inflight:trace:"
+	inflightTaskTraceEnabledOptionKey          = "InflightTaskTraceEnabled"
+	inflightTaskTraceMenuVisibleOptionKey      = "InflightTaskTraceMenuVisible"
+	inflightTaskTraceMaxRequestBytesOptionKey  = "InflightTaskTraceMaxRequestBytes"
+	inflightTaskTraceMaxResponseBytesOptionKey = "InflightTaskTraceMaxResponseBytes"
+	inflightTraceFlushInterval                 = 2 * time.Second
+	inflightTraceFlushMinBytes                 = 64 * 1024
 )
 
 var sensitiveTraceHeaderNames = map[string]struct{}{
@@ -49,20 +50,30 @@ var (
 )
 
 type InflightTaskTrace struct {
-	RequestID  string `json:"request_id"`
-	UserID     int    `json:"user_id"`
-	Status     string `json:"status"`
-	Kind       string `json:"kind"`
-	ModelName  string `json:"model_name"`
-	IsStream   bool   `json:"is_stream"`
-	CreatedAt  int64  `json:"created_at"`
-	UpdatedAt  int64  `json:"updated_at"`
-	RecordedAt int64  `json:"recorded_at"`
+	RequestID   string                         `json:"request_id"`
+	UserID      int                            `json:"user_id"`
+	Status      string                         `json:"status"`
+	Kind        string                         `json:"kind"`
+	ModelName   string                         `json:"model_name"`
+	IsStream    bool                           `json:"is_stream"`
+	CreatedAt   int64                          `json:"created_at"`
+	UpdatedAt   int64                          `json:"updated_at"`
+	RecordedAt  int64                          `json:"recorded_at"`
+	ArchiveID   uint64                         `json:"archive_id,omitempty"`
+	StorageMode string                         `json:"storage_mode,omitempty"`
+	Archive     *InflightTraceArchiveReference `json:"archive,omitempty"`
 
 	ClientRequest  *InflightTraceHTTPPart `json:"client_request,omitempty"`
 	ClientResponse *InflightTraceHTTPPart `json:"client_response,omitempty"`
 
 	Flags InflightTaskTraceFlags `json:"flags"`
+}
+
+type InflightTraceArchiveReference struct {
+	ID        uint64 `json:"id"`
+	FileName  string `json:"file_name"`
+	Status    string `json:"status"`
+	RemoteURL string `json:"remote_url,omitempty"`
 }
 
 type InflightTaskTraceFlags struct {
@@ -149,19 +160,19 @@ func (w *traceResponseWriter) capture(chunk []byte) {
 }
 
 type InflightTraceCapture struct {
-	writer         *traceResponseWriter
-	requestBody    []byte
-	requestBodyErr error
-	requestMethod  string
-	requestPath    string
-	requestQuery   string
-	requestProto   string
-	requestHeaders http.Header
-	info           *relaycommon.RelayInfo
-	parentCtx      context.Context
-	createdAt      int64
-	flushMu        sync.Mutex
-	lastFlushedAt  time.Time
+	writer          *traceResponseWriter
+	requestBody     []byte
+	requestBodyErr  error
+	requestMethod   string
+	requestPath     string
+	requestQuery    string
+	requestProto    string
+	requestHeaders  http.Header
+	info            *relaycommon.RelayInfo
+	parentCtx       context.Context
+	createdAt       int64
+	flushMu         sync.Mutex
+	lastFlushedAt   time.Time
 	bytesSinceFlush int64
 }
 
@@ -244,12 +255,12 @@ func encodeTraceBody(raw []byte) (body string, encoding string, bodyBytes int64)
 
 func buildInflightTraceHTTPPart(method, path, query, protocol string, statusCode int, headers http.Header, raw []byte, maxBytes int64) (*InflightTraceHTTPPart, bool) {
 	part := &InflightTraceHTTPPart{
-		Method:   method,
-		Path:     path,
-		Query:    query,
-		Protocol: protocol,
+		Method:     method,
+		Path:       path,
+		Query:      query,
+		Protocol:   protocol,
 		StatusCode: statusCode,
-		Headers:  redactTraceHeaders(headers),
+		Headers:    redactTraceHeaders(headers),
 	}
 	if contentType := headers.Get("Content-Type"); contentType != "" {
 		part.ContentType = contentType
@@ -552,6 +563,21 @@ func writeInflightTaskTrace(ctx context.Context, requestID, status string, trace
 	if err != nil {
 		return err
 	}
+	if inflightTaskTraceStorageMode() == "disk" {
+		if isInflightTaskTerminalStatus(status) {
+			if err := persistInflightTraceToDisk(ctx, trace); err != nil {
+				return err
+			}
+		}
+		if trace.ClientRequest != nil {
+			trace.ClientRequest.Body = ""
+			trace.ClientRequest.BodyEncoding = "disk"
+		}
+		if trace.ClientResponse != nil {
+			trace.ClientResponse.Body = ""
+			trace.ClientResponse.BodyEncoding = "disk"
+		}
+	}
 	data, err := common.Marshal(trace)
 	if err != nil {
 		return err
@@ -625,6 +651,19 @@ func GetInflightTaskTrace(ctx context.Context, userID int, requestID string) (*I
 	}
 	if trace.UserID != userID {
 		return nil, errInflightTaskTraceForbidden
+	}
+	if trace.StorageMode == "disk" && trace.ArchiveID > 0 {
+		var archive model.InflightTraceArchive
+		if err = model.DB.Where("id = ? AND user_id = ?", trace.ArchiveID, userID).First(&archive).Error; err != nil {
+			return nil, errInflightTaskTraceNotFound
+		}
+		trace.Archive = &InflightTraceArchiveReference{ID: archive.ID, FileName: archive.FileName, Status: archive.Status, RemoteURL: archive.RemoteURL}
+		if archive.LocalPath != "" {
+			if archivedTrace, archiveErr := loadInflightTraceFromCSV(archive.LocalPath, requestID); archiveErr == nil && archivedTrace != nil {
+				archivedTrace.Archive = trace.Archive
+				return archivedTrace, nil
+			}
+		}
 	}
 	return &trace, nil
 }

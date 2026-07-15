@@ -124,6 +124,30 @@ const OPERATIONS_SECTIONS = [
         defaultInflightTaskTraceMaxResponseBytes={
           Number(settings.InflightTaskTraceMaxResponseBytes) || 0
         }
+        defaultInflightTaskTraceStorageMode={
+          settings.InflightTaskTraceStorageMode === 'disk' ? 'disk' : 'memory'
+        }
+        defaultInflightTaskTraceArchiveChannelID={
+          Number(settings.InflightTaskTraceArchiveChannelID) || 0
+        }
+        defaultInflightTaskTraceArchiveThresholdBytes={
+          Number(settings.InflightTaskTraceArchiveThresholdBytes) || 10485760
+        }
+        defaultInflightTaskTraceArchiveRetentionYears={
+          Number(settings.InflightTaskTraceArchiveRetentionYears) || 0
+        }
+        defaultInflightTaskTraceArchiveRetentionMonths={
+          Number(settings.InflightTaskTraceArchiveRetentionMonths) || 0
+        }
+        defaultInflightTaskTraceArchiveRetentionDays={
+          Number(settings.InflightTaskTraceArchiveRetentionDays) || 0
+        }
+        defaultInflightTaskTraceArchiveRetentionHours={
+          Number(settings.InflightTaskTraceArchiveRetentionHours) || 0
+        }
+        defaultInflightTracePath={
+          settings['performance_setting.inflight_trace_path'] ?? ''
+        }
       />
     ),
   },
@@ -151,6 +175,8 @@ const OPERATIONS_SECTIONS = [
             settings['performance_setting.disk_cache_max_size_mb'] ?? 1024,
           'performance_setting.disk_cache_path':
             settings['performance_setting.disk_cache_path'] ?? '',
+          'performance_setting.inflight_trace_path':
+            settings['performance_setting.inflight_trace_path'] ?? '',
           'performance_setting.monitor_enabled':
             settings['performance_setting.monitor_enabled'] ?? false,
           'performance_setting.monitor_cpu_threshold':

@@ -22,7 +22,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
-  ImageIcon,
+  Palette,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -84,7 +84,7 @@ export function useSidebarData(): SidebarData {
           {
             title: t('Creative Studio'),
             url: '/imgen',
-            icon: ImageIcon,
+            icon: Palette,
           },
           {
             title: t('API Keys'),

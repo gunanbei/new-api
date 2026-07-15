@@ -474,7 +474,8 @@ func deleteInflightTraceArchiveFile(ctx context.Context, channelID uint64, objec
 		if baseURL == "" || token == "" {
 			return errors.New("image bed storage configuration is incomplete")
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/delete?src="+url.QueryEscape(objectKey), nil)
+		archivePath := strings.Trim(strings.TrimSpace(inflightTraceConfigString(config["upload_folder"]))+"/"+filepath.Base(objectKey), "/")
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/manage/delete/"+strings.ReplaceAll(url.PathEscape(archivePath), "%2F", "/"), nil)
 		if err != nil {
 			return err
 		}

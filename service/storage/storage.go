@@ -839,8 +839,8 @@ func deletePhysical(ctx context.Context, file *model.File) error {
 		if baseURL == "" || token == "" {
 			return errors.New("ImgBed channel configuration is incomplete")
 		}
-		requestURL := baseURL + "/delete?src=" + url.QueryEscape(file.ObjectKey)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
+		requestURL := baseURL + "/api/manage/delete/" + strings.ReplaceAll(url.PathEscape(strings.Trim(file.ObjectKey, "/")), "%2F", "/")
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return err
 		}

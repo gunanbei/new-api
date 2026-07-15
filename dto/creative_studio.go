@@ -3,6 +3,7 @@ package dto
 import "encoding/json"
 
 type CreativeModelRequest struct {
+	CopyFromID  uint64 `json:"copy_from_id,omitempty"`
 	ModelName   string `json:"model_name"`
 	DisplayName string `json:"display_name"`
 	Vendor      string `json:"vendor"`
@@ -12,6 +13,7 @@ type CreativeModelRequest struct {
 }
 
 type CreativeCapabilityRequest struct {
+	CopyFromID    uint64          `json:"copy_from_id,omitempty"`
 	Category      string          `json:"category"`
 	Operation     string          `json:"operation"`
 	AssetKind     string          `json:"asset_kind"`
@@ -24,6 +26,7 @@ type CreativeCapabilityRequest struct {
 }
 
 type CreativePublicationRequest struct {
+	CopyFromID         uint64          `json:"copy_from_id,omitempty"`
 	GroupName          string          `json:"group_name"`
 	Enabled            bool            `json:"enabled"`
 	SortOrder          int             `json:"sort_order"`

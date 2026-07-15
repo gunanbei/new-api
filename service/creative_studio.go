@@ -113,7 +113,15 @@ func CreateCreativeModel(input dto.CreativeModelRequest, userID int64) (*model.C
 	if err := ensureUniqueCreativeModel(creativeModel); err != nil {
 		return nil, err
 	}
-	if err := model.DB.Create(creativeModel).Error; err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(creativeModel).Error; err != nil {
+			return err
+		}
+		if input.CopyFromID == 0 {
+			return nil
+		}
+		return copyCreativeModelChildren(tx, input.CopyFromID, creativeModel, userID)
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativeModelDuplicateError(creativeModel))
 	}
 	return creativeModel, nil
@@ -185,7 +193,23 @@ func CreateCreativeCapability(modelID uint64, input dto.CreativeCapabilityReques
 	if err := ensureUniqueCreativeCapability(capability); err != nil {
 		return nil, err
 	}
-	if err := model.DB.Create(capability).Error; err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(capability).Error; err != nil {
+			return err
+		}
+		if input.CopyFromID == 0 {
+			return nil
+		}
+		var source model.CreativeModelCapability
+		if err := tx.Where("id = ? AND model_id = ?", input.CopyFromID, modelID).First(&source).Error; err != nil {
+			return fmt.Errorf("source capability not found")
+		}
+		var creativeModel model.CreativeModel
+		if err := tx.Where("id = ?", modelID).First(&creativeModel).Error; err != nil {
+			return err
+		}
+		return copyCreativeCapabilityChildren(tx, source.ID, capability.ID, creativeModel.ModelName, userID)
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativeCapabilityDuplicateError(capability))
 	}
 	return capability, nil
@@ -196,6 +220,7 @@ func UpdateCreativeCapability(id uint64, input dto.CreativeCapabilityRequest, us
 	if err := model.DB.Where("id = ?", id).First(&capability).Error; err != nil {
 		return nil, err
 	}
+	previous := capability
 	if err := applyCreativeCapability(&capability, input); err != nil {
 		return nil, err
 	}
@@ -203,8 +228,30 @@ func UpdateCreativeCapability(id uint64, input dto.CreativeCapabilityRequest, us
 		return nil, err
 	}
 	capability.UpdatedBy = userID
-	if err := model.DB.Save(&capability).Error; err != nil {
+	routingChanged := previous.Category != capability.Category ||
+		previous.Operation != capability.Operation ||
+		previous.AssetKind != capability.AssetKind ||
+		previous.Protocol != capability.Protocol ||
+		previous.ExecutionMode != capability.ExecutionMode ||
+		previous.Enabled != capability.Enabled
+	var bindingIDs []uint64
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&capability).Error; err != nil {
+			return err
+		}
+		if !routingChanged {
+			return nil
+		}
+		var publicationIDs []uint64
+		if err := tx.Model(&model.CreativeModelPublication{}).Where("capability_id = ?", capability.ID).Pluck("id", &publicationIDs).Error; err != nil {
+			return err
+		}
+		return invalidateCreativeBindings(tx, publicationIDs, userID, "capability changed; validation required", &bindingIDs)
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativeCapabilityDuplicateError(&capability))
+	}
+	if err := revalidateCreativeBindings(bindingIDs, userID); err != nil {
+		return nil, err
 	}
 	return &capability, nil
 }
@@ -237,7 +284,27 @@ func CreateCreativePublication(capabilityID uint64, input dto.CreativePublicatio
 	if err := ensureUniqueCreativePublication(publication); err != nil {
 		return nil, err
 	}
-	if err := model.DB.Create(publication).Error; err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(publication).Error; err != nil {
+			return err
+		}
+		if input.CopyFromID == 0 {
+			return nil
+		}
+		var source model.CreativeModelPublication
+		if err := tx.Where("id = ? AND capability_id = ?", input.CopyFromID, capabilityID).First(&source).Error; err != nil {
+			return fmt.Errorf("source publication not found")
+		}
+		var capability model.CreativeModelCapability
+		if err := tx.Where("id = ?", capabilityID).First(&capability).Error; err != nil {
+			return err
+		}
+		var creativeModel model.CreativeModel
+		if err := tx.Where("id = ?", capability.ModelID).First(&creativeModel).Error; err != nil {
+			return err
+		}
+		return copyCreativePublicationChildren(tx, source.ID, publication.ID, publication.GroupName, creativeModel.ModelName, userID)
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativePublicationDuplicateError(publication))
 	}
 	return publication, nil
@@ -248,6 +315,7 @@ func UpdateCreativePublication(id uint64, input dto.CreativePublicationRequest, 
 	if err := model.DB.Where("id = ?", id).First(&publication).Error; err != nil {
 		return nil, err
 	}
+	previous := publication
 	if err := applyCreativePublication(&publication, input); err != nil {
 		return nil, err
 	}
@@ -255,8 +323,21 @@ func UpdateCreativePublication(id uint64, input dto.CreativePublicationRequest, 
 		return nil, err
 	}
 	publication.UpdatedBy = userID
-	if err := model.DB.Save(&publication).Error; err != nil {
+	routingChanged := previous.GroupName != publication.GroupName || previous.Enabled != publication.Enabled
+	var bindingIDs []uint64
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&publication).Error; err != nil {
+			return err
+		}
+		if !routingChanged {
+			return nil
+		}
+		return invalidateCreativeBindings(tx, []uint64{publication.ID}, userID, "publication changed; validation required", &bindingIDs)
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativePublicationDuplicateError(&publication))
+	}
+	if err := revalidateCreativeBindings(bindingIDs, userID); err != nil {
+		return nil, err
 	}
 	return &publication, nil
 }
@@ -440,6 +521,19 @@ func CreativeStudioBootstrap() (map[string]any, error) {
 	if err := model.DB.Model(&model.Channel{}).Select("id, name, status").Order("id asc").Find(&channels).Error; err != nil {
 		return nil, err
 	}
+	var enabledAbilities []model.Ability
+	if err := model.DB.Where("enabled = ?", true).Find(&enabledAbilities).Error; err != nil {
+		return nil, err
+	}
+	type creativeRouteOption struct {
+		GroupName string `json:"group_name"`
+		Model     string `json:"model"`
+		ChannelID int    `json:"channel_id"`
+	}
+	routes := make([]creativeRouteOption, 0, len(enabledAbilities))
+	for _, ability := range enabledAbilities {
+		routes = append(routes, creativeRouteOption{GroupName: ability.Group, Model: ability.Model, ChannelID: ability.ChannelId})
+	}
 	var fileChannels []struct {
 		ID     uint64 `json:"id"`
 		Name   string `json:"name"`
@@ -449,7 +543,7 @@ func CreativeStudioBootstrap() (map[string]any, error) {
 	if err := model.DB.Model(&model.FileUploadChannel{}).Select("id, name, type, status").Order("id asc").Find(&fileChannels).Error; err != nil {
 		return nil, err
 	}
-	return map[string]any{"models": models, "capabilities": capabilities, "publications": publications, "bindings": bindings, "groups": setting.GetUserUsableGroupsCopy(), "channels": channels, "file_channels": fileChannels, "settings": settings}, nil
+	return map[string]any{"models": models, "capabilities": capabilities, "publications": publications, "bindings": bindings, "groups": setting.GetUserUsableGroupsCopy(), "channels": channels, "routes": routes, "file_channels": fileChannels, "settings": settings}, nil
 }
 
 func applyCreativeModel(target *model.CreativeModel, input dto.CreativeModelRequest) error {
@@ -516,6 +610,21 @@ func applyCreativePublication(target *model.CreativeModelPublication, input dto.
 	if _, exists := setting.GetUserUsableGroupsCopy()[target.GroupName]; !exists {
 		return fmt.Errorf("group_name does not exist")
 	}
+	var capability model.CreativeModelCapability
+	if err := model.DB.Where("id = ?", target.CapabilityID).First(&capability).Error; err != nil {
+		return err
+	}
+	var creativeModel model.CreativeModel
+	if err := model.DB.Where("id = ?", capability.ModelID).First(&creativeModel).Error; err != nil {
+		return err
+	}
+	available, err := creativeGroupHasModel(model.DB, target.GroupName, creativeModel.ModelName)
+	if err != nil {
+		return err
+	}
+	if !available {
+		return fmt.Errorf("group has no enabled current model")
+	}
 	raw, err := normalizeCreativeJSONObject(input.GroupDefaultParams)
 	if err != nil {
 		return fmt.Errorf("group_default_params: %w", err)
@@ -528,7 +637,7 @@ func applyCreativeBinding(target *model.CreativeChannelBinding, input dto.Creati
 	if input.Enabled {
 		return fmt.Errorf("stage one bindings cannot be enabled until verified")
 	}
-	target.ChannelID, target.RequestModel, target.Priority, target.Enabled = input.ChannelID, strings.TrimSpace(input.RequestModel), input.Priority, false
+	target.ChannelID, target.Priority, target.Enabled = input.ChannelID, input.Priority, false
 	target.ValidationStatus, target.ValidationMessage, target.ValidationCheckedAt = "unverified", "not validated", nil
 	var publication model.CreativeModelPublication
 	if err := model.DB.Where("id = ?", target.PublicationID).First(&publication).Error; err != nil {
@@ -542,8 +651,140 @@ func applyCreativeBinding(target *model.CreativeChannelBinding, input dto.Creati
 	if err := model.DB.Where("id = ?", capability.ModelID).First(&creativeModel).Error; err != nil {
 		return err
 	}
-	if target.RequestModel == "" {
-		target.RequestModel = creativeModel.ModelName
+	target.RequestModel = creativeModel.ModelName
+	available, err := creativeChannelSupportsModelGroup(model.DB, target.ChannelID, publication.GroupName, target.RequestModel)
+	if err != nil {
+		return err
+	}
+	if !available {
+		return fmt.Errorf("channel has no enabled matching ability")
+	}
+	return nil
+}
+
+func copyCreativeModelChildren(tx *gorm.DB, sourceModelID uint64, targetModel *model.CreativeModel, userID int64) error {
+	var source model.CreativeModel
+	if err := tx.Where("id = ?", sourceModelID).First(&source).Error; err != nil {
+		return fmt.Errorf("source model not found")
+	}
+	var capabilities []model.CreativeModelCapability
+	if err := tx.Where("model_id = ?", sourceModelID).Order("sort_order asc, id asc").Find(&capabilities).Error; err != nil {
+		return err
+	}
+	for _, sourceCapability := range capabilities {
+		capability := sourceCapability
+		capability.ID = 0
+		capability.ModelID = targetModel.ID
+		capability.CreatedBy = userID
+		capability.UpdatedBy = userID
+		capability.CreatedAt = time.Time{}
+		capability.UpdatedAt = time.Time{}
+		if err := tx.Create(&capability).Error; err != nil {
+			return err
+		}
+		if err := copyCreativeCapabilityChildren(tx, sourceCapability.ID, capability.ID, targetModel.ModelName, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyCreativeCapabilityChildren(tx *gorm.DB, sourceCapabilityID uint64, targetCapabilityID uint64, modelName string, userID int64) error {
+	var publications []model.CreativeModelPublication
+	if err := tx.Where("capability_id = ?", sourceCapabilityID).Order("sort_order asc, id asc").Find(&publications).Error; err != nil {
+		return err
+	}
+	for _, sourcePublication := range publications {
+		if _, exists := setting.GetUserUsableGroupsCopy()[sourcePublication.GroupName]; !exists {
+			return fmt.Errorf("group %s is unavailable", sourcePublication.GroupName)
+		}
+		available, err := creativeGroupHasModel(tx, sourcePublication.GroupName, modelName)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return fmt.Errorf("group %s has no enabled model %s", sourcePublication.GroupName, modelName)
+		}
+		publication := sourcePublication
+		publication.ID = 0
+		publication.CapabilityID = targetCapabilityID
+		publication.CreatedBy = userID
+		publication.UpdatedBy = userID
+		publication.CreatedAt = time.Time{}
+		publication.UpdatedAt = time.Time{}
+		if err := tx.Create(&publication).Error; err != nil {
+			return err
+		}
+		if err := copyCreativePublicationChildren(tx, sourcePublication.ID, publication.ID, publication.GroupName, modelName, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyCreativePublicationChildren(tx *gorm.DB, sourcePublicationID uint64, targetPublicationID uint64, groupName string, modelName string, userID int64) error {
+	var bindings []model.CreativeChannelBinding
+	if err := tx.Where("publication_id = ?", sourcePublicationID).Order("priority desc, id asc").Find(&bindings).Error; err != nil {
+		return err
+	}
+	for _, sourceBinding := range bindings {
+		available, err := creativeChannelSupportsModelGroup(tx, sourceBinding.ChannelID, groupName, modelName)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return fmt.Errorf("channel %d has no enabled model %s in group %s", sourceBinding.ChannelID, modelName, groupName)
+		}
+		binding := sourceBinding
+		binding.ID = 0
+		binding.PublicationID = targetPublicationID
+		binding.RequestModel = modelName
+		binding.Enabled = false
+		binding.ValidationStatus = "unverified"
+		binding.ValidationMessage = "not validated"
+		binding.ValidationCheckedAt = nil
+		binding.CreatedBy = userID
+		binding.UpdatedBy = userID
+		binding.CreatedAt = time.Time{}
+		binding.UpdatedAt = time.Time{}
+		if err := tx.Create(&binding).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func creativeGroupHasModel(db *gorm.DB, groupName string, modelName string) (bool, error) {
+	var count int64
+	err := db.Model(&model.Ability{}).Where(&model.Ability{Group: groupName, Model: modelName, Enabled: true}).Count(&count).Error
+	return count > 0, err
+}
+
+func creativeChannelSupportsModelGroup(db *gorm.DB, channelID int, groupName string, modelName string) (bool, error) {
+	var channelCount int64
+	if err := db.Model(&model.Channel{}).Where("id = ? AND status = ?", channelID, common.ChannelStatusEnabled).Count(&channelCount).Error; err != nil || channelCount == 0 {
+		return false, err
+	}
+	var abilityCount int64
+	err := db.Model(&model.Ability{}).Where(&model.Ability{ChannelId: channelID, Group: groupName, Model: modelName, Enabled: true}).Count(&abilityCount).Error
+	return abilityCount > 0, err
+}
+
+func invalidateCreativeBindings(tx *gorm.DB, publicationIDs []uint64, userID int64, message string, bindingIDs *[]uint64) error {
+	if len(publicationIDs) == 0 {
+		return nil
+	}
+	if err := tx.Model(&model.CreativeChannelBinding{}).Where("publication_id IN ?", publicationIDs).Pluck("id", bindingIDs).Error; err != nil || len(*bindingIDs) == 0 {
+		return err
+	}
+	return tx.Model(&model.CreativeChannelBinding{}).Where("id IN ?", *bindingIDs).Updates(map[string]any{"enabled": false, "validation_status": "unverified", "validation_message": message, "validation_checked_at": nil, "updated_by": userID}).Error
+}
+
+func revalidateCreativeBindings(bindingIDs []uint64, userID int64) error {
+	for _, bindingID := range bindingIDs {
+		if _, err := RevalidateCreativeBinding(bindingID, userID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

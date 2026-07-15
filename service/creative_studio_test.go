@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/glebarez/sqlite"
@@ -66,6 +67,13 @@ func TestCreativeStudioRejectsDuplicateRecords(t *testing.T) {
 	_, err = UpdateCreativeCapability(otherCapability.ID, capabilityInput, 1)
 	require.EqualError(t, err, "能力：image/generate｜openai_image 已存在")
 
+	require.NoError(t, database.Create(&model.Channel{Id: 1, Name: "渠道一", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, database.Create(&model.Channel{Id: 2, Name: "渠道二", Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, database.Create(&[]model.Ability{
+		{Group: "default", Model: creativeModel.ModelName, ChannelId: 1, Enabled: true},
+		{Group: "default", Model: creativeModel.ModelName, ChannelId: 2, Enabled: true},
+		{Group: "vip", Model: creativeModel.ModelName, ChannelId: 1, Enabled: true},
+	}).Error)
 	publicationInput := dto.CreativePublicationRequest{GroupName: "default", GroupDefaultParams: json.RawMessage("{}"), Enabled: true}
 	publication, err := CreateCreativePublication(capability.ID, publicationInput, 1)
 	require.NoError(t, err)
@@ -76,8 +84,6 @@ func TestCreativeStudioRejectsDuplicateRecords(t *testing.T) {
 	_, err = UpdateCreativePublication(otherPublication.ID, publicationInput, 1)
 	require.EqualError(t, err, "分组：default 已存在")
 
-	require.NoError(t, database.Create(&model.Channel{Id: 1, Name: "渠道一", Status: common.ChannelStatusEnabled}).Error)
-	require.NoError(t, database.Create(&model.Channel{Id: 2, Name: "渠道二", Status: common.ChannelStatusEnabled}).Error)
 	binding, err := CreateCreativeBinding(publication.ID, dto.CreativeBindingRequest{ChannelID: 1}, 1)
 	require.NoError(t, err)
 	_, err = CreateCreativeBinding(publication.ID, dto.CreativeBindingRequest{ChannelID: 1}, 1)
@@ -87,6 +93,168 @@ func TestCreativeStudioRejectsDuplicateRecords(t *testing.T) {
 	_, err = UpdateCreativeBinding(otherBinding.ID, dto.CreativeBindingRequest{ChannelID: 1}, 1)
 	require.EqualError(t, err, "渠道：渠道一 已存在")
 	require.NotZero(t, binding.ID)
+}
+
+func TestCreativePublicationRequiresEnabledCurrentModelInGroup(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:creative-publication-eligibility?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.CreativeModel{}, &model.CreativeModelCapability{}, &model.CreativeModelPublication{}))
+
+	creativeModel := model.CreativeModel{ModelName: "gpt-image-2", ModelKey: "gpt-image-2", DisplayName: "GPT Image 2", Status: "enabled"}
+	require.NoError(t, database.Create(&creativeModel).Error)
+	capability := model.CreativeModelCapability{ModelID: creativeModel.ID, Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_image", ExecutionMode: "sync", InputSchema: "{}", DefaultParams: "{}", Enabled: true}
+	require.NoError(t, database.Create(&capability).Error)
+	require.NoError(t, database.Create(&model.Channel{Id: 1, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, database.Create(&model.Ability{Group: "vip", Model: creativeModel.ModelName, ChannelId: 1, Enabled: false}).Error)
+
+	request := dto.CreativePublicationRequest{GroupName: "vip", GroupDefaultParams: json.RawMessage("{}"), Enabled: true}
+	_, err = CreateCreativePublication(capability.ID, request, 1)
+	require.EqualError(t, err, "group has no enabled current model")
+	require.NoError(t, database.Model(&model.Ability{}).Where(&model.Ability{Group: "vip", Model: creativeModel.ModelName, ChannelId: 1}).Update("enabled", true).Error)
+	_, err = CreateCreativePublication(capability.ID, request, 1)
+	require.NoError(t, err)
+}
+
+func TestCreativeBindingRequiresEnabledMatchingChannelAbility(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:creative-binding-eligibility?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.CreativeModel{}, &model.CreativeModelCapability{}, &model.CreativeModelPublication{}, &model.CreativeChannelBinding{}))
+
+	creativeModel := model.CreativeModel{ModelName: "gpt-image-2", ModelKey: "gpt-image-2", DisplayName: "GPT Image 2", Status: "enabled"}
+	require.NoError(t, database.Create(&creativeModel).Error)
+	capability := model.CreativeModelCapability{ModelID: creativeModel.ID, Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_image", ExecutionMode: "sync", InputSchema: "{}", DefaultParams: "{}", Enabled: true}
+	require.NoError(t, database.Create(&capability).Error)
+	require.NoError(t, database.Create(&[]model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled},
+		{Id: 2, Status: common.ChannelStatusEnabled},
+		{Id: 3, Status: common.ChannelStatusManuallyDisabled},
+	}).Error)
+	require.NoError(t, database.Create(&[]model.Ability{
+		{Group: "default", Model: creativeModel.ModelName, ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "other-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: creativeModel.ModelName, ChannelId: 3, Enabled: true},
+	}).Error)
+	publication, err := CreateCreativePublication(capability.ID, dto.CreativePublicationRequest{GroupName: "default", GroupDefaultParams: json.RawMessage("{}"), Enabled: true}, 1)
+	require.NoError(t, err)
+
+	_, err = CreateCreativeBinding(publication.ID, dto.CreativeBindingRequest{ChannelID: 2}, 1)
+	require.EqualError(t, err, "channel has no enabled matching ability")
+	_, err = CreateCreativeBinding(publication.ID, dto.CreativeBindingRequest{ChannelID: 3}, 1)
+	require.EqualError(t, err, "channel has no enabled matching ability")
+	binding, err := CreateCreativeBinding(publication.ID, dto.CreativeBindingRequest{ChannelID: 1, RequestModel: "ignored-model"}, 1)
+	require.NoError(t, err)
+	assert.Equal(t, creativeModel.ModelName, binding.RequestModel)
+}
+
+func TestCreativeCapabilityEditRevalidatesBindings(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:creative-capability-revalidation?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, database.AutoMigrate(&model.Option{}, &model.Channel{}, &model.Ability{}, &model.FileUploadChannel{}, &model.CreativeModel{}, &model.CreativeModelCapability{}, &model.CreativeModelPublication{}, &model.CreativeChannelBinding{}))
+
+	require.NoError(t, database.Create(&model.FileUploadChannel{Id: 9, Name: "S3", Type: FileUploadChannelTypeS3, Status: FileUploadChannelStatusEnabled, ConfigProflle: "{}"}).Error)
+	require.NoError(t, database.Create(&model.Option{Key: model.CreativeStudioSettingsOption, Value: `{"version":3,"default_file_channel_id":9}`}).Error)
+	creativeModel := model.CreativeModel{ModelName: "gpt-image-2", ModelKey: "gpt-image-2", DisplayName: "GPT Image 2", Status: "enabled"}
+	require.NoError(t, database.Create(&creativeModel).Error)
+	capability := model.CreativeModelCapability{ModelID: creativeModel.ID, Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_image", ExecutionMode: "sync", InputSchema: "{}", DefaultParams: "{}", Enabled: true}
+	require.NoError(t, database.Create(&capability).Error)
+	require.NoError(t, database.Create(&model.Channel{Id: 1, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, database.Create(&model.Ability{Group: "default", Model: creativeModel.ModelName, ChannelId: 1, Enabled: true}).Error)
+	publication := model.CreativeModelPublication{CapabilityID: capability.ID, GroupName: "default", GroupDefaultParams: "{}", Enabled: true}
+	require.NoError(t, database.Create(&publication).Error)
+	binding := model.CreativeChannelBinding{PublicationID: publication.ID, ChannelID: 1, RequestModel: creativeModel.ModelName, Enabled: true, ValidationStatus: "valid", ValidationMessage: "validated"}
+	require.NoError(t, database.Create(&binding).Error)
+
+	_, err = UpdateCreativeCapability(capability.ID, dto.CreativeCapabilityRequest{Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "midjourney_image", ExecutionMode: "async", InputSchema: json.RawMessage("{}"), DefaultParams: json.RawMessage("{}"), Enabled: true}, 9)
+	require.NoError(t, err)
+	require.NoError(t, database.First(&binding, binding.ID).Error)
+	assert.False(t, binding.Enabled)
+	assert.Equal(t, "invalid", binding.ValidationStatus)
+	assert.Equal(t, "Midjourney protocol requires a Midjourney channel", binding.ValidationMessage)
+}
+
+func TestCreativeCopiesDescendantsRecursively(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:creative-recursive-copy?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.CreativeModel{}, &model.CreativeModelCapability{}, &model.CreativeModelPublication{}, &model.CreativeChannelBinding{}))
+
+	require.NoError(t, database.Create(&model.Channel{Id: 1, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, database.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-image-2", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "gpt-image-2", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "gpt-image-3", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "gpt-image-3", ChannelId: 1, Enabled: true},
+	}).Error)
+
+	sourceModel, err := CreateCreativeModel(dto.CreativeModelRequest{ModelName: "gpt-image-2", DisplayName: "GPT Image 2", Vendor: "OpenAI", Status: "enabled"}, 1)
+	require.NoError(t, err)
+	sourceCapability, err := CreateCreativeCapability(sourceModel.ID, dto.CreativeCapabilityRequest{Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_image", ExecutionMode: "sync", InputSchema: json.RawMessage("{}"), DefaultParams: json.RawMessage("{}"), Enabled: true}, 1)
+	require.NoError(t, err)
+	sourcePublication, err := CreateCreativePublication(sourceCapability.ID, dto.CreativePublicationRequest{GroupName: "default", GroupDefaultParams: json.RawMessage("{}"), Enabled: true}, 1)
+	require.NoError(t, err)
+	sourceBinding, err := CreateCreativeBinding(sourcePublication.ID, dto.CreativeBindingRequest{ChannelID: 1, Priority: 10}, 1)
+	require.NoError(t, err)
+
+	copiedCapability, err := CreateCreativeCapability(sourceModel.ID, dto.CreativeCapabilityRequest{CopyFromID: sourceCapability.ID, Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_responses_image", ExecutionMode: "sync", InputSchema: json.RawMessage("{}"), DefaultParams: json.RawMessage("{}"), Enabled: true}, 2)
+	require.NoError(t, err)
+	copiedCapabilityPublications, err := ListCreativePublications(copiedCapability.ID)
+	require.NoError(t, err)
+	require.Len(t, copiedCapabilityPublications, 1)
+	copiedCapabilityBindings, err := ListCreativeBindings(copiedCapabilityPublications[0].ID)
+	require.NoError(t, err)
+	require.Len(t, copiedCapabilityBindings, 1)
+	assert.NotEqual(t, sourceBinding.ID, copiedCapabilityBindings[0].ID)
+	assert.False(t, copiedCapabilityBindings[0].Enabled)
+	assert.Equal(t, "unverified", copiedCapabilityBindings[0].ValidationStatus)
+
+	copiedPublication, err := CreateCreativePublication(sourceCapability.ID, dto.CreativePublicationRequest{CopyFromID: sourcePublication.ID, GroupName: "vip", GroupDefaultParams: json.RawMessage("{}"), Enabled: true}, 3)
+	require.NoError(t, err)
+	copiedPublicationBindings, err := ListCreativeBindings(copiedPublication.ID)
+	require.NoError(t, err)
+	require.Len(t, copiedPublicationBindings, 1)
+	assert.Equal(t, "gpt-image-2", copiedPublicationBindings[0].RequestModel)
+
+	copiedModel, err := CreateCreativeModel(dto.CreativeModelRequest{CopyFromID: sourceModel.ID, ModelName: "gpt-image-3", DisplayName: "GPT Image 3", Vendor: "OpenAI", Status: "enabled"}, 4)
+	require.NoError(t, err)
+	copiedModelCapabilities, err := ListCreativeCapabilities(copiedModel.ID)
+	require.NoError(t, err)
+	require.Len(t, copiedModelCapabilities, 2)
+	totalPublications := 0
+	totalBindings := 0
+	for _, capability := range copiedModelCapabilities {
+		publications, listErr := ListCreativePublications(capability.ID)
+		require.NoError(t, listErr)
+		totalPublications += len(publications)
+		for _, publication := range publications {
+			bindings, bindingErr := ListCreativeBindings(publication.ID)
+			require.NoError(t, bindingErr)
+			totalBindings += len(bindings)
+			for _, binding := range bindings {
+				assert.Equal(t, "gpt-image-3", binding.RequestModel)
+				assert.False(t, binding.Enabled)
+				assert.Equal(t, "unverified", binding.ValidationStatus)
+			}
+		}
+	}
+	assert.Equal(t, 3, totalPublications)
+	assert.Equal(t, 3, totalBindings)
+
+	_, err = CreateCreativeModel(dto.CreativeModelRequest{CopyFromID: sourceModel.ID, ModelName: "unsupported-image", DisplayName: "Unsupported", Status: "enabled"}, 5)
+	require.ErrorContains(t, err, "has no enabled model unsupported-image")
+	var rolledBackCount int64
+	require.NoError(t, database.Model(&model.CreativeModel{}).Where("model_key = ?", "unsupported-image").Count(&rolledBackCount).Error)
+	assert.Zero(t, rolledBackCount)
 }
 
 func TestCreativeModelRenameInvalidatesBindings(t *testing.T) {

@@ -89,6 +89,7 @@ type Bootstrap = {
   bindings: Record<string, Binding[]>
   groups: Record<string, string>
   channels: { id: number; name: string; status: number }[]
+  routes: { group_name: string; model: string; channel_id: number }[]
   file_channels: { id: number; name: string; type: string; status: string }[]
   settings: { default_file_channel_id: number }
 }
@@ -144,10 +145,25 @@ const protocolContracts = [
 ]
 
 type Editor =
-  | { kind: 'model'; value?: CreativeModel }
-  | { kind: 'capability'; modelID: number; value?: Capability }
-  | { kind: 'publication'; capabilityID: number; value?: Publication }
-  | { kind: 'binding'; publicationID: number; value?: Binding }
+  | { kind: 'model'; value?: CreativeModel; copy?: boolean }
+  | {
+      kind: 'capability'
+      modelID: number
+      value?: Capability
+      copy?: boolean
+    }
+  | {
+      kind: 'publication'
+      capabilityID: number
+      value?: Publication
+      copy?: boolean
+    }
+  | {
+      kind: 'binding'
+      publicationID: number
+      value?: Binding
+      copy?: boolean
+    }
   | null
 
 async function getBootstrap(): Promise<Bootstrap> {
@@ -199,6 +215,34 @@ export function CreativeStudioSection() {
       toast.success(t('Deleted successfully'))
       refresh()
     },
+  })
+  const revalidateAll = useMutation({
+    mutationFn: async (bindingIDs: number[]) =>
+      Promise.all(
+        bindingIDs.map(async (bindingID) => {
+          const response = await api.post<{
+            success: boolean
+            message: string
+            data: Binding
+          }>(`/api/creative/admin/bindings/${bindingID}/revalidate`)
+          if (!response.data.success) throw new Error(response.data.message)
+          return response.data.data
+        })
+      ),
+    onSuccess: (bindings) => {
+      toast[
+        bindings.every((binding) => binding.validation_status === 'valid')
+          ? 'success'
+          : 'error'
+      ](
+        t(
+          bindings.every((binding) => binding.validation_status === 'valid')
+            ? 'Protocol verification passed'
+            : 'Protocol verification failed'
+        )
+      )
+    },
+    onSettled: refresh,
   })
 
   if (isLoading || !data) {
@@ -257,6 +301,8 @@ export function CreativeStudioSection() {
                 t={t}
                 onEdit={setEditor}
                 onDelete={(url) => remove.mutate(url)}
+                onRevalidate={(bindingIDs) => revalidateAll.mutate(bindingIDs)}
+                validating={revalidateAll.isPending}
               />
             ))}
           </div>
@@ -329,9 +375,19 @@ function ModelTree(props: {
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
   onDelete: (url: string) => void
+  onRevalidate: (bindingIDs: number[]) => void
+  validating: boolean
 }) {
   const capabilities =
     props.data.capabilities[String(props.creativeModel.id)] ?? []
+  const bindingIDs = capabilities.flatMap((capability) =>
+    (props.data.publications[String(capability.id)] ?? []).flatMap(
+      (publication) =>
+        (props.data.bindings[String(publication.id)] ?? []).map(
+          (binding) => binding.id
+        )
+    )
+  )
   return (
     <details open className='bg-card rounded-xl border'>
       <summary className='cursor-pointer list-none px-4 py-3'>
@@ -343,9 +399,19 @@ function ModelTree(props: {
             </p>
           </div>
           <div
-            className='flex gap-2'
+            className='flex flex-wrap justify-end gap-2'
             onClick={(event) => event.stopPropagation()}
           >
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() => props.onRevalidate(bindingIDs)}
+              disabled={props.validating || bindingIDs.length === 0}
+            >
+              {props.validating
+                ? props.t('Validating...')
+                : props.t('Validate now')}
+            </Button>
             <Button
               size='sm'
               variant='outline'
@@ -354,6 +420,19 @@ function ModelTree(props: {
               }
             >
               {props.t('Edit')}
+            </Button>
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                props.onEdit({
+                  kind: 'model',
+                  value: props.creativeModel,
+                  copy: true,
+                })
+              }
+            >
+              {props.t('Copy')}
             </Button>
             <Button
               size='sm'
@@ -668,7 +747,7 @@ function CapabilityTree(props: {
             ｜{props.capability.protocol}
           </span>
           <div
-            className='flex gap-2'
+            className='flex flex-wrap justify-end gap-2'
             onClick={(event) => event.stopPropagation()}
           >
             <Button
@@ -683,6 +762,20 @@ function CapabilityTree(props: {
               }
             >
               {props.t('Edit')}
+            </Button>
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                props.onEdit({
+                  kind: 'capability',
+                  modelID: props.capability.model_id,
+                  value: props.capability,
+                  copy: true,
+                })
+              }
+            >
+              {props.t('Copy')}
             </Button>
             <Button
               size='sm'
@@ -861,7 +954,7 @@ function PublicationTree(props: {
             {props.t('Group')}: {props.publication.group_name}
           </span>
           <div
-            className='flex gap-2'
+            className='flex flex-wrap justify-end gap-2'
             onClick={(event) => event.stopPropagation()}
           >
             <Button
@@ -876,6 +969,20 @@ function PublicationTree(props: {
               }
             >
               {props.t('Edit')}
+            </Button>
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                props.onEdit({
+                  kind: 'publication',
+                  capabilityID: props.publication.capability_id,
+                  value: props.publication,
+                  copy: true,
+                })
+              }
+            >
+              {props.t('Copy')}
             </Button>
             <Button
               size='sm'
@@ -1027,7 +1134,7 @@ function BindingCard(props: {
           {props.t('Channel routing')}: #{props.binding.channel_id}{' '}
           {channel?.name}
         </span>
-        <div className='flex gap-2'>
+        <div className='flex flex-wrap justify-end gap-2'>
           <Button
             size='sm'
             variant='outline'
@@ -1048,6 +1155,20 @@ function BindingCard(props: {
             }
           >
             {props.t('Edit')}
+          </Button>
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() =>
+              props.onEdit({
+                kind: 'binding',
+                publicationID: props.binding.publication_id,
+                value: props.binding,
+                copy: true,
+              })
+            }
+          >
+            {props.t('Copy')}
           </Button>
           <Button
             size='sm'
@@ -1176,7 +1297,8 @@ function CreativeEditor(props: {
       let updateEndpoint: string
       if (editor.kind === 'model') {
         payload = {
-          model_name: form.model_name ?? selected.model_name ?? '',
+          copy_from_id: editor.copy ? selected.id : undefined,
+          model_name: selectedModelName,
           display_name: form.display_name ?? selected.display_name ?? '',
           vendor: form.vendor ?? selected.vendor ?? '',
           description: form.description ?? selected.description ?? '',
@@ -1187,6 +1309,7 @@ function CreativeEditor(props: {
         updateEndpoint = endpoint
       } else if (editor.kind === 'capability') {
         payload = {
+          copy_from_id: editor.copy ? selected.id : undefined,
           category: selectedCategory,
           operation: selectedOperation,
           asset_kind: selectedAssetKind,
@@ -1206,7 +1329,8 @@ function CreativeEditor(props: {
         updateEndpoint = '/api/creative/admin/capabilities'
       } else if (editor.kind === 'publication') {
         payload = {
-          group_name: form.group_name ?? selected.group_name ?? '',
+          copy_from_id: editor.copy ? selected.id : undefined,
+          group_name: selectedGroupName,
           enabled:
             (form.enabled ?? String(selected.enabled ?? true)) === 'true',
           sort_order: Number(form.sort_order ?? selected.sort_order ?? 0),
@@ -1218,17 +1342,18 @@ function CreativeEditor(props: {
         updateEndpoint = '/api/creative/admin/publications'
       } else {
         payload = {
-          channel_id: Number(form.channel_id ?? selected.channel_id ?? 0),
-          request_model: '',
+          channel_id: selectedChannelID,
+          request_model: currentModel?.model_name ?? '',
           priority: Number(form.priority ?? selected.priority ?? 0),
           enabled: false,
         }
         endpoint = `/api/creative/admin/publications/${editor.publicationID}/bindings`
         updateEndpoint = '/api/creative/admin/bindings'
       }
-      const response = value
-        ? await api.put(`${updateEndpoint}/${value.id}`, payload)
-        : await api.post(endpoint, payload)
+      const response =
+        value && !editor.copy
+          ? await api.put(`${updateEndpoint}/${value.id}`, payload)
+          : await api.post(endpoint, payload)
       return requireSuccess(response)
     },
     onSuccess: () => {
@@ -1248,18 +1373,151 @@ function CreativeEditor(props: {
   } else if (editor.kind === 'publication') {
     title = t('Publication')
   }
-  const groups = Object.keys(props.data.groups).map((group) => ({
-    value: group,
-    label: props.data.groups[group] || group,
+  const allCapabilities = Object.values(props.data.capabilities).flat()
+  const allPublications = Object.values(props.data.publications).flat()
+  const currentPublication =
+    editor.kind === 'binding'
+      ? allPublications.find(
+          (publication) => publication.id === editor.publicationID
+        )
+      : undefined
+  let currentCapability: Capability | undefined
+  if (editor.kind === 'publication') {
+    currentCapability = allCapabilities.find(
+      (capability) => capability.id === editor.capabilityID
+    )
+  } else if (currentPublication) {
+    currentCapability = allCapabilities.find(
+      (capability) => capability.id === currentPublication.capability_id
+    )
+  }
+  const currentModelID =
+    editor.kind === 'capability' ? editor.modelID : currentCapability?.model_id
+  const currentModel = props.data.models.find(
+    (creativeModel) => creativeModel.id === currentModelID
+  )
+  const editingID = value && !editor.copy ? selected.id : undefined
+  const eligibleGroupNames = new Set(
+    props.data.routes
+      .filter((route) => route.model === currentModel?.model_name)
+      .map((route) => route.group_name)
+  )
+  const usedGroupNames = new Set(
+    editor.kind === 'publication'
+      ? (props.data.publications[String(editor.capabilityID)] ?? [])
+          .filter((publication) => publication.id !== editingID)
+          .map((publication) => publication.group_name)
+      : []
+  )
+  const copiedPublicationChannelIDs =
+    editor.kind === 'publication' && editor.copy && selected.id
+      ? (props.data.bindings[String(selected.id)] ?? []).map(
+          (binding) => binding.channel_id
+        )
+      : []
+  const groups = Object.keys(props.data.groups)
+    .filter(
+      (group) =>
+        eligibleGroupNames.has(group) &&
+        !usedGroupNames.has(group) &&
+        copiedPublicationChannelIDs.every((channelID) =>
+          props.data.routes.some(
+            (route) =>
+              route.group_name === group &&
+              route.model === currentModel?.model_name &&
+              route.channel_id === channelID
+          )
+        )
+    )
+    .map((group) => ({
+      value: group,
+      label: props.data.groups[group] || group,
+    }))
+  const requestedGroupName = form.group_name ?? selected.group_name ?? ''
+  const selectedGroupName = groups.some(
+    (group) => group.value === requestedGroupName
+  )
+    ? requestedGroupName
+    : (groups[0]?.value ?? '')
+  const eligibleChannelIDs = new Set(
+    props.data.routes
+      .filter(
+        (route) =>
+          route.group_name === currentPublication?.group_name &&
+          route.model === currentModel?.model_name
+      )
+      .map((route) => route.channel_id)
+  )
+  const usedChannelIDs = new Set(
+    editor.kind === 'binding'
+      ? (props.data.bindings[String(editor.publicationID)] ?? [])
+          .filter((binding) => binding.id !== editingID)
+          .map((binding) => binding.channel_id)
+      : []
+  )
+  const channels = props.data.channels
+    .filter(
+      (channel) =>
+        channel.status === 1 &&
+        eligibleChannelIDs.has(channel.id) &&
+        !usedChannelIDs.has(channel.id)
+    )
+    .map((channel) => ({
+      value: String(channel.id),
+      label: channel.name,
+    }))
+  const requestedChannelID = Number(form.channel_id ?? selected.channel_id ?? 0)
+  const selectedChannelID = channels.some(
+    (channel) => Number(channel.value) === requestedChannelID
+  )
+    ? requestedChannelID
+    : Number(channels[0]?.value ?? 0)
+  const copiedModelCapabilities =
+    editor.kind === 'model' && editor.copy && selected.id
+      ? (props.data.capabilities[String(selected.id)] ?? [])
+      : []
+  const copiedModelPublications = copiedModelCapabilities.flatMap(
+    (capability) => props.data.publications[String(capability.id)] ?? []
+  )
+  const existingModelKeys = new Set(
+    props.data.models.map((creativeModel) => creativeModel.model_key)
+  )
+  const availableModelNames =
+    editor.kind === 'model' && editor.copy
+      ? props.modelNames.filter(
+          (modelName) =>
+            !existingModelKeys.has(modelName.trim().toLowerCase()) &&
+            copiedModelPublications.every((publication) => {
+              const bindings = props.data.bindings[String(publication.id)] ?? []
+              return (
+                Object.hasOwn(props.data.groups, publication.group_name) &&
+                props.data.routes.some(
+                  (route) =>
+                    route.group_name === publication.group_name &&
+                    route.model === modelName
+                ) &&
+                bindings.every((binding) =>
+                  props.data.routes.some(
+                    (route) =>
+                      route.group_name === publication.group_name &&
+                      route.model === modelName &&
+                      route.channel_id === binding.channel_id
+                  )
+                )
+              )
+            })
+        )
+      : [...props.modelNames, selected.model_name].filter(Boolean)
+  const modelItems = [...new Set(availableModelNames)].map((modelName) => ({
+    label: modelName,
+    value: modelName,
   }))
-  const channels = props.data.channels.map((channel) => ({
-    value: String(channel.id),
-    label: channel.name,
-  }))
-  const modelItems = [
-    ...new Set([...props.modelNames, selected.model_name].filter(Boolean)),
-  ].map((value) => ({ label: value, value }))
-  const selectedModelName = form.model_name ?? selected.model_name ?? ''
+  const requestedModelName = form.model_name ?? selected.model_name ?? ''
+  const selectedModelName = modelItems.some(
+    (item) => item.value === requestedModelName
+  )
+    ? requestedModelName
+    : (modelItems[0]?.value ?? '')
   const modelKey = selectedModelName.trim().toLowerCase()
   const modelStatusItems = ['enabled', 'disabled'].map((value) => ({
     label: value === 'enabled' ? t('Enabled') : t('Disabled'),
@@ -1332,7 +1590,6 @@ function CreativeEditor(props: {
       value: selectedExecutionMode,
     },
   ]
-  const selectedChannelID = Number(form.channel_id ?? selected.channel_id ?? 0)
   const selectedChannel = channels.find(
     (channel) => Number(channel.value) === selectedChannelID
   )
@@ -1344,7 +1601,7 @@ function CreativeEditor(props: {
       props.data.models.some(
         (creativeModel) =>
           creativeModel.model_key === modelName.toLowerCase() &&
-          creativeModel.id !== selected.id
+          creativeModel.id !== editingID
       )
     ) {
       duplicateMessage = t('{{type}}: {{name}} already exists', {
@@ -1360,7 +1617,7 @@ function CreativeEditor(props: {
           capability.category === selectedCategory &&
           capability.operation === selectedOperation &&
           capability.protocol === selectedProtocol &&
-          capability.id !== selected.id
+          capability.id !== editingID
       )
     ) {
       duplicateMessage = t('{{type}}: {{name}} already exists', {
@@ -1369,12 +1626,12 @@ function CreativeEditor(props: {
       })
     }
   } else if (editor.kind === 'publication') {
-    const groupName = form.group_name ?? selected.group_name ?? ''
+    const groupName = selectedGroupName
     if (
       groupName &&
       (props.data.publications[String(editor.capabilityID)] ?? []).some(
         (publication) =>
-          publication.group_name === groupName && publication.id !== selected.id
+          publication.group_name === groupName && publication.id !== editingID
       )
     ) {
       duplicateMessage = t('{{type}}: {{name}} already exists', {
@@ -1386,7 +1643,7 @@ function CreativeEditor(props: {
     selectedChannelID > 0 &&
     (props.data.bindings[String(editor.publicationID)] ?? []).some(
       (binding) =>
-        binding.channel_id === selectedChannelID && binding.id !== selected.id
+        binding.channel_id === selectedChannelID && binding.id !== editingID
     )
   ) {
     duplicateMessage = t('{{type}}: {{name}} already exists', {
@@ -1394,10 +1651,29 @@ function CreativeEditor(props: {
       name: selectedChannel?.label ?? `#${selectedChannelID}`,
     })
   }
-  let dialogTitle = value
-    ? t('Edit {{name}}', { name: title })
-    : t('Add {{name}}', { name: title })
-  if (editor.kind === 'publication') dialogTitle = t('Select group')
+  if (!duplicateMessage && editor.kind === 'model' && !selectedModelName) {
+    duplicateMessage = t('No available models')
+  }
+  if (
+    !duplicateMessage &&
+    editor.kind === 'publication' &&
+    !selectedGroupName
+  ) {
+    duplicateMessage = t('No group found.')
+  }
+  if (!duplicateMessage && editor.kind === 'binding' && !selectedChannelID) {
+    duplicateMessage = t('No channels found')
+  }
+  let dialogTitle = t('Add {{name}}', { name: title })
+  if (value) {
+    dialogTitle = t('Edit {{name}}', { name: title })
+  }
+  if (editor.copy) {
+    dialogTitle = `${t('Copy')}: ${title}`
+  }
+  if (editor.kind === 'publication' && !editor.copy) {
+    dialogTitle = t('Select group')
+  }
   return (
     <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent className='max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'>
@@ -1416,7 +1692,8 @@ function CreativeEditor(props: {
                 </FieldLabel>
                 <Select
                   items={modelItems}
-                  defaultValue={selected.model_name}
+                  value={selectedModelName}
+                  disabled={modelItems.length === 0}
                   onValueChange={(modelName) =>
                     setForm((current) => ({
                       ...current,
@@ -1855,7 +2132,8 @@ function CreativeEditor(props: {
                 </FieldLabel>
                 <Select
                   items={groups}
-                  defaultValue={selected.group_name}
+                  value={selectedGroupName}
+                  disabled={groups.length === 0}
                   onValueChange={(groupName) =>
                     setForm((current) => ({
                       ...current,
@@ -1958,7 +2236,8 @@ function CreativeEditor(props: {
                 </FieldLabel>
                 <Select
                   items={channels}
-                  defaultValue={value ? String(selected.channel_id) : undefined}
+                  value={selectedChannelID ? String(selectedChannelID) : ''}
+                  disabled={channels.length === 0}
                   onValueChange={(channelID) =>
                     setForm((current) => ({
                       ...current,
@@ -1992,7 +2271,7 @@ function CreativeEditor(props: {
                 </FieldLabel>
                 <Input
                   id='creative-binding-request-model'
-                  value={selected.request_model || selected.model_name || ''}
+                  value={currentModel?.model_name ?? ''}
                   disabled
                   readOnly
                 />

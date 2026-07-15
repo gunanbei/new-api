@@ -65,7 +65,8 @@ func TestListFiltersStatsAndLogicalDelete(t *testing.T) {
 
 func TestBuildObjectKeyKeepsExistingSuffix(t *testing.T) {
 	channel := &model.FileUploadChannel{ConfigProflle: `{}`}
-	key := buildObjectKey(channel, "creative-image.png", "png")
+	key := buildObjectKey(channel, 7, "creative-image.png", "png")
+	assert.Regexp(t, `^\d{4}/\d{2}/\d{2}/7/`, key)
 	assert.True(t, strings.HasSuffix(key, "creative-image.png"))
 	assert.NotContains(t, key, ".png.png")
 }

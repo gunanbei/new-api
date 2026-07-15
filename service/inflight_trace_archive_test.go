@@ -4,13 +4,47 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestInflightTraceArchiveStatsCountsUnuploadedArchives(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:inflight-trace-archive-stats?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.InflightTraceArchive{}))
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+
+	previousConfig := common.GetDiskCacheConfig()
+	directory := t.TempDir()
+	common.SetDiskCacheConfig(common.DiskCacheConfig{InflightTracePath: directory})
+	t.Cleanup(func() { common.SetDiskCacheConfig(previousConfig) })
+	archiveDirectory := filepath.Join(directory, "inflight-traces")
+	require.NoError(t, os.MkdirAll(archiveDirectory, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(archiveDirectory, "active.csv"), []byte("active"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(archiveDirectory, "uploaded.csv"), []byte("uploaded"), 0600))
+	require.NoError(t, database.Create([]model.InflightTraceArchive{
+		{UserID: 1, FileName: "active.csv", Status: inflightTraceArchiveStatusActive},
+		{UserID: 1, FileName: "failed.csv", Status: inflightTraceArchiveStatusFailed},
+		{UserID: 1, FileName: "uploading.csv", Status: inflightTraceArchiveStatusUploading},
+		{UserID: 1, FileName: "uploaded.csv", Status: inflightTraceArchiveStatusUploaded},
+	}).Error)
+
+	stats, err := GetInflightTraceArchiveStats()
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), stats.FileCount)
+	assert.Equal(t, int64(len("active")+len("uploaded")), stats.TotalSize)
+	assert.Equal(t, int64(2), stats.PendingUploadCount)
+}
 
 func TestDeleteInflightTraceArchiveFileCloudflareImageBed(t *testing.T) {
 	type requestInfo struct {

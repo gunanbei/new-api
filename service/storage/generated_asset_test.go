@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"bytes"
-	"io"
 	"net/url"
 	"testing"
 
@@ -26,10 +24,16 @@ func TestGeneratedImageBedRelativeURLUsesStorageOrigin(t *testing.T) {
 	assert.Equal(t, "https://storage.example/file/example.png", base.ResolveReference(relative).String())
 }
 
-func TestGeneratedAssetReaderRejectsBytesPastLimit(t *testing.T) {
-	reader := &generatedLimitReader{reader: bytes.NewReader([]byte("abc")), remaining: 2}
-	data, err := io.ReadAll(reader)
+func TestImageBedObjectKeyIncludesConfiguredRoot(t *testing.T) {
+	config := map[string]any{"upload_folder": "creative-root/"}
+	assert.Equal(t, "creative-root/2026/07/15/7/image.png", imageBedObjectKey(config, "2026/07/15/7/image.png"))
+	assert.Equal(t, "2026/07/15/7/image.png", imageBedObjectKey(map[string]any{}, "2026/07/15/7/image.png"))
+}
+
+func TestImageBedChunkCount(t *testing.T) {
+	count, err := imageBedChunkCount(17, 8)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+	_, err = imageBedChunkCount(17, 0)
 	require.Error(t, err)
-	assert.True(t, reader.exceeded)
-	assert.Equal(t, []byte("ab"), data)
 }

@@ -41,6 +41,11 @@ const (
 
 var inflightTraceArchiveLocks sync.Map
 
+var inflightTraceArchivePendingStatuses = []string{
+	inflightTraceArchiveStatusActive,
+	inflightTraceArchiveStatusFailed,
+}
+
 func inflightTaskTraceStorageMode() string {
 	if inflightTraceOption(inflightTraceStorageModeOptionKey) == "disk" {
 		return "disk"
@@ -131,7 +136,7 @@ func GetInflightTraceArchiveStats() (InflightTraceArchiveStats, error) {
 	if err != nil {
 		return stats, err
 	}
-	if err = model.DB.Model(&model.InflightTraceArchive{}).Where("status IN ?", []string{inflightTraceArchiveStatusUploading, inflightTraceArchiveStatusFailed}).Count(&stats.PendingUploadCount).Error; err != nil {
+	if err = model.DB.Model(&model.InflightTraceArchive{}).Where("status IN ?", inflightTraceArchivePendingStatuses).Count(&stats.PendingUploadCount).Error; err != nil {
 		return stats, err
 	}
 	return stats, nil
@@ -139,7 +144,7 @@ func GetInflightTraceArchiveStats() (InflightTraceArchiveStats, error) {
 
 func TriggerInflightTraceArchiveUploads() (int64, error) {
 	var archives []model.InflightTraceArchive
-	if err := model.DB.Where("status IN ?", []string{inflightTraceArchiveStatusActive, inflightTraceArchiveStatusFailed}).Find(&archives).Error; err != nil {
+	if err := model.DB.Where("status IN ?", inflightTraceArchivePendingStatuses).Find(&archives).Error; err != nil {
 		return 0, err
 	}
 	var started int64
@@ -147,7 +152,7 @@ func TriggerInflightTraceArchiveUploads() (int64, error) {
 		archive := archives[index]
 		lock := inflightTraceArchiveLock(archive.UserID)
 		lock.Lock()
-		if err := model.DB.Model(&model.InflightTraceArchive{}).Where("id = ? AND status IN ?", archive.ID, []string{inflightTraceArchiveStatusActive, inflightTraceArchiveStatusFailed}).Update("status", inflightTraceArchiveStatusUploading).Error; err == nil {
+		if err := model.DB.Model(&model.InflightTraceArchive{}).Where("id = ? AND status IN ?", archive.ID, inflightTraceArchivePendingStatuses).Update("status", inflightTraceArchiveStatusUploading).Error; err == nil {
 			started++
 			common.SysLog(fmt.Sprintf("manual inflight trace archive upload started: id=%d file=%s", archive.ID, archive.FileName))
 			gopool.Go(func() { uploadInflightTraceArchive(archive.ID) })
@@ -202,12 +207,12 @@ func persistInflightTraceToDisk(ctx context.Context, trace *InflightTaskTrace) e
 		return err
 	}
 	if threshold := inflightTraceOptionInt64(inflightTraceArchiveThresholdBytesOptionKey); threshold > 0 {
-		if info, statErr := os.Stat(archive.LocalPath); statErr == nil && info.Size() >= threshold {
-			archive.Status = inflightTraceArchiveStatusUploading
-			if err = model.DB.Save(archive).Error; err != nil {
-				return err
-			}
-			gopool.Go(func() { uploadInflightTraceArchive(archive.ID) })
+		if stats, statErr := GetInflightTraceArchiveStats(); statErr == nil && stats.TotalSize >= threshold {
+			gopool.Go(func() {
+				if _, uploadErr := TriggerInflightTraceArchiveUploads(); uploadErr != nil {
+					common.SysError("trigger inflight trace archive uploads: " + uploadErr.Error())
+				}
+			})
 		}
 	}
 	return nil

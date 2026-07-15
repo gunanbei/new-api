@@ -46,6 +46,54 @@ func TestInflightTraceArchiveStatsCountsUnuploadedArchives(t *testing.T) {
 	assert.Equal(t, int64(2), stats.PendingUploadCount)
 }
 
+func TestRecoverInflightTraceArchiveUploadsMakesInterruptedArchivesRetryable(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:inflight-trace-archive-recovery?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.InflightTraceArchive{}))
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+
+	interrupted := model.InflightTraceArchive{UserID: 1, FileName: "interrupted.csv", LocalPath: "/tmp/interrupted.csv", Status: inflightTraceArchiveStatusUploading}
+	active := model.InflightTraceArchive{UserID: 1, FileName: "active.csv", Status: inflightTraceArchiveStatusActive}
+	require.NoError(t, database.Create(&interrupted).Error)
+	require.NoError(t, database.Create(&active).Error)
+
+	require.NoError(t, RecoverInflightTraceArchiveUploads())
+	require.NoError(t, database.First(&interrupted, interrupted.ID).Error)
+	assert.Equal(t, inflightTraceArchiveStatusFailed, interrupted.Status)
+	assert.Equal(t, "archive upload interrupted; retry required", interrupted.LastError)
+	require.NoError(t, database.First(&active, active.ID).Error)
+	assert.Equal(t, inflightTraceArchiveStatusActive, active.Status)
+}
+
+func TestDeleteInflightTraceArchivesBeforeKeepsUnuploadedCSV(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:inflight-trace-archive-retention?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.InflightTraceArchive{}))
+	previousDB := model.DB
+	model.DB = database
+	t.Cleanup(func() { model.DB = previousDB })
+
+	directory := t.TempDir()
+	failedPath := filepath.Join(directory, "failed.csv")
+	uploadedPath := filepath.Join(directory, "uploaded.csv")
+	require.NoError(t, os.WriteFile(failedPath, []byte("failed"), 0600))
+	require.NoError(t, os.WriteFile(uploadedPath, []byte("uploaded"), 0600))
+	failed := model.InflightTraceArchive{UserID: 1, FileName: "failed.csv", LocalPath: failedPath, Status: inflightTraceArchiveStatusFailed, LatestRecordedAt: 10}
+	uploaded := model.InflightTraceArchive{UserID: 1, FileName: "uploaded.csv", LocalPath: uploadedPath, Status: inflightTraceArchiveStatusUploaded, LatestRecordedAt: 10}
+	require.NoError(t, database.Create(&failed).Error)
+	require.NoError(t, database.Create(&uploaded).Error)
+
+	deleted, err := DeleteInflightTraceArchivesBefore(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), deleted)
+	assert.FileExists(t, failedPath)
+	assert.NoFileExists(t, uploadedPath)
+	require.NoError(t, database.First(&failed, failed.ID).Error)
+	assert.Error(t, database.First(&model.InflightTraceArchive{}, uploaded.ID).Error)
+}
+
 func TestDeleteInflightTraceArchiveFileCloudflareImageBed(t *testing.T) {
 	type requestInfo struct {
 		method        string

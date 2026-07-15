@@ -1121,12 +1121,46 @@ func DeleteTerminalInflightTasksBefore(ctx context.Context, targetTimestamp int6
 				}
 
 				keys := make([]string, 0, len(requestIDs))
+				traceKeys := make([]string, 0, len(requestIDs))
 				for _, requestID := range requestIDs {
 					keys = append(keys, inflightTaskItemKey(requestID))
+					traceKeys = append(traceKeys, inflightTaskTraceKey(requestID))
 				}
 				values, err := client.MGet(ctx, keys...).Result()
 				if err != nil {
 					return deleted, err
+				}
+				traceValues, err := client.MGet(ctx, traceKeys...).Result()
+				if err != nil {
+					return deleted, err
+				}
+				archiveIDs := make(map[uint64]struct{})
+				archiveIDByIndex := make([]uint64, len(traceValues))
+				for i, value := range traceValues {
+					raw, ok := value.(string)
+					if !ok {
+						continue
+					}
+					var trace InflightTaskTrace
+					if common.UnmarshalJsonStr(raw, &trace) != nil || trace.StorageMode != "disk" || trace.ArchiveID == 0 {
+						continue
+					}
+					archiveIDByIndex[i] = trace.ArchiveID
+					archiveIDs[trace.ArchiveID] = struct{}{}
+				}
+				unuploadedArchiveIDs := make(map[uint64]struct{}, len(archiveIDs))
+				if len(archiveIDs) > 0 {
+					ids := make([]uint64, 0, len(archiveIDs))
+					for id := range archiveIDs {
+						ids = append(ids, id)
+					}
+					var archives []model.InflightTraceArchive
+					if err := model.DB.Where("id IN ? AND status <> ?", ids, inflightTraceArchiveStatusUploaded).Find(&archives).Error; err != nil {
+						return deleted, err
+					}
+					for _, archive := range archives {
+						unuploadedArchiveIDs[archive.ID] = struct{}{}
+					}
 				}
 
 				removeIDs := make([]interface{}, 0, len(requestIDs))
@@ -1145,6 +1179,9 @@ func DeleteTerminalInflightTasksBefore(ctx context.Context, targetTimestamp int6
 						continue
 					}
 					if isInflightTaskTerminalStatus(task.Status) && task.UpdatedAt <= targetTimestamp {
+						if _, protected := unuploadedArchiveIDs[archiveIDByIndex[i]]; protected {
+							continue
+						}
 						removeIDs = append(removeIDs, requestIDs[i])
 						removeKeys = append(removeKeys, keys[i])
 						removeKeys = append(removeKeys, inflightTaskTraceKey(requestIDs[i]))

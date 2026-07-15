@@ -67,6 +67,9 @@ func main() {
 	if err := storage.RecoverCreativeTaskImports(context.Background(), 100); err != nil {
 		common.SysError("failed to recover creative task imports: " + err.Error())
 	}
+	if err := service.RecoverInflightTraceArchiveUploads(); err != nil {
+		common.SysError("failed to recover inflight trace archive uploads: " + err.Error())
+	}
 
 	common.SysLog("New API " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {

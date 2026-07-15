@@ -37,9 +37,13 @@ const (
 	inflightTraceArchiveStatusUploading          = "uploading"
 	inflightTraceArchiveStatusUploaded           = "uploaded"
 	inflightTraceArchiveStatusFailed             = "failed"
+	inflightTraceArchiveUploadMaxConcurrent      = 10
 )
 
-var inflightTraceArchiveLocks sync.Map
+var (
+	inflightTraceArchiveLocks       sync.Map
+	inflightTraceArchiveUploadSlots = make(chan struct{}, inflightTraceArchiveUploadMaxConcurrent)
+)
 
 var inflightTraceArchivePendingStatuses = []string{
 	inflightTraceArchiveStatusActive,
@@ -160,6 +164,18 @@ func TriggerInflightTraceArchiveUploads() (int64, error) {
 		lock.Unlock()
 	}
 	return started, nil
+}
+
+// RecoverInflightTraceArchiveUploads makes archives interrupted by a process
+// restart visible to the next upload trigger again. Their local CSV is kept
+// until a successful upload records the archive as uploaded.
+func RecoverInflightTraceArchiveUploads() error {
+	return model.DB.Model(&model.InflightTraceArchive{}).
+		Where("status = ?", inflightTraceArchiveStatusUploading).
+		Updates(map[string]any{
+			"status":     inflightTraceArchiveStatusFailed,
+			"last_error": "archive upload interrupted; retry required",
+		}).Error
 }
 
 func persistInflightTraceToDisk(ctx context.Context, trace *InflightTaskTrace) error {
@@ -310,6 +326,9 @@ func loadInflightTraceFromCSV(filePath, requestID string) (*InflightTaskTrace, e
 }
 
 func uploadInflightTraceArchive(archiveID uint64) {
+	inflightTraceArchiveUploadSlots <- struct{}{}
+	defer func() { <-inflightTraceArchiveUploadSlots }()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	var archive model.InflightTraceArchive
@@ -381,7 +400,7 @@ func CleanupExpiredInflightTraceArchives(ctx context.Context) error {
 	}
 	cutoff := time.Now().AddDate(-years, -months, -days).Add(-time.Duration(hours) * time.Hour).Unix()
 	var archives []model.InflightTraceArchive
-	if err := model.DB.Where("created_at <= ?", cutoff).Find(&archives).Error; err != nil {
+	if err := model.DB.Where("created_at <= ? AND status = ?", cutoff, inflightTraceArchiveStatusUploaded).Find(&archives).Error; err != nil {
 		return err
 	}
 	for _, archive := range archives {
@@ -394,7 +413,7 @@ func CleanupExpiredInflightTraceArchives(ctx context.Context) error {
 
 func DeleteInflightTraceArchivesBefore(ctx context.Context, targetTimestamp int64) (int64, error) {
 	var archives []model.InflightTraceArchive
-	if err := model.DB.Where("(latest_recorded_at > 0 AND latest_recorded_at <= ?) OR (latest_recorded_at = 0 AND created_at <= ?)", targetTimestamp, targetTimestamp).Find(&archives).Error; err != nil {
+	if err := model.DB.Where("((latest_recorded_at > 0 AND latest_recorded_at <= ?) OR (latest_recorded_at = 0 AND created_at <= ?)) AND status = ?", targetTimestamp, targetTimestamp, inflightTraceArchiveStatusUploaded).Find(&archives).Error; err != nil {
 		return 0, err
 	}
 	var deleted int64

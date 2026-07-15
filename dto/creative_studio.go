@@ -38,5 +38,16 @@ type CreativeBindingRequest struct {
 }
 
 type CreativeStudioSettingsRequest struct {
-	DefaultFileChannelID uint64 `json:"default_file_channel_id"`
+	DefaultFileChannelID         uint64   `json:"default_file_channel_id"`
+	AllowedImageMIMETypes        []string `json:"allowed_image_mime_types"`
+	MaxRasterBytes               int64    `json:"max_raster_bytes"`
+	MaxSVGBytes                  int64    `json:"max_svg_bytes"`
+	ReferenceUploadQueueSize     int      `json:"reference_upload_queue_size"`
+	ReferenceUploadMaxConcurrent int      `json:"reference_upload_max_concurrent"`
+}
+
+type CreativeTaskCreateRequest struct {
+	CapabilityID uint64                     `json:"capability_id"`
+	GroupName    string                     `json:"group_name"`
+	Params       map[string]json.RawMessage `json:"params"`
 }

@@ -85,7 +85,6 @@ export function useSidebarData(): SidebarData {
             title: t('Creative Studio'),
             url: '/imgen',
             icon: ImageIcon,
-            native: true,
           },
           {
             title: t('API Keys'),

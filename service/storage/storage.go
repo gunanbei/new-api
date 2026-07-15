@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -472,6 +473,15 @@ func Delete(ctx context.Context, id uint64, userID *int64) (*FileView, error) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, userFile.FileId).Error; err != nil {
 			return err
 		}
+		if tx.Migrator().HasTable(&model.CreativeTaskAsset{}) {
+			var outputCount int64
+			if err := tx.Model(&model.CreativeTaskAsset{}).Where("user_file_id = ? AND role = ?", userFile.Id, "output").Count(&outputCount).Error; err != nil {
+				return err
+			}
+			if outputCount > 0 {
+				return errors.New("creative output files cannot be deleted")
+			}
+		}
 		if err := tx.Delete(&userFile).Error; err != nil {
 			return err
 		}
@@ -628,6 +638,9 @@ func buildObjectKey(channel *model.FileUploadChannel, fileName, suffix string) s
 		}
 		return r
 	}, fileName)
+	if strings.EqualFold(path.Ext(cleanName), "."+suffix) {
+		return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01")+"/"+uuid.NewString()+"_"+cleanName, "/")
+	}
 	return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01")+"/"+uuid.NewString()+"_"+cleanName+"."+suffix, "/")
 }
 

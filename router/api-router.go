@@ -64,6 +64,18 @@ func SetApiRouter(router *gin.Engine) {
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 		apiRouter.GET("/image-playground/bootstrap", middleware.UserAuth(), controller.GetImagePlaygroundBootstrap)
+		creativeRoute := apiRouter.Group("/creative")
+		creativeRoute.Use(middleware.UserAuth())
+		{
+			creativeRoute.GET("/bootstrap", controller.GetCreativeUserBootstrap)
+			creativeRoute.POST("/tasks", controller.CreateCreativeTask)
+			creativeRoute.GET("/tasks", controller.GetCreativeTasks)
+			creativeRoute.GET("/tasks/:task_key", controller.GetCreativeTask)
+			creativeRoute.DELETE("/tasks/:task_key", controller.DeleteCreativeTask)
+			creativeRoute.GET("/tasks/:task_key/assets/:asset_id/base64", controller.GetCreativeTaskAssetBase64)
+			creativeRoute.POST("/tasks/:task_key/retry", controller.RetryCreativeTask)
+			creativeRoute.POST("/tasks/:task_key/import-retry", controller.RetryCreativeImport)
+		}
 		creativeAdminRoute := apiRouter.Group("/creative/admin")
 		creativeAdminRoute.Use(middleware.AdminAuth())
 		{
@@ -83,6 +95,7 @@ func SetApiRouter(router *gin.Engine) {
 			creativeAdminRoute.GET("/publications/:id/bindings", controller.GetCreativeBindings)
 			creativeAdminRoute.POST("/publications/:id/bindings", controller.CreateCreativeBinding)
 			creativeAdminRoute.PUT("/bindings/:id", controller.UpdateCreativeBinding)
+			creativeAdminRoute.POST("/bindings/:id/revalidate", controller.RevalidateCreativeBinding)
 			creativeAdminRoute.DELETE("/bindings/:id", controller.DeleteCreativeBinding)
 			creativeAdminRoute.GET("/settings", controller.GetCreativeStudioSettings)
 			creativeAdminRoute.PUT("/settings", controller.UpdateCreativeStudioSettings)

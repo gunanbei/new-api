@@ -311,6 +311,22 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
 	if info.ChannelMeta == nil {
+		if candidateIDs, ok := c.Get("creative_candidate_channel_ids"); ok {
+			candidates, valid := candidateIDs.([]int)
+			if !valid || retryParam.GetRetry() >= len(candidates) {
+				return nil, types.NewError(fmt.Errorf("no verified creative channel candidate"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+			}
+			channel, err := model.GetChannelById(candidates[retryParam.GetRetry()], true)
+			if err != nil || channel.Status != common.ChannelStatusEnabled {
+				return nil, types.NewError(fmt.Errorf("verified creative channel is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+			}
+			info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+			if channelErr := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName); channelErr != nil {
+				return nil, channelErr
+			}
+			c.Set("creative_selected_channel_id", channel.Id)
+			return channel, nil
+		}
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1
 		if !autoBan {

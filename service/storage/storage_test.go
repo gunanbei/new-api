@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -18,7 +19,7 @@ func TestListFiltersStatsAndLogicalDelete(t *testing.T) {
 	previousDB, previousRedis := model.DB, common.RedisEnabled
 	model.DB, common.RedisEnabled = db, false
 	t.Cleanup(func() { model.DB, common.RedisEnabled = previousDB, previousRedis })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.FileUploadChannel{}, &model.File{}, &model.UserFile{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.FileUploadChannel{}, &model.File{}, &model.UserFile{}, &model.CreativeTaskAsset{}))
 
 	require.NoError(t, db.Create(&model.User{Id: 7, Username: "alice", Password: "password", AffCode: "storage-aff-a", Status: 1}).Error)
 	require.NoError(t, db.Create(&model.User{Id: 8, Username: "bob", Password: "password", AffCode: "storage-aff-b", Status: 1}).Error)
@@ -60,4 +61,29 @@ func TestListFiltersStatsAndLogicalDelete(t *testing.T) {
 	var remaining int64
 	require.NoError(t, db.Model(&model.UserFile{}).Where("file_id = ?", 11).Count(&remaining).Error)
 	assert.Equal(t, int64(1), remaining)
+}
+
+func TestBuildObjectKeyKeepsExistingSuffix(t *testing.T) {
+	channel := &model.FileUploadChannel{ConfigProflle: `{}`}
+	key := buildObjectKey(channel, "creative-image.png", "png")
+	assert.True(t, strings.HasSuffix(key, "creative-image.png"))
+	assert.NotContains(t, key, ".png.png")
+}
+
+func TestDeleteRejectsCreativeOutput(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, db.AutoMigrate(&model.FileUploadChannel{}, &model.File{}, &model.UserFile{}, &model.CreativeTaskAsset{}))
+	require.NoError(t, db.Create(&model.FileUploadChannel{Id: 1, Name: "S3", Type: "3", Status: "1"}).Error)
+	require.NoError(t, db.Create(&model.File{Id: 1, FileChannelId: 1, ChannelType: "3", Identifier: "creative-output", RefCount: 1, Status: "1"}).Error)
+	userFile := model.UserFile{Id: 1, FileId: 1, FileChannelId: 1, UserId: 7, FileName: "work.png", Status: "1"}
+	require.NoError(t, db.Create(&userFile).Error)
+	require.NoError(t, db.Create(&model.CreativeTaskAsset{TaskID: 1, UserFileID: 1, FileID: 1, Role: "output", Position: 0, FileName: "work.png"}).Error)
+
+	userID := int64(7)
+	_, err = Delete(context.Background(), 1, &userID)
+	require.EqualError(t, err, "creative output files cannot be deleted")
 }

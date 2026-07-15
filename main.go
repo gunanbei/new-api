@@ -28,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/service/storage"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -59,6 +60,12 @@ func main() {
 	if err != nil {
 		common.FatalLog("failed to initialize resources: " + err.Error())
 		return
+	}
+	if err := service.RecoverCreativeTasks(); err != nil {
+		common.SysError("failed to recover creative tasks: " + err.Error())
+	}
+	if err := storage.RecoverCreativeTaskImports(context.Background(), 100); err != nil {
+		common.SysError("failed to recover creative task imports: " + err.Error())
 	}
 
 	common.SysLog("New API " + common.Version + " started")

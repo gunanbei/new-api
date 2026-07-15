@@ -20,97 +20,914 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 const localesDir = path.resolve('src/i18n/locales')
+
 const newKeys = {
-  en: { 'Asynchronous': 'Asynchronous', 'Capability': 'Capability', 'Channel {{name}} is already bound.': 'Channel {{name}} is already bound.', 'Channel routing': 'Channel routing', 'Click to view full JSON': 'Click to view full JSON', 'Default parameters': 'Default parameters', 'Execution mode': 'Execution mode', 'Generate': 'Generate', 'Group default parameters': 'Group default parameters', 'Input schema': 'Input schema', 'Media format': 'Media format', 'Model directory': 'Model directory', 'Model key': 'Model key', Publishing: 'Publishing', 'Protocol': 'Protocol', 'Raster image': 'Raster image', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Raster: standard bitmap images, recommended for most image generation and editing models.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.', 'Remix': 'Remix', 'Sort order': 'Sort order', 'Synchronous': 'Synchronous', 'Synchronous artifact': 'Synchronous artifact', 'The media format of generated results.': 'The media format of generated results.', 'Validation message': 'Validation message', 'Vector graphic': 'Vector graphic', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.', 'Video: video files, only for video capabilities.': 'Video: video files, only for video capabilities.' },
-  'zh-TW': { 'Asynchronous': '非同步', 'Capability': '能力', 'Click to view full JSON': '點擊查看完整 JSON', 'Execution mode': '執行方式', 'Generate': '生成', 'Media format': '媒體格式', 'Protocol': '協議', 'Raster image': '點陣圖', 'Raster: standard bitmap images, recommended for most image generation and editing models.': '點陣圖：標準圖片格式，建議用於大多數圖片生成與編輯模型。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '建議：一般圖片選點陣圖；僅在模型明確輸出 SVG 時選 SVG 向量圖；影片能力選影片。', 'Remix': '重混', 'Synchronous': '同步', 'Synchronous artifact': '同步產出檔案', 'The media format of generated results.': '生成結果的媒體格式。', 'Vector graphic': 'SVG 向量圖', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'SVG 向量圖：可無損縮放，僅用於明確支援 SVG 輸出的模型。', 'Video: video files, only for video capabilities.': '影片：影片檔案，僅用於影片能力。' },
-  zh: { 'Asynchronous': '异步', 'Capability': '能力', 'Channel {{name}} is already bound.': '渠道 {{name}} 已存在绑定。', 'Channel routing': '渠道路由', 'Click to view full JSON': '点击查看完整 JSON', 'Default parameters': '默认参数', 'Execution mode': '执行方式', 'Generate': '生成', 'Group default parameters': '分组默认参数', 'Input schema': '输入结构', 'Media format': '媒体格式', 'Model directory': '模型目录', 'Model key': '模型键', Publishing: '分组发布', 'Protocol': '协议', 'Raster image': '位图', 'Raster: standard bitmap images, recommended for most image generation and editing models.': '位图：标准图片格式，推荐用于大多数图片生成和编辑模型。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '建议：常规图片选位图；仅在模型明确输出 SVG 时选 SVG 矢量图；视频能力选视频。', 'Remix': '重混', 'Sort order': '排序', 'Synchronous': '同步', 'Synchronous artifact': '同步产出文件', 'The media format of generated results.': '生成结果的媒体格式。', 'Validation message': '校验信息', 'Vector graphic': 'SVG 矢量图', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'SVG 矢量图：可无损缩放，仅用于明确支持 SVG 输出的模型。', 'Video: video files, only for video capabilities.': '视频：视频文件，仅用于视频能力。' },
-  fr: { 'Asynchronous': 'Asynchrone', 'Capability': 'Capacité', 'Channel {{name}} is already bound.': 'Le canal {{name}} est déjà lié.', 'Channel routing': 'Routage de canal', 'Click to view full JSON': 'Cliquez pour afficher le JSON complet', 'Default parameters': 'Paramètres par défaut', 'Execution mode': 'Mode d’exécution', 'Generate': 'Générer', 'Group default parameters': 'Paramètres par défaut du groupe', 'Input schema': 'Schéma d’entrée', 'Media format': 'Format multimédia', 'Model directory': 'Catalogue de modèles', 'Model key': 'Clé du modèle', Publishing: 'Publication', 'Protocol': 'Protocole', 'Raster image': 'Image matricielle', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Image matricielle : format d’image standard, recommandé pour la plupart des modèles de génération et d’édition d’images.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Recommandation : choisissez une image matricielle pour les images standard, un graphique vectoriel uniquement pour une sortie SVG explicite et une vidéo pour les capacités vidéo.', 'Remix': 'Remixer', 'Sort order': 'Ordre de tri', 'Synchronous': 'Synchrone', 'Synchronous artifact': 'Artefact synchrone', 'The media format of generated results.': 'Le format multimédia des résultats générés.', 'Validation message': 'Message de validation', 'Vector graphic': 'Graphique vectoriel', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Graphique vectoriel : SVG redimensionnable sans perte, uniquement pour les modèles prenant explicitement en charge la sortie SVG.', 'Video: video files, only for video capabilities.': 'Vidéo : fichier vidéo, uniquement pour les capacités vidéo.' },
-  ja: { 'Asynchronous': '非同期', 'Capability': '能力', 'Channel {{name}} is already bound.': 'チャネル {{name}} はすでに紐付けられています。', 'Channel routing': 'チャネルルーティング', 'Click to view full JSON': 'クリックして完全な JSON を表示', 'Default parameters': 'デフォルトパラメータ', 'Execution mode': '実行方式', 'Generate': '生成', 'Group default parameters': 'グループのデフォルトパラメータ', 'Input schema': '入力スキーマ', 'Media format': 'メディア形式', 'Model directory': 'モデルカタログ', 'Model key': 'モデルキー', Publishing: '公開設定', 'Protocol': 'プロトコル', 'Raster image': 'ラスター画像', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'ラスター画像：標準的な画像形式で、ほとんどの画像生成・編集モデルに推奨されます。', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': '推奨：通常の画像にはラスター画像、モデルが SVG 出力を明示する場合のみベクター画像、動画機能には動画を選択してください。', 'Remix': 'リミックス', 'Sort order': '並び順', 'Synchronous': '同期', 'Synchronous artifact': '同期アーティファクト', 'The media format of generated results.': '生成結果のメディア形式です。', 'Validation message': '検証メッセージ', 'Vector graphic': 'ベクター画像', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'ベクター画像：劣化なく拡大できる SVG で、SVG 出力を明示的にサポートするモデルでのみ使用します。', 'Video: video files, only for video capabilities.': '動画：動画ファイル。動画機能でのみ使用します。' },
-  ru: { 'Asynchronous': 'Асинхронный', 'Capability': 'Возможность', 'Channel {{name}} is already bound.': 'Канал {{name}} уже привязан.', 'Channel routing': 'Маршрутизация канала', 'Click to view full JSON': 'Нажмите, чтобы просмотреть полный JSON', 'Default parameters': 'Параметры по умолчанию', 'Execution mode': 'Режим выполнения', 'Generate': 'Создать', 'Group default parameters': 'Параметры группы по умолчанию', 'Input schema': 'Схема ввода', 'Media format': 'Формат медиа', 'Model directory': 'Каталог моделей', 'Model key': 'Ключ модели', Publishing: 'Публикация', 'Protocol': 'Протокол', 'Raster image': 'Растровое изображение', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Растровое изображение: стандартный формат изображения, рекомендуемый для большинства моделей генерации и редактирования изображений.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Рекомендация: для обычных изображений выбирайте растровое изображение, векторную графику — только при явном выводе SVG, а видео — для видеовозможностей.', 'Remix': 'Ремикс', 'Sort order': 'Порядок сортировки', 'Synchronous': 'Синхронный', 'Synchronous artifact': 'Синхронный артефакт', 'The media format of generated results.': 'Формат медиа сгенерированных результатов.', 'Validation message': 'Сообщение проверки', 'Vector graphic': 'Векторная графика', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Векторная графика: SVG без потери качества при масштабировании; только для моделей с явной поддержкой вывода SVG.', 'Video: video files, only for video capabilities.': 'Видео: видеофайл, только для возможностей видео.' },
-  vi: { 'Asynchronous': 'Bất đồng bộ', 'Capability': 'Khả năng', 'Channel {{name}} is already bound.': 'Kenh {{name}} da duoc lien ket.', 'Channel routing': 'Dinh tuyen kenh', 'Click to view full JSON': 'Nhấp để xem JSON đầy đủ', 'Default parameters': 'Tham so mac dinh', 'Execution mode': 'Chế độ thực thi', 'Generate': 'Tạo', 'Group default parameters': 'Tham so mac dinh cua nhom', 'Input schema': 'Luoc do dau vao', 'Media format': 'Định dạng phương tiện', 'Model directory': 'Danh muc mo hinh', 'Model key': 'Khoa mo hinh', Publishing: 'Cong bo', 'Protocol': 'Giao thức', 'Raster image': 'Ảnh raster', 'Raster: standard bitmap images, recommended for most image generation and editing models.': 'Ảnh raster: định dạng ảnh tiêu chuẩn, nên dùng cho hầu hết mô hình tạo và chỉnh sửa ảnh.', 'Recommendation: choose raster for standard images; choose vector only for explicit SVG output; choose video for video capabilities.': 'Khuyến nghị: chọn ảnh raster cho ảnh thông thường, chỉ chọn đồ họa vector khi có đầu ra SVG rõ ràng và chọn video cho khả năng video.', 'Remix': 'Phối lại', 'Sort order': 'Thu tu sap xep', 'Synchronous': 'Đồng bộ', 'Synchronous artifact': 'Sản phẩm đồng bộ', 'The media format of generated results.': 'Định dạng phương tiện của kết quả được tạo.', 'Validation message': 'Thong bao kiem tra', 'Vector graphic': 'Đồ họa vector', 'Vector: SVG graphics that scale without loss, only for models that explicitly support SVG output.': 'Đồ họa vector: SVG có thể phóng to không mất chất lượng, chỉ dùng cho mô hình hỗ trợ rõ ràng đầu ra SVG.', 'Video: video files, only for video capabilities.': 'Video: tệp video, chỉ dùng cho khả năng video.' },
+  en: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Available after saving': 'Available after saving',
+    'Base64 copied to clipboard': 'Base64 copied to clipboard',
+    'Convert to Base64': 'Convert to Base64',
+    'History works': 'History works',
+    'Image to image': 'Image to image',
+    Reuse: 'Reuse',
+    'Bindings remain disabled until protocol verification passes.':
+      'Bindings remain disabled until protocol verification passes.',
+    'Last validated': 'Last validated',
+    'Not validated': 'Not validated',
+    'Protocol verification failed': 'Protocol verification failed',
+    'Protocol verification passed': 'Protocol verification passed',
+    Processing: 'Processing',
+    Revalidate: 'Revalidate',
+    'The completion time of the latest protocol compatibility check.':
+      'The completion time of the latest protocol compatibility check.',
+    'Text to image': 'Text to image',
+    'Unable to copy Base64': 'Unable to copy Base64',
+    Succeeded: 'Succeeded',
+    Uploading: 'Uploading',
+    'Validate now': 'Validate now',
+    Validated: 'Validated',
+    Validating: 'Validating',
+    'Validating...': 'Validating...',
+    'Validation failed': 'Validation failed',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.',
+    Verified: 'Verified',
+    'model name changed; validation required':
+      'model name changed; validation required',
+    'not validated': 'not validated',
+    'validation in progress': 'validation in progress',
+    validated: 'validated',
+  },
+  zh: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Available after saving': '保存完成后可用',
+    'Base64 copied to clipboard': 'Base64 已复制到剪贴板',
+    'Convert to Base64': '转换为 Base64',
+    'History works': '历史作品',
+    'Image to image': '图生图',
+    Reuse: '复用',
+    'Bindings remain disabled until protocol verification passes.':
+      '绑定会保持禁用，直到协议校验通过。',
+    'Last validated': '最近校验时间',
+    'Not validated': '未校验',
+    'Protocol verification failed': '协议校验未通过',
+    'Protocol verification passed': '协议校验已通过',
+    Processing: '处理中',
+    Revalidate: '重新校验',
+    'The completion time of the latest protocol compatibility check.':
+      '最近一次协议兼容性校验完成的时间。',
+    'Text to image': '文生图',
+    'Unable to copy Base64': '无法复制 Base64',
+    Succeeded: '已完成',
+    Uploading: '保存中',
+    'Validate now': '立即校验',
+    Validated: '已校验',
+    Validating: '校验中',
+    'Validating...': '正在校验…',
+    'Validation failed': '校验未通过',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      '校验会在当前请求中立即完成，不会进入队列，也不会请求上游服务商。',
+    Verified: '已验证',
+    'model name changed; validation required': '模型名称已变更，需要重新校验',
+    'not validated': '尚未校验',
+    'validation in progress': '正在校验',
+    validated: '已验证',
+  },
+  'zh-TW': {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Available after saving': '儲存完成後可用',
+    'Base64 copied to clipboard': 'Base64 已複製到剪貼簿',
+    'Convert to Base64': '轉換為 Base64',
+    'History works': '歷史作品',
+    'Image to image': '圖生圖',
+    Reuse: '重複使用',
+    'Bindings remain disabled until protocol verification passes.':
+      '繫結會保持停用，直到協定驗證通過。',
+    'Last validated': '最近驗證時間',
+    'Not validated': '尚未驗證',
+    'Protocol verification failed': '協定驗證未通過',
+    'Protocol verification passed': '協定驗證已通過',
+    Processing: '處理中',
+    Revalidate: '重新驗證',
+    'The completion time of the latest protocol compatibility check.':
+      '最近一次協定相容性驗證完成的時間。',
+    'Text to image': '文生圖',
+    'Unable to copy Base64': '無法複製 Base64',
+    Succeeded: '已完成',
+    Uploading: '儲存中',
+    'Validate now': '立即驗證',
+    Validated: '已驗證',
+    Validating: '驗證中',
+    'Validating...': '正在驗證…',
+    'Validation failed': '驗證未通過',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      '驗證會在目前請求中立即完成，不會進入佇列，也不會請求上游服務商。',
+    Verified: '已驗證',
+    'model name changed; validation required': '模型名稱已變更，需要重新驗證',
+    'not validated': '尚未驗證',
+    'validation in progress': '正在驗證',
+    validated: '已驗證',
+  },
+  fr: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Size plan': 'Format d’image',
+    'Download resolution': 'Résolution de téléchargement',
+    '1:1 Square': 'Carré 1:1',
+    Landscape: 'Paysage',
+    Portrait: 'Portrait',
+    'Choose the image composition and orientation.':
+      'Choisissez le cadrage et l’orientation de l’image.',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      'Les résolutions supérieures sont agrandies localement sans modifier la facturation de la génération.',
+    Low: 'Basse',
+    Medium: 'Moyenne',
+    High: 'Élevée',
+    Opaque: 'Opaque',
+    Transparent: 'Transparent',
+    'Choose the composition ratio for the SVG illustration.':
+      'Choisissez le ratio de composition de l’illustration SVG.',
+    '16:9 Landscape': 'Paysage 16:9',
+    '9:16 Portrait': 'Portrait 9:16',
+    '3:2 Landscape': 'Paysage 3:2',
+    '2:3 Portrait': 'Portrait 2:3',
+    'Custom ratio': 'Ratio personnalisé',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'Le SVG reste vectoriel ; les téléchargements 2K et 4K sont rendus localement sans frais de génération supplémentaires.',
+    'Unable to download image': 'Impossible de télécharger l’image',
+    'Aspect ratio': 'Format d’image',
+    'Available after saving': 'Disponible après l’enregistrement',
+    'Base64 copied to clipboard': 'Base64 copié dans le presse-papiers',
+    'Convert to Base64': 'Convertir en Base64',
+    'History works': 'Historique des créations',
+    'Image to image': 'Image vers image',
+    Reuse: 'Réutiliser',
+    'Bindings remain disabled until protocol verification passes.':
+      'Les liaisons restent désactivées jusqu’à la réussite de la vérification du protocole.',
+    'Last validated': 'Dernière vérification',
+    'Not validated': 'Non vérifié',
+    'Protocol verification failed': 'Échec de la vérification du protocole',
+    'Protocol verification passed': 'Vérification du protocole réussie',
+    Processing: 'Traitement en cours',
+    Revalidate: 'Vérifier à nouveau',
+    'The completion time of the latest protocol compatibility check.':
+      'Heure de fin de la dernière vérification de compatibilité du protocole.',
+    'Text to image': 'Texte vers image',
+    'Unable to copy Base64': 'Impossible de copier Base64',
+    Succeeded: 'Terminé',
+    Uploading: 'Enregistrement en cours',
+    'Validate now': 'Vérifier maintenant',
+    Validated: 'Vérifié',
+    Validating: 'Vérification en cours',
+    'Validating...': 'Vérification en cours…',
+    'Validation failed': 'Échec de la vérification',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      'La vérification s’exécute immédiatement dans cette requête. Elle n’est pas mise en file d’attente et ne contacte pas le fournisseur en amont.',
+    Verified: 'Vérifié',
+    'model name changed; validation required':
+      'le nom du modèle a changé ; une vérification est requise',
+    'not validated': 'non vérifié',
+    'validation in progress': 'vérification en cours',
+    validated: 'validé',
+  },
+  ja: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Size plan': 'サイズ設定',
+    'Download resolution': 'ダウンロード解像度',
+    '1:1 Square': '1:1 正方形',
+    Landscape: '横長',
+    Portrait: '縦長',
+    'Choose the image composition and orientation.':
+      '画像の構図比率と向きを選択します。',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      '高いダウンロード解像度はローカルで拡大され、生成料金には影響しません。',
+    Low: '低',
+    Medium: '中',
+    High: '高',
+    Opaque: '不透明',
+    Transparent: '透明',
+    'Choose the composition ratio for the SVG illustration.':
+      'SVG イラストの構図比率を選択します。',
+    '16:9 Landscape': '16:9 横長',
+    '9:16 Portrait': '9:16 縦長',
+    '3:2 Landscape': '3:2 横長',
+    '2:3 Portrait': '2:3 縦長',
+    'Custom ratio': 'カスタム比率',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG はベクター形式のままです。2K と 4K はローカルで描画され、追加の生成料金はかかりません。',
+    'Unable to download image': '画像をダウンロードできません',
+    'Aspect ratio': 'アスペクト比',
+    'Available after saving': '保存後に利用できます',
+    'Base64 copied to clipboard': 'Base64 をクリップボードにコピーしました',
+    'Convert to Base64': 'Base64 に変換',
+    'History works': '作品履歴',
+    'Image to image': '画像から画像',
+    Reuse: '再利用',
+    'Bindings remain disabled until protocol verification passes.':
+      'プロトコル検証に成功するまで、バインディングは無効のままです。',
+    'Last validated': '最終検証日時',
+    'Not validated': '未検証',
+    'Protocol verification failed': 'プロトコル検証に失敗しました',
+    'Protocol verification passed': 'プロトコル検証に成功しました',
+    Processing: '処理中',
+    Revalidate: '再検証',
+    'The completion time of the latest protocol compatibility check.':
+      '直近のプロトコル互換性検証が完了した日時です。',
+    'Text to image': 'テキストから画像',
+    'Unable to copy Base64': 'Base64 をコピーできません',
+    Succeeded: '完了',
+    Uploading: '保存中',
+    'Validate now': '今すぐ検証',
+    Validated: '検証済み',
+    Validating: '検証中',
+    'Validating...': '検証中…',
+    'Validation failed': '検証に失敗',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      '検証はこのリクエスト内で直ちに実行されます。キューには入らず、上流プロバイダーにも接続しません。',
+    Verified: '検証済み',
+    'model name changed; validation required':
+      'モデル名が変更されたため、検証が必要です',
+    'not validated': '未検証',
+    'validation in progress': '検証中',
+    validated: '検証済み',
+  },
+  ru: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Size plan': 'Формат изображения',
+    'Download resolution': 'Разрешение загрузки',
+    '1:1 Square': 'Квадрат 1:1',
+    Landscape: 'Альбомная',
+    Portrait: 'Портретная',
+    'Choose the image composition and orientation.':
+      'Выберите пропорции и ориентацию изображения.',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      'Более высокое разрешение создаётся локальным масштабированием и не влияет на стоимость генерации.',
+    Low: 'Низкое',
+    Medium: 'Среднее',
+    High: 'Высокое',
+    Opaque: 'Непрозрачный',
+    Transparent: 'Прозрачный',
+    'Choose the composition ratio for the SVG illustration.':
+      'Выберите соотношение сторон для SVG-иллюстрации.',
+    '16:9 Landscape': 'Альбомная 16:9',
+    '9:16 Portrait': 'Портретная 9:16',
+    '3:2 Landscape': 'Альбомная 3:2',
+    '2:3 Portrait': 'Портретная 2:3',
+    'Custom ratio': 'Свои пропорции',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG остаётся векторным; версии 2K и 4K создаются локально без дополнительной платы за генерацию.',
+    'Unable to download image': 'Не удалось скачать изображение',
+    'Aspect ratio': 'Соотношение сторон',
+    'Available after saving': 'Доступно после сохранения',
+    'Base64 copied to clipboard': 'Base64 скопирован в буфер обмена',
+    'Convert to Base64': 'Преобразовать в Base64',
+    'History works': 'История работ',
+    'Image to image': 'Изображение в изображение',
+    Reuse: 'Повторить',
+    'Bindings remain disabled until protocol verification passes.':
+      'Привязки остаются отключёнными, пока проверка протокола не будет пройдена.',
+    'Last validated': 'Последняя проверка',
+    'Not validated': 'Не проверено',
+    'Protocol verification failed': 'Проверка протокола не пройдена',
+    'Protocol verification passed': 'Проверка протокола пройдена',
+    Processing: 'Обработка',
+    Revalidate: 'Проверить снова',
+    'The completion time of the latest protocol compatibility check.':
+      'Время завершения последней проверки совместимости протокола.',
+    'Text to image': 'Текст в изображение',
+    'Unable to copy Base64': 'Не удалось скопировать Base64',
+    Succeeded: 'Завершено',
+    Uploading: 'Сохранение',
+    'Validate now': 'Проверить сейчас',
+    Validated: 'Проверено',
+    Validating: 'Проверка',
+    'Validating...': 'Проверка…',
+    'Validation failed': 'Проверка не пройдена',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      'Проверка выполняется сразу в этом запросе. Она не ставится в очередь и не обращается к вышестоящему провайдеру.',
+    Verified: 'Проверено',
+    'model name changed; validation required':
+      'имя модели изменено; требуется проверка',
+    'not validated': 'не проверено',
+    'validation in progress': 'выполняется проверка',
+    validated: 'проверено',
+  },
+  vi: {
+    PNG: 'PNG',
+    JPEG: 'JPEG',
+    WebP: 'WebP',
+    'Size plan': 'Tỷ lệ ảnh',
+    'Download resolution': 'Độ phân giải tải xuống',
+    '1:1 Square': 'Vuông 1:1',
+    Landscape: 'Ngang',
+    Portrait: 'Dọc',
+    'Choose the image composition and orientation.':
+      'Chọn tỷ lệ bố cục và hướng ảnh.',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      'Độ phân giải tải xuống cao hơn được phóng to cục bộ và không ảnh hưởng đến phí tạo ảnh.',
+    Low: 'Thấp',
+    Medium: 'Trung bình',
+    High: 'Cao',
+    Opaque: 'Không trong suốt',
+    Transparent: 'Trong suốt',
+    'Choose the composition ratio for the SVG illustration.':
+      'Chọn tỷ lệ bố cục cho hình minh họa SVG.',
+    '16:9 Landscape': 'Ngang 16:9',
+    '9:16 Portrait': 'Dọc 9:16',
+    '3:2 Landscape': 'Ngang 3:2',
+    '2:3 Portrait': 'Dọc 2:3',
+    'Custom ratio': 'Tỷ lệ tùy chỉnh',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG vẫn ở dạng vector; bản tải xuống 2K và 4K được kết xuất cục bộ, không phát sinh thêm phí tạo ảnh.',
+    'Unable to download image': 'Không thể tải ảnh xuống',
+    'Aspect ratio': 'Tỷ lệ khung hình',
+    'Available after saving': 'Có sẵn sau khi lưu',
+    'Base64 copied to clipboard': 'Đã sao chép Base64 vào bộ nhớ tạm',
+    'Convert to Base64': 'Chuyển thành Base64',
+    'History works': 'Lịch sử tác phẩm',
+    'Image to image': 'Ảnh sang ảnh',
+    Reuse: 'Dùng lại',
+    'Bindings remain disabled until protocol verification passes.':
+      'Liên kết sẽ vẫn bị tắt cho đến khi xác minh giao thức thành công.',
+    'Last validated': 'Lần xác minh gần nhất',
+    'Not validated': 'Chưa xác minh',
+    'Protocol verification failed': 'Xác minh giao thức không thành công',
+    'Protocol verification passed': 'Xác minh giao thức thành công',
+    Processing: 'Đang xử lý',
+    Revalidate: 'Xác minh lại',
+    'The completion time of the latest protocol compatibility check.':
+      'Thời điểm hoàn tất lần kiểm tra tương thích giao thức gần nhất.',
+    'Text to image': 'Văn bản sang ảnh',
+    'Unable to copy Base64': 'Không thể sao chép Base64',
+    Succeeded: 'Hoàn tất',
+    Uploading: 'Đang lưu',
+    'Validate now': 'Xác minh ngay',
+    Validated: 'Đã xác minh',
+    Validating: 'Đang xác minh',
+    'Validating...': 'Đang xác minh…',
+    'Validation failed': 'Xác minh không thành công',
+    'Validation runs immediately in this request. It is not queued and does not contact the upstream provider.':
+      'Việc xác minh chạy ngay trong yêu cầu này. Nó không được xếp hàng và không liên hệ nhà cung cấp thượng nguồn.',
+    Verified: 'Đã xác minh',
+    'model name changed; validation required':
+      'tên mô hình đã thay đổi; cần xác minh',
+    'not validated': 'chưa xác minh',
+    'validation in progress': 'đang xác minh',
+    validated: 'đã xác minh',
+  },
 }
 
-Object.assign(newKeys.en, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'A friendly label for administrators and future user-facing lists. It does not change routing.', 'Add group': 'Add group', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Disabled: hide this directory entry from normal use without deleting its configuration.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Enabled: keep this model directory entry available for Creative Studio configuration.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.', 'Group configuration': 'Group configuration', 'Lower values appear first. Use 0 for the default order.': 'Lower values appear first. Use 0 for the default order.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.', 'Optional administrative notes. It does not change routing.': 'Optional administrative notes. It does not change routing.', 'Requested model': 'Requested model', 'Select group': 'Select group', 'The upstream model identifier. It must match the model name configured on a channel.': 'The upstream model identifier. It must match the model name configured on a channel.', 'Validation': 'Validation', 'awaiting protocol validation': 'awaiting protocol validation', '{{type}}: {{name}} already exists': '{{type}}: {{name}} already exists' })
-Object.assign(newKeys['zh-TW'], { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '供管理員與後續使用者清單顯示的易讀名稱，不會改變路由。', 'Add group': '新增群組', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '僅用於提供者分類與顯示。協議在能力中設定，渠道路由在綁定中設定。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '停用：從一般使用中隱藏此目錄項目，不刪除其設定。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '啟用：讓此模型目錄項目可用於創作台設定。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': '由模型名稱去除前後空白並轉為小寫後產生，是不可編輯的唯一內部鍵。', 'Group configuration': '群組設定', 'Lower values appear first. Use 0 for the default order.': '數值較小者優先顯示；使用 0 為預設排序。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': '標記此目錄項目是否可在創作台中使用，不取代能力、群組發布或渠道的啟用狀態。', 'Optional administrative notes. It does not change routing.': '選填的管理備註，不會改變路由。', 'Requested model': '請求模型', 'Select group': '選擇群組', 'The upstream model identifier. It must match the model name configured on a channel.': '上游模型識別字，必須與渠道中設定的模型名稱一致。', 'Validation': '驗證狀態', 'awaiting protocol validation': '等待協議驗證', '{{type}}: {{name}} already exists': '{{type}}：{{name}} 已存在' })
-Object.assign(newKeys.zh, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '供管理员和后续用户端列表展示的友好名称，不影响路由。', 'Add group': '添加分组', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '仅用于提供商分类和展示。协议在能力中配置，渠道路由在绑定中配置。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '已禁用：从常规使用中隐藏该目录项，不删除其配置。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '已启用：该模型目录项可用于创作台配置。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': '由模型名称去除首尾空格并转为小写后生成，是不可编辑的唯一内部键。', 'Group configuration': '分组配置', 'Lower values appear first. Use 0 for the default order.': '数值越小越靠前；使用 0 为默认排序。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': '标记该目录项是否可在创作台中使用，不替代能力、分组发布或渠道的启用状态。', 'Optional administrative notes. It does not change routing.': '可选的管理备注，不影响路由。', 'Requested model': '请求模型', 'Select group': '选择分组', 'The upstream model identifier. It must match the model name configured on a channel.': '上游模型标识，必须与渠道中配置的模型名称一致。', 'Validation': '校验状态', 'awaiting protocol validation': '等待协议校验', '{{type}}: {{name}} already exists': '{{type}}：{{name}} 已存在' })
-Object.assign(newKeys.fr, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Libellé clair pour les administrateurs et les futures listes utilisateur. Il ne modifie pas le routage.', 'Add group': 'Ajouter un groupe', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Classe le fournisseur uniquement pour l’affichage. Le protocole est configuré sur la capacité et le routage du canal sur la liaison.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Désactivé : masque cette entrée du catalogue sans supprimer sa configuration.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Activé : conserve cette entrée de catalogue disponible pour la configuration de Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Générée à partir du nom du modèle après suppression des espaces et conversion en minuscules. C’est la clé interne unique et elle ne peut pas être modifiée.', 'Group configuration': 'Configuration du groupe', 'Lower values appear first. Use 0 for the default order.': 'Les valeurs les plus basses apparaissent d’abord. Utilisez 0 pour l’ordre par défaut.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Indique si cette entrée de catalogue est disponible dans Creative Studio. Cela ne remplace pas l’activation de la capacité, de la publication ou du canal.', 'Optional administrative notes. It does not change routing.': 'Notes administratives facultatives. Elles ne modifient pas le routage.', 'Requested model': 'Modèle demandé', 'Select group': 'Sélectionner un groupe', 'The upstream model identifier. It must match the model name configured on a channel.': 'Identifiant du modèle en amont. Il doit correspondre au nom du modèle configuré sur un canal.', 'Validation': 'Validation', 'awaiting protocol validation': 'En attente de validation du protocole', '{{type}}: {{name}} already exists': '{{type}} : {{name}} existe déjà' })
-Object.assign(newKeys.ja, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': '管理者および今後のユーザー向けリストに表示するわかりやすい名称です。ルーティングには影響しません。', 'Add group': 'グループを追加', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': '表示用のプロバイダー分類です。プロトコルは能力で、チャネルルーティングはバインディングで設定します。', 'Disabled: hide this directory entry from normal use without deleting its configuration.': '無効：設定を削除せず、このカタログ項目を通常利用から非表示にします。', 'Enabled: keep this model directory entry available for Creative Studio configuration.': '有効：このモデルカタログ項目を Creative Studio の設定で利用可能にします。', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'モデル名の前後の空白を除去して小文字化した値から生成される、一意で編集不可の内部キーです。', 'Group configuration': 'グループ設定', 'Lower values appear first. Use 0 for the default order.': '小さい値ほど先に表示されます。既定の順序には 0 を使用してください。', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'このカタログ項目を Creative Studio で利用可能にするかを示します。能力、公開、チャネルの有効化を置き換えるものではありません。', 'Optional administrative notes. It does not change routing.': '任意の管理メモです。ルーティングには影響しません。', 'Requested model': 'リクエストモデル', 'Select group': 'グループを選択', 'The upstream model identifier. It must match the model name configured on a channel.': '上流モデルの識別子です。チャネルに設定したモデル名と一致させる必要があります。', 'Validation': '検証', 'awaiting protocol validation': 'プロトコル検証待ち', '{{type}}: {{name}} already exists': '{{type}}：{{name}} はすでに存在します' })
-Object.assign(newKeys.ru, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Понятное название для администраторов и будущих пользовательских списков. Оно не меняет маршрутизацию.', 'Add group': 'Добавить группу', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Классифицирует поставщика только для отображения. Протокол настраивается в возможности, а маршрутизация канала — в привязке.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Отключено: скрывает эту запись каталога из обычного использования, не удаляя ее настройки.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Включено: оставляет эту запись каталога моделей доступной для настройки Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Создается из имени модели после удаления пробелов и приведения к нижнему регистру. Это уникальный внутренний ключ, который нельзя изменить.', 'Group configuration': 'Настройка группы', 'Lower values appear first. Use 0 for the default order.': 'Меньшие значения отображаются первыми. Используйте 0 для порядка по умолчанию.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Отмечает, доступна ли эта запись каталога в Creative Studio. Это не заменяет включение возможности, публикации или канала.', 'Optional administrative notes. It does not change routing.': 'Необязательные заметки администратора. Они не меняют маршрутизацию.', 'Requested model': 'Запрошенная модель', 'Select group': 'Выбрать группу', 'The upstream model identifier. It must match the model name configured on a channel.': 'Идентификатор модели у провайдера. Он должен совпадать с именем модели, настроенным на канале.', 'Validation': 'Проверка', 'awaiting protocol validation': 'Ожидание проверки протокола', '{{type}}: {{name}} already exists': '{{type}}: {{name}} уже существует' })
-Object.assign(newKeys.vi, { 'A friendly label for administrators and future user-facing lists. It does not change routing.': 'Tên dễ đọc cho quản trị viên và các danh sách người dùng sau này. Không làm thay đổi định tuyến.', 'Add group': 'Thêm nhóm', 'Classifies the provider for display only. Protocol is configured on the capability; channel routing is configured on the binding.': 'Chỉ phân loại nhà cung cấp để hiển thị. Giao thức được cấu hình ở khả năng; định tuyến kênh được cấu hình ở liên kết.', 'Disabled: hide this directory entry from normal use without deleting its configuration.': 'Đã tắt: ẩn mục danh mục này khỏi sử dụng thông thường mà không xóa cấu hình.', 'Enabled: keep this model directory entry available for Creative Studio configuration.': 'Đã bật: giữ mục danh mục mô hình này khả dụng cho cấu hình Creative Studio.', 'Generated from the model name after trimming and lowercasing. It is the unique internal key and cannot be edited.': 'Được tạo từ tên mô hình sau khi bỏ khoảng trắng và chuyển sang chữ thường. Đây là khóa nội bộ duy nhất, không thể chỉnh sửa.', 'Group configuration': 'Cấu hình nhóm', 'Lower values appear first. Use 0 for the default order.': 'Giá trị nhỏ hơn xuất hiện trước. Dùng 0 cho thứ tự mặc định.', 'Marks whether this catalog entry is available in Creative Studio. It does not replace capability, publication, or channel enablement.': 'Đánh dấu mục danh mục này có dùng được trong Creative Studio hay không. Không thay thế trạng thái bật của khả năng, phát hành hoặc kênh.', 'Optional administrative notes. It does not change routing.': 'Ghi chú quản trị tùy chọn. Không làm thay đổi định tuyến.', 'Requested model': 'Mô hình yêu cầu', 'Select group': 'Chọn nhóm', 'The upstream model identifier. It must match the model name configured on a channel.': 'Định danh mô hình thượng nguồn. Phải khớp với tên mô hình đã cấu hình trên kênh.', 'Validation': 'Xác thực', 'awaiting protocol validation': 'Đang chờ xác thực giao thức', '{{type}}: {{name}} already exists': '{{type}}: {{name}} đã tồn tại' })
+const validationMessages = {
+  en: {
+    'advanced custom channel has no matching image route':
+      'advanced custom channel has no matching image route',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      'advanced custom image protocol requires an Advanced Custom channel',
+    'binding model snapshot is stale': 'binding model snapshot is stale',
+    'capability is unavailable': 'capability is unavailable',
+    'channel has no enabled matching ability':
+      'channel has no enabled matching ability',
+    'channel is unavailable': 'channel is unavailable',
+    'creative storage is unavailable': 'creative storage is unavailable',
+    'Midjourney protocol requires a Midjourney channel':
+      'Midjourney protocol requires a Midjourney channel',
+    'model is unavailable': 'model is unavailable',
+    'protocol does not match the image capability contract':
+      'protocol does not match the image capability contract',
+    'publication group is unavailable': 'publication group is unavailable',
+    'publication is unavailable': 'publication is unavailable',
+  },
+  zh: {
+    'advanced custom channel has no matching image route':
+      '高级自定义渠道没有匹配的图片路由',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      '高级自定义图片协议需要高级自定义渠道',
+    'binding model snapshot is stale': '绑定的模型快照已过期',
+    'capability is unavailable': '能力不可用',
+    'channel has no enabled matching ability': '渠道没有已启用的匹配能力',
+    'channel is unavailable': '渠道不可用',
+    'creative storage is unavailable': '创作台存储不可用',
+    'Midjourney protocol requires a Midjourney channel':
+      'Midjourney 协议需要 Midjourney 渠道',
+    'model is unavailable': '模型不可用',
+    'protocol does not match the image capability contract':
+      '协议不符合图片能力约定',
+    'publication group is unavailable': '发布分组不可用',
+    'publication is unavailable': '分组发布不可用',
+  },
+  'zh-TW': {
+    'advanced custom channel has no matching image route':
+      '進階自訂渠道沒有符合的圖片路由',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      '進階自訂圖片協定需要進階自訂渠道',
+    'binding model snapshot is stale': '繫結的模型快照已過期',
+    'capability is unavailable': '能力不可用',
+    'channel has no enabled matching ability': '渠道沒有已啟用的相符能力',
+    'channel is unavailable': '渠道不可用',
+    'creative storage is unavailable': 'Creative Studio 儲存空間不可用',
+    'Midjourney protocol requires a Midjourney channel':
+      'Midjourney 協定需要 Midjourney 渠道',
+    'model is unavailable': '模型不可用',
+    'protocol does not match the image capability contract':
+      '協定不符合圖片能力合約',
+    'publication group is unavailable': '發布群組不可用',
+    'publication is unavailable': '群組發布不可用',
+  },
+  fr: {
+    'advanced custom channel has no matching image route':
+      'le canal Advanced Custom n’a pas de route d’image correspondante',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      'le protocole d’image Advanced Custom nécessite un canal Advanced Custom',
+    'binding model snapshot is stale':
+      'l’instantané du modèle de la liaison est obsolète',
+    'capability is unavailable': 'la capacité est indisponible',
+    'channel has no enabled matching ability':
+      'le canal n’a aucune capacité correspondante activée',
+    'channel is unavailable': 'le canal est indisponible',
+    'creative storage is unavailable':
+      'le stockage du Studio créatif est indisponible',
+    'Midjourney protocol requires a Midjourney channel':
+      'le protocole Midjourney requiert un canal Midjourney',
+    'model is unavailable': 'le modèle est indisponible',
+    'protocol does not match the image capability contract':
+      'le protocole ne correspond pas au contrat de capacité d’image',
+    'publication group is unavailable':
+      'le groupe de publication est indisponible',
+    'publication is unavailable': 'la publication est indisponible',
+  },
+  ja: {
+    'advanced custom channel has no matching image route':
+      'Advanced Custom チャネルに一致する画像ルートがありません',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      'Advanced Custom 画像プロトコルには Advanced Custom チャネルが必要です',
+    'binding model snapshot is stale':
+      'バインディングのモデルスナップショットが古くなっています',
+    'capability is unavailable': '機能を利用できません',
+    'channel has no enabled matching ability':
+      'チャネルに有効な一致機能がありません',
+    'channel is unavailable': 'チャネルを利用できません',
+    'creative storage is unavailable':
+      'クリエイティブスタジオのストレージを利用できません',
+    'Midjourney protocol requires a Midjourney channel':
+      'Midjourney プロトコルには Midjourney チャネルが必要です',
+    'model is unavailable': 'モデルを利用できません',
+    'protocol does not match the image capability contract':
+      'プロトコルが画像機能の契約と一致しません',
+    'publication group is unavailable': '公開グループを利用できません',
+    'publication is unavailable': '公開を利用できません',
+  },
+  ru: {
+    'advanced custom channel has no matching image route':
+      'в канале Advanced Custom нет подходящего маршрута изображений',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      'протокол изображений Advanced Custom требует канал Advanced Custom',
+    'binding model snapshot is stale': 'снимок модели привязки устарел',
+    'capability is unavailable': 'возможность недоступна',
+    'channel has no enabled matching ability':
+      'в канале нет включённой подходящей возможности',
+    'channel is unavailable': 'канал недоступен',
+    'creative storage is unavailable': 'хранилище творческой студии недоступно',
+    'Midjourney protocol requires a Midjourney channel':
+      'протокол Midjourney требует канал Midjourney',
+    'model is unavailable': 'модель недоступна',
+    'protocol does not match the image capability contract':
+      'протокол не соответствует контракту возможности изображения',
+    'publication group is unavailable': 'группа публикации недоступна',
+    'publication is unavailable': 'публикация недоступна',
+  },
+  vi: {
+    'advanced custom channel has no matching image route':
+      'kênh Advanced Custom không có tuyến ảnh phù hợp',
+    'advanced custom image protocol requires an Advanced Custom channel':
+      'giao thức ảnh Advanced Custom yêu cầu kênh Advanced Custom',
+    'binding model snapshot is stale': 'bản chụp mô hình của liên kết đã cũ',
+    'capability is unavailable': 'khả năng không khả dụng',
+    'channel has no enabled matching ability':
+      'kênh không có khả năng phù hợp đang bật',
+    'channel is unavailable': 'kênh không khả dụng',
+    'creative storage is unavailable': 'bộ nhớ Studio sáng tạo không khả dụng',
+    'Midjourney protocol requires a Midjourney channel':
+      'giao thức Midjourney yêu cầu kênh Midjourney',
+    'model is unavailable': 'mô hình không khả dụng',
+    'protocol does not match the image capability contract':
+      'giao thức không khớp với hợp đồng khả năng ảnh',
+    'publication group is unavailable': 'nhóm phát hành không khả dụng',
+    'publication is unavailable': 'bản phát hành không khả dụng',
+  },
+}
 
-Object.assign(newKeys.en, {
-  'Defines whether this capability creates images or videos.': 'Defines whether this capability creates images or videos.',
-  'Defines the action this capability performs.': 'Defines the action this capability performs.',
-  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Identifies the upstream request protocol. It is part of this capability’s unique identity.',
-  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Describes whether the result is returned immediately, later, or as a synchronous artifact.',
-  'Enables this capability for later publication and routing.': 'Enables this capability for later publication and routing.',
-  'JSON object that describes supported inputs.': 'JSON object that describes supported inputs.',
-  'JSON object applied before group defaults.': 'JSON object applied before group defaults.',
-  'Selects the user group that can see this capability.': 'Selects the user group that can see this capability.',
-  'Controls whether this group publication is available to users.': 'Controls whether this group publication is available to users.',
-  'JSON object merged after capability defaults.': 'JSON object merged after capability defaults.',
-  'Selects the existing enabled channel used for this group publication.': 'Selects the existing enabled channel used for this group publication.',
-  'The internal ID of the selected channel.': 'The internal ID of the selected channel.',
-  'Inherited from the model directory in this stage and sent to the selected channel.': 'Inherited from the model directory in this stage and sent to the selected channel.',
-  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.',
-  'New bindings remain disabled until protocol verification is available.': 'New bindings remain disabled until protocol verification is available.',
-  'Shows the current basic validation result for this channel binding.': 'Shows the current basic validation result for this channel binding.',
-  'Details the latest validation result without exposing credentials or upstream response bodies.': 'Details the latest validation result without exposing credentials or upstream response bodies.',
-})
-Object.assign(newKeys.zh, {
-  'Defines whether this capability creates images or videos.': '定义此能力生成图片还是视频。',
-  'Defines the action this capability performs.': '定义此能力执行的操作。',
-  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '标识上游请求协议，是此能力唯一标识的一部分。',
-  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '说明结果是立即返回、稍后返回，还是同步产出文件。',
-  'Enables this capability for later publication and routing.': '启用后，此能力可用于后续分组发布和路由。',
-  'JSON object that describes supported inputs.': '描述支持输入的 JSON 对象。',
-  'JSON object applied before group defaults.': '在分组默认参数前应用的 JSON 对象。',
-  'Selects the user group that can see this capability.': '选择可看到此能力的用户分组。',
-  'Controls whether this group publication is available to users.': '控制此分组发布是否对用户可用。',
-  'JSON object merged after capability defaults.': '在能力默认参数后合并的 JSON 对象。',
-  'Selects the existing enabled channel used for this group publication.': '选择供此分组发布使用的现有已启用渠道。',
-  'The internal ID of the selected channel.': '所选渠道的内部 ID。',
-  'Inherited from the model directory in this stage and sent to the selected channel.': '本阶段继承模型目录中的模型名，并发送给所选渠道。',
-  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '选择候选渠道时数值越大越优先，不改变渠道的全局优先级。',
-  'New bindings remain disabled until protocol verification is available.': '协议校验可用前，新建绑定保持禁用。',
-  'Shows the current basic validation result for this channel binding.': '显示此渠道绑定当前的基础校验结果。',
-  'Details the latest validation result without exposing credentials or upstream response bodies.': '展示最近一次校验详情，不暴露凭据或上游响应正文。',
-})
-Object.assign(newKeys['zh-TW'], {
-  'Defines whether this capability creates images or videos.': '定義此能力生成圖片或影片。',
-  'Defines the action this capability performs.': '定義此能力執行的操作。',
-  'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '標識上游請求協議，是此能力唯一識別的一部分。',
-  'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '說明結果是立即返回、稍後返回，或同步產出檔案。',
-  'Enables this capability for later publication and routing.': '啟用後，此能力可用於後續群組發布與路由。',
-  'JSON object that describes supported inputs.': '描述支援輸入的 JSON 物件。',
-  'JSON object applied before group defaults.': '在群組預設參數前套用的 JSON 物件。',
-  'Selects the user group that can see this capability.': '選擇可看到此能力的使用者群組。',
-  'Controls whether this group publication is available to users.': '控制此群組發布是否對使用者可用。',
-  'JSON object merged after capability defaults.': '在能力預設參數後合併的 JSON 物件。',
-  'Selects the existing enabled channel used for this group publication.': '選擇供此群組發布使用的現有已啟用渠道。',
-  'The internal ID of the selected channel.': '所選渠道的內部 ID。',
-  'Inherited from the model directory in this stage and sent to the selected channel.': '本階段繼承模型目錄中的模型名，並傳送給所選渠道。',
-  'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '選擇候選渠道時數值越大越優先，不改變渠道的全域優先級。',
-  'New bindings remain disabled until protocol verification is available.': '協議驗證可用前，新建綁定保持停用。',
-  'Shows the current basic validation result for this channel binding.': '顯示此渠道綁定目前的基礎驗證結果。',
-  'Details the latest validation result without exposing credentials or upstream response bodies.': '顯示最近一次驗證詳情，不暴露憑證或上游回應正文。',
-})
-Object.assign(newKeys.fr, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
-Object.assign(newKeys.ja, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
-Object.assign(newKeys.ru, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
-Object.assign(newKeys.vi, Object.fromEntries(Object.keys(newKeys.en).filter((key) => key.includes('capability') || key.includes('channel') || key.includes('validation') || key.startsWith('Defines') || key.startsWith('Describes') || key.startsWith('Enables') || key.startsWith('JSON object') || key.startsWith('Selects') || key.startsWith('Controls') || key.startsWith('The internal') || key.startsWith('Inherited') || key.startsWith('Higher') || key.startsWith('New bindings') || key.startsWith('Details')).map((key) => [key, key])))
-Object.assign(newKeys.fr, {
-  'Defines whether this capability creates images or videos.': 'Définit si cette capacité crée des images ou des vidéos.', 'Defines the action this capability performs.': 'Définit l’action réalisée par cette capacité.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Identifie le protocole de requête amont, qui fait partie de l’identité unique de cette capacité.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Indique si le résultat est renvoyé immédiatement, plus tard ou comme artefact synchrone.', 'Enables this capability for later publication and routing.': 'Active cette capacité pour la publication et le routage ultérieurs.', 'JSON object that describes supported inputs.': 'Objet JSON décrivant les entrées prises en charge.', 'JSON object applied before group defaults.': 'Objet JSON appliqué avant les paramètres par défaut du groupe.', 'Selects the user group that can see this capability.': 'Sélectionne le groupe utilisateur qui peut voir cette capacité.', 'Controls whether this group publication is available to users.': 'Contrôle si cette publication de groupe est disponible pour les utilisateurs.', 'JSON object merged after capability defaults.': 'Objet JSON fusionné après les paramètres par défaut de la capacité.', 'Selects the existing enabled channel used for this group publication.': 'Sélectionne le canal existant activé pour cette publication de groupe.', 'The internal ID of the selected channel.': 'Identifiant interne du canal sélectionné.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'Hérité du catalogue de modèles à cette étape et envoyé au canal sélectionné.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Les valeurs plus élevées sont préférées lors de la sélection. Cela ne modifie pas la priorité globale du canal.', 'New bindings remain disabled until protocol verification is available.': 'Les nouvelles liaisons restent désactivées jusqu’à ce que la vérification du protocole soit disponible.', 'Shows the current basic validation result for this channel binding.': 'Affiche le résultat de validation de base actuel pour cette liaison de canal.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Détaille la dernière validation sans exposer les identifiants ni les réponses amont.',
-})
-Object.assign(newKeys.ja, {
-  'Defines whether this capability creates images or videos.': 'この能力が画像または動画を生成するかを定義します。', 'Defines the action this capability performs.': 'この能力が実行する操作を定義します。', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': '上流リクエストのプロトコルを識別します。これは能力の一意性の一部です。', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': '結果を即時、後で、または同期アーティファクトとして返すかを示します。', 'Enables this capability for later publication and routing.': '後続の公開とルーティングでこの能力を有効にします。', 'JSON object that describes supported inputs.': 'サポートする入力を記述する JSON オブジェクトです。', 'JSON object applied before group defaults.': 'グループのデフォルト前に適用する JSON オブジェクトです。', 'Selects the user group that can see this capability.': 'この能力を表示できるユーザーグループを選択します。', 'Controls whether this group publication is available to users.': 'このグループ公開をユーザーに提供するかを制御します。', 'JSON object merged after capability defaults.': '能力のデフォルト後にマージする JSON オブジェクトです。', 'Selects the existing enabled channel used for this group publication.': 'このグループ公開で使用する既存の有効なチャネルを選択します。', 'The internal ID of the selected channel.': '選択したチャネルの内部 ID です。', 'Inherited from the model directory in this stage and sent to the selected channel.': 'この段階ではモデルカタログから継承し、選択したチャネルへ送信します。', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': '候補選択では高い値を優先します。チャネルのグローバル優先度は変更しません。', 'New bindings remain disabled until protocol verification is available.': 'プロトコル検証が利用可能になるまで、新しいバインディングは無効のままです。', 'Shows the current basic validation result for this channel binding.': 'このチャネルバインディングの現在の基本検証結果を表示します。', 'Details the latest validation result without exposing credentials or upstream response bodies.': '認証情報や上流応答本文を公開せず、最新の検証結果を詳述します。',
-})
-Object.assign(newKeys.ru, {
-  'Defines whether this capability creates images or videos.': 'Определяет, создает ли эта возможность изображения или видео.', 'Defines the action this capability performs.': 'Определяет действие, выполняемое этой возможностью.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Определяет протокол запроса к провайдеру; он является частью уникальности этой возможности.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Указывает, возвращается ли результат сразу, позже или как синхронный артефакт.', 'Enables this capability for later publication and routing.': 'Включает эту возможность для последующей публикации и маршрутизации.', 'JSON object that describes supported inputs.': 'JSON-объект, описывающий поддерживаемые входные данные.', 'JSON object applied before group defaults.': 'JSON-объект, применяемый до параметров группы по умолчанию.', 'Selects the user group that can see this capability.': 'Выбирает группу пользователей, которая может видеть эту возможность.', 'Controls whether this group publication is available to users.': 'Управляет доступностью этой групповой публикации для пользователей.', 'JSON object merged after capability defaults.': 'JSON-объект, объединяемый после параметров возможности по умолчанию.', 'Selects the existing enabled channel used for this group publication.': 'Выбирает существующий включенный канал для этой групповой публикации.', 'The internal ID of the selected channel.': 'Внутренний ID выбранного канала.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'На этом этапе наследуется из каталога моделей и отправляется в выбранный канал.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'При выборе кандидатов предпочтительны более высокие значения. Это не меняет глобальный приоритет канала.', 'New bindings remain disabled until protocol verification is available.': 'Новые привязки остаются отключенными, пока не станет доступна проверка протокола.', 'Shows the current basic validation result for this channel binding.': 'Показывает текущий результат базовой проверки для этой привязки канала.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Подробно показывает последнюю проверку без раскрытия учетных данных или тел ответов провайдера.',
-})
-Object.assign(newKeys.vi, {
-  'Defines whether this capability creates images or videos.': 'Xác định khả năng này tạo ảnh hay video.', 'Defines the action this capability performs.': 'Xác định thao tác mà khả năng này thực hiện.', 'Identifies the upstream request protocol. It is part of this capability’s unique identity.': 'Xác định giao thức yêu cầu thượng nguồn, là một phần định danh duy nhất của khả năng này.', 'Describes whether the result is returned immediately, later, or as a synchronous artifact.': 'Mô tả kết quả trả về ngay, sau đó hay dưới dạng sản phẩm đồng bộ.', 'Enables this capability for later publication and routing.': 'Bật khả năng này để phát hành và định tuyến sau đó.', 'JSON object that describes supported inputs.': 'Đối tượng JSON mô tả đầu vào được hỗ trợ.', 'JSON object applied before group defaults.': 'Đối tượng JSON được áp dụng trước mặc định của nhóm.', 'Selects the user group that can see this capability.': 'Chọn nhóm người dùng có thể xem khả năng này.', 'Controls whether this group publication is available to users.': 'Kiểm soát việc phát hành nhóm này có sẵn cho người dùng hay không.', 'JSON object merged after capability defaults.': 'Đối tượng JSON được hợp nhất sau mặc định của khả năng.', 'Selects the existing enabled channel used for this group publication.': 'Chọn kênh hiện có đã bật cho phát hành nhóm này.', 'The internal ID of the selected channel.': 'ID nội bộ của kênh đã chọn.', 'Inherited from the model directory in this stage and sent to the selected channel.': 'Ở giai đoạn này được kế thừa từ danh mục mô hình và gửi tới kênh đã chọn.', 'Higher values are preferred when selecting candidates. This does not alter the channel’s global priority.': 'Ưu tiên giá trị cao hơn khi chọn ứng viên. Điều này không đổi ưu tiên toàn cục của kênh.', 'New bindings remain disabled until protocol verification is available.': 'Liên kết mới vẫn bị tắt cho đến khi có xác thực giao thức.', 'Shows the current basic validation result for this channel binding.': 'Hiển thị kết quả xác thực cơ bản hiện tại cho liên kết kênh này.', 'Details the latest validation result without exposing credentials or upstream response bodies.': 'Nêu chi tiết kết quả xác thực mới nhất mà không lộ thông tin xác thực hoặc nội dung phản hồi thượng nguồn.',
-})
+const creativeStudioUi = {
+  en: {
+    'Size plan': 'Size plan',
+    'Download resolution': 'Download resolution',
+    '1:1 Square': '1:1 Square',
+    Landscape: 'Landscape',
+    Portrait: 'Portrait',
+    'Choose the image composition and orientation.':
+      'Choose the image composition and orientation.',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      'Higher download resolutions are upscaled locally and do not affect generation billing.',
+    Low: 'Low',
+    Medium: 'Medium',
+    High: 'High',
+    Opaque: 'Opaque',
+    Transparent: 'Transparent',
+    'Choose the composition ratio for the SVG illustration.':
+      'Choose the composition ratio for the SVG illustration.',
+    '16:9 Landscape': '16:9 Landscape',
+    '9:16 Portrait': '9:16 Portrait',
+    '3:2 Landscape': '3:2 Landscape',
+    '2:3 Portrait': '2:3 Portrait',
+    'Custom ratio': 'Custom ratio',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.',
+    'Unable to download image': 'Unable to download image',
+    'Aspect ratio': 'Aspect ratio',
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed',
+    'Failed to create task': 'Failed to create task',
+    'Generation results': 'Generation results',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      'Minimalist product photography: a floating perfume bottle, soft light, beige background',
+    'Open in new window': 'Open in new window',
+    'Unable to upload reference image': 'Unable to upload reference image',
+    'Unable to add reference image': 'Unable to add reference image',
+    'Reference image added': 'Reference image added',
+    'Adding reference image': 'Adding reference image',
+    'Added. Closing in {{count}} seconds':
+      'Added. Closing in {{count}} seconds',
+    'Previous image': 'Previous image',
+    'Next image': 'Next image',
+    'No image-to-image model available': 'No image-to-image model available',
+    'Current image-to-image reference image limit has been reached':
+      'Current image-to-image reference image limit has been reached',
+    'Upload reference image': 'Upload reference image',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      'Watercolor Jiangnan town at dawn, thin mist, leave blank space',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      'Are you sure you want to delete this task? This action cannot be undone.',
+    'Delete task?': 'Delete task?',
+    'Delete selected': 'Delete selected',
+    'Download selected': 'Download selected',
+    'Failed to delete task': 'Failed to delete task',
+    'Failed to retry task': 'Failed to retry task',
+    'Invert selection': 'Invert selection',
+    Background: 'Background',
+    Moderation: 'Moderation',
+    Quality: 'Quality',
+    Redo: 'Redo',
+    'Retry started': 'Retry started',
+    'Rotate left': 'Rotate left',
+    'Rotate right': 'Rotate right',
+    'Zoom in': 'Zoom in',
+    'Zoom out': 'Zoom out',
+    Size: 'Size',
+    'Input images': 'Input images',
+    'Transparent background': 'Transparent background',
+  },
+  zh: {
+    'Size plan': '尺寸方案',
+    'Download resolution': '下载分辨率',
+    '1:1 Square': '1:1 方图',
+    Landscape: '横图',
+    Portrait: '竖图',
+    'Choose the image composition and orientation.': '选择图片构图比例和方向。',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      '更高下载分辨率会在本地高清放大，不影响生成计费。',
+    Low: '低',
+    Medium: '中',
+    High: '高',
+    Opaque: '不透明',
+    Transparent: '透明',
+    'Choose the composition ratio for the SVG illustration.':
+      '选择 SVG 插画的构图比例。',
+    '16:9 Landscape': '16:9 横图',
+    '9:16 Portrait': '9:16 竖图',
+    '3:2 Landscape': '3:2 横图',
+    '2:3 Portrait': '2:3 竖图',
+    'Custom ratio': '自定义比例',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG 保持矢量格式；2K 和 4K 下载在本地渲染，不额外产生生成费用。',
+    'Unable to download image': '无法下载图片',
+    'Aspect ratio': '宽高比',
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      '一只戴墨镜的柴犬，扁平插画风，明快配色',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      '赛博朋克城市夜景，霓虹倒影，电影级光影，8K',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      '例如：霓虹灯下敲代码的赛博朋克黑客猫，电影感光影，超精细',
+    'Failed to create task': '创建任务失败',
+    'Generation results': '生成结果',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      '极简产品摄影：悬浮的香水瓶，柔光，米色背景',
+    'Open in new window': '新窗口打开',
+    'Unable to upload reference image': '无法上传参考图片',
+    'Unable to add reference image': '无法添加参考图片',
+    'Reference image added': '已添加参考图片',
+    'Adding reference image': '正在添加参考图片',
+    'Added. Closing in {{count}} seconds': '已添加，将在 {{count}} 秒后关闭',
+    'Previous image': '上一张图片',
+    'Next image': '下一张图片',
+    'No image-to-image model available': '暂无可用的图生图模型',
+    'Current image-to-image reference image limit has been reached':
+      '当前图生图参考图数量已满，无法加入图生图',
+    'Upload reference image': '上传参考图片',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      '水彩风格的江南古镇清晨，薄雾，留白',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      '确定要删除此任务吗？此操作无法撤销。',
+    'Delete task?': '删除任务？',
+    'Delete selected': '删除所选',
+    'Download selected': '下载所选',
+    'Failed to delete task': '删除任务失败',
+    'Failed to retry task': '重做任务失败',
+    'Invert selection': '反选',
+    Background: '背景',
+    Moderation: '审核',
+    Quality: '质量',
+    Redo: '重做',
+    'Retry started': '已开始重做',
+    'Rotate left': '向左旋转',
+    'Rotate right': '向右旋转',
+    'Zoom in': '放大',
+    'Zoom out': '缩小',
+    Size: '尺寸',
+    'Input images': '输入图片',
+    'Transparent background': '透明背景',
+  },
+  'zh-TW': {
+    'Size plan': '尺寸方案',
+    'Download resolution': '下載解析度',
+    '1:1 Square': '1:1 方圖',
+    Landscape: '橫圖',
+    Portrait: '直圖',
+    'Choose the image composition and orientation.': '選擇圖片構圖比例和方向。',
+    'Higher download resolutions are upscaled locally and do not affect generation billing.':
+      '更高下載解析度會在本機高清放大，不影響生成計費。',
+    Low: '低',
+    Medium: '中',
+    High: '高',
+    Opaque: '不透明',
+    Transparent: '透明',
+    'Choose the composition ratio for the SVG illustration.':
+      '選擇 SVG 插畫的構圖比例。',
+    '16:9 Landscape': '16:9 橫圖',
+    '9:16 Portrait': '9:16 直圖',
+    '3:2 Landscape': '3:2 橫圖',
+    '2:3 Portrait': '2:3 直圖',
+    'Custom ratio': '自訂比例',
+    'SVG stays vector-based; 2K and 4K downloads are rendered locally without extra generation charges.':
+      'SVG 保持向量格式；2K 和 4K 下載在本機渲染，不額外產生生成費用。',
+    'Unable to download image': '無法下載圖片',
+    'Unable to add reference image': '無法加入參考圖片',
+    'Reference image added': '已加入參考圖片',
+    'Adding reference image': '正在加入參考圖片',
+    'Added. Closing in {{count}} seconds': '已加入，將在 {{count}} 秒後關閉',
+    'Previous image': '上一張圖片',
+    'Next image': '下一張圖片',
+    'No image-to-image model available': '暫無可用的圖生圖模型',
+    'Current image-to-image reference image limit has been reached':
+      '目前圖生圖參考圖數量已滿，無法加入圖生圖',
+    'Aspect ratio': '寬高比',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      '確定要刪除此工作嗎？此操作無法復原。',
+    'Delete task?': '刪除工作？',
+    'Delete selected': '刪除所選',
+    'Download selected': '下載所選',
+    'Failed to delete task': '刪除工作失敗',
+    'Failed to retry task': '重新執行工作失敗',
+    'Invert selection': '反選',
+    Background: '背景',
+    Moderation: '審核',
+    Quality: '品質',
+    Redo: '重新執行',
+    'Retry started': '已開始重新執行',
+    'Rotate left': '向左旋轉',
+    'Rotate right': '向右旋轉',
+    'Zoom in': '放大',
+    'Zoom out': '縮小',
+    Size: '尺寸',
+    'Input images': '輸入圖片',
+    'Transparent background': '透明背景',
+  },
+  fr: {
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      'Un Shiba Inu avec des lunettes de soleil, illustration plate, couleurs vives',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      'Paysage urbain cyberpunk nocturne, reflets néon, éclairage cinématographique, 8K',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      'Exemple : un chat hacker cyberpunk codant sous des néons, éclairage cinématographique, très détaillé',
+    'Failed to create task': 'Échec de la création de la tâche',
+    'Generation results': 'Résultats de génération',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      'Photo produit minimaliste : flacon de parfum flottant, lumière douce, fond beige',
+    'Open in new window': 'Ouvrir dans une nouvelle fenêtre',
+    'Unable to upload reference image':
+      'Impossible d’importer l’image de référence',
+    'Unable to add reference image':
+      'Impossible d’ajouter l’image de référence',
+    'Reference image added': 'Image de référence ajoutée',
+    'Adding reference image': 'Ajout de l’image de référence',
+    'Added. Closing in {{count}} seconds':
+      'Ajoutée. Fermeture dans {{count}} secondes',
+    'Previous image': 'Image précédente',
+    'Next image': 'Image suivante',
+    'No image-to-image model available':
+      'Aucun modèle image vers image n’est disponible',
+    'Current image-to-image reference image limit has been reached':
+      'La limite d’images de référence est atteinte',
+    'Upload reference image': 'Importer une image de référence',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      'Village de Jiangnan à l’aube, aquarelle, brume légère, espace vide',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      'Voulez-vous vraiment supprimer cette tâche ? Cette action est irréversible.',
+    'Delete task?': 'Supprimer la tâche ?',
+    'Delete selected': 'Supprimer la sélection',
+    'Download selected': 'Télécharger la sélection',
+    'Failed to delete task': 'Échec de la suppression de la tâche',
+    'Failed to retry task': 'Échec de la relance de la tâche',
+    'Invert selection': 'Inverser la sélection',
+    Background: 'Arrière-plan',
+    Moderation: 'Modération',
+    Quality: 'Qualité',
+    Redo: 'Relancer',
+    'Retry started': 'Relance commencée',
+    'Rotate left': 'Pivoter à gauche',
+    'Rotate right': 'Pivoter à droite',
+    'Zoom in': 'Agrandir',
+    'Zoom out': 'Réduire',
+    Size: 'Taille',
+    'Input images': 'Images d’entrée',
+    'Transparent background': 'Arrière-plan transparent',
+  },
+  ja: {
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      'サングラスをかけた柴犬、フラットイラスト、鮮やかな配色',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      'サイバーパンク都市の夜景、ネオンの反射、映画的な照明、8K',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      '例：ネオンの下でコーディングするサイバーパンクのハッカー猫、映画的な照明、超高精細',
+    'Failed to create task': 'タスクを作成できませんでした',
+    'Generation results': '生成結果',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      'ミニマルな商品写真：浮遊する香水瓶、柔らかな光、ベージュの背景',
+    'Open in new window': '新しいウィンドウで開く',
+    'Unable to upload reference image': '参照画像をアップロードできません',
+    'Unable to add reference image': '参照画像を追加できません',
+    'Reference image added': '参照画像を追加しました',
+    'Adding reference image': '参照画像を追加中',
+    'Added. Closing in {{count}} seconds': '{{count}} 秒後に閉じます',
+    'Previous image': '前の画像',
+    'Next image': '次の画像',
+    'No image-to-image model available':
+      '利用可能な画像から画像モデルがありません',
+    'Current image-to-image reference image limit has been reached':
+      '参照画像の上限に達しました',
+    'Upload reference image': '参照画像をアップロード',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      '水彩画風の江南古鎮の朝、薄霧、余白',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      'このタスクを削除しますか？この操作は元に戻せません。',
+    'Delete task?': 'タスクを削除しますか？',
+    'Delete selected': '選択項目を削除',
+    'Download selected': '選択項目をダウンロード',
+    'Failed to delete task': 'タスクを削除できませんでした',
+    'Failed to retry task': 'タスクを再実行できませんでした',
+    'Invert selection': '選択を反転',
+    Background: '背景',
+    Moderation: 'モデレーション',
+    Quality: '品質',
+    Redo: '再実行',
+    'Retry started': '再実行を開始しました',
+    'Rotate left': '左に回転',
+    'Rotate right': '右に回転',
+    'Zoom in': '拡大',
+    'Zoom out': '縮小',
+    Size: 'サイズ',
+    'Input images': '入力画像',
+    'Transparent background': '透明背景',
+  },
+  ru: {
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      'Сиба-ину в солнечных очках, плоская иллюстрация, яркие цвета',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      'Ночной киберпанк-город, неоновые отражения, кинематографичный свет, 8K',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      'Пример: киберпанк-кот-хакер пишет код под неоном, кинематографичный свет, высокая детализация',
+    'Failed to create task': 'Не удалось создать задачу',
+    'Generation results': 'Результаты генерации',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      'Минималистичная предметная съёмка: парящий флакон духов, мягкий свет, бежевый фон',
+    'Open in new window': 'Открыть в новом окне',
+    'Unable to upload reference image':
+      'Не удалось загрузить эталонное изображение',
+    'Unable to add reference image':
+      'Не удалось добавить эталонное изображение',
+    'Reference image added': 'Эталонное изображение добавлено',
+    'Adding reference image': 'Добавление эталонного изображения',
+    'Added. Closing in {{count}} seconds':
+      'Добавлено. Закрытие через {{count}} с',
+    'Previous image': 'Предыдущее изображение',
+    'Next image': 'Следующее изображение',
+    'No image-to-image model available':
+      'Нет доступной модели преобразования изображения',
+    'Current image-to-image reference image limit has been reached':
+      'Достигнут лимит эталонных изображений',
+    'Upload reference image': 'Загрузить эталонное изображение',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      'Акварельный городок Цзяннань на рассвете, лёгкий туман, свободное пространство',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      'Удалить эту задачу? Это действие нельзя отменить.',
+    'Delete task?': 'Удалить задачу?',
+    'Delete selected': 'Удалить выбранное',
+    'Download selected': 'Скачать выбранное',
+    'Failed to delete task': 'Не удалось удалить задачу',
+    'Failed to retry task': 'Не удалось повторить задачу',
+    'Invert selection': 'Инвертировать выбор',
+    Background: 'Фон',
+    Moderation: 'Модерация',
+    Quality: 'Качество',
+    Redo: 'Повторить',
+    'Retry started': 'Повторный запуск начат',
+    'Rotate left': 'Повернуть влево',
+    'Rotate right': 'Повернуть вправо',
+    'Zoom in': 'Увеличить',
+    'Zoom out': 'Уменьшить',
+    Size: 'Размер',
+    'Input images': 'Входные изображения',
+    'Transparent background': 'Прозрачный фон',
+  },
+  vi: {
+    'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors':
+      'Chó Shiba đeo kính râm, minh họa phẳng, màu sắc rực rỡ',
+    'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k':
+      'Cảnh đêm thành phố cyberpunk, phản chiếu neon, ánh sáng điện ảnh, 8K',
+    'Example: a cyberpunk hacker cat coding beneath neon lights, cinematic lighting, highly detailed':
+      'Ví dụ: mèo hacker cyberpunk lập trình dưới đèn neon, ánh sáng điện ảnh, cực kỳ chi tiết',
+    'Failed to create task': 'Không thể tạo tác vụ',
+    'Generation results': 'Kết quả tạo ảnh',
+    'Minimalist product photography: a floating perfume bottle, soft light, beige background':
+      'Ảnh sản phẩm tối giản: chai nước hoa lơ lửng, ánh sáng mềm, nền be',
+    'Open in new window': 'Mở trong cửa sổ mới',
+    'Unable to upload reference image': 'Không thể tải ảnh tham chiếu lên',
+    'Unable to add reference image': 'Không thể thêm ảnh tham chiếu',
+    'Reference image added': 'Đã thêm ảnh tham chiếu',
+    'Adding reference image': 'Đang thêm ảnh tham chiếu',
+    'Added. Closing in {{count}} seconds': 'Đã thêm. Đóng sau {{count}} giây',
+    'Previous image': 'Ảnh trước',
+    'Next image': 'Ảnh tiếp theo',
+    'No image-to-image model available':
+      'Không có mô hình ảnh sang ảnh khả dụng',
+    'Current image-to-image reference image limit has been reached':
+      'Đã đạt giới hạn ảnh tham chiếu',
+    'Upload reference image': 'Tải ảnh tham chiếu lên',
+    'Watercolor Jiangnan town at dawn, thin mist, leave blank space':
+      'Thị trấn Giang Nam lúc bình minh phong cách màu nước, sương mỏng, khoảng trống',
+    'Are you sure you want to delete this task? This action cannot be undone.':
+      'Bạn có chắc muốn xóa tác vụ này không? Hành động này không thể hoàn tác.',
+    'Delete task?': 'Xóa tác vụ?',
+    'Delete selected': 'Xóa mục đã chọn',
+    'Download selected': 'Tải mục đã chọn',
+    'Failed to delete task': 'Không thể xóa tác vụ',
+    'Failed to retry task': 'Không thể chạy lại tác vụ',
+    'Invert selection': 'Đảo lựa chọn',
+    Background: 'Nền',
+    Moderation: 'Kiểm duyệt',
+    Quality: 'Chất lượng',
+    Redo: 'Làm lại',
+    'Retry started': 'Đã bắt đầu chạy lại',
+    'Rotate left': 'Xoay trái',
+    'Rotate right': 'Xoay phải',
+    'Zoom in': 'Phóng to',
+    'Zoom out': 'Thu nhỏ',
+    Size: 'Kích thước',
+    'Input images': 'Ảnh đầu vào',
+    'Transparent background': 'Nền trong suốt',
+  },
+}
+
+for (const [locale, translations] of Object.entries(creativeStudioUi)) {
+  Object.assign(newKeys[locale], translations)
+}
+
+for (const [locale, translations] of Object.entries(validationMessages)) {
+  Object.assign(newKeys[locale], translations)
+}
 
 async function main() {
   for (const [locale, translations] of Object.entries(newKeys)) {
@@ -118,7 +935,9 @@ async function main() {
     const content = JSON.parse(await fs.readFile(filePath, 'utf8'))
     Object.assign(content.translation, translations)
     content.translation = Object.fromEntries(
-      Object.entries(content.translation).sort(([left], [right]) => left.localeCompare(right))
+      Object.entries(content.translation).sort(([left], [right]) =>
+        left.localeCompare(right)
+      )
     )
     await fs.writeFile(filePath, `${JSON.stringify(content, null, 2)}\n`)
   }

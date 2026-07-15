@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
@@ -14,12 +16,23 @@ import (
 )
 
 type CreativeStudioSettings struct {
-	Version              int    `json:"version"`
-	DefaultFileChannelID uint64 `json:"default_file_channel_id"`
+	Version                      int      `json:"version"`
+	DefaultFileChannelID         uint64   `json:"default_file_channel_id"`
+	AllowedImageMIMETypes        []string `json:"allowed_image_mime_types"`
+	MaxRasterBytes               int64    `json:"max_raster_bytes"`
+	MaxSVGBytes                  int64    `json:"max_svg_bytes"`
+	ReferenceUploadQueueSize     int      `json:"reference_upload_queue_size"`
+	ReferenceUploadMaxConcurrent int      `json:"reference_upload_max_concurrent"`
+}
+
+var defaultCreativeImageMIMETypes = []string{"image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"}
+
+func defaultCreativeStudioSettings() CreativeStudioSettings {
+	return CreativeStudioSettings{Version: 3, AllowedImageMIMETypes: append([]string(nil), defaultCreativeImageMIMETypes...), MaxRasterBytes: 32 << 20, MaxSVGBytes: 1 << 20, ReferenceUploadQueueSize: 16, ReferenceUploadMaxConcurrent: 1}
 }
 
 func GetCreativeStudioSettings() (CreativeStudioSettings, error) {
-	settings := CreativeStudioSettings{Version: 1}
+	settings := defaultCreativeStudioSettings()
 	raw, err := model.GetOptionValue(model.CreativeStudioSettingsOption)
 	if errors.Is(err, gorm.ErrRecordNotFound) || strings.TrimSpace(raw) == "" {
 		return settings, nil
@@ -30,14 +43,46 @@ func GetCreativeStudioSettings() (CreativeStudioSettings, error) {
 	if err := common.UnmarshalJsonStr(raw, &settings); err != nil {
 		return settings, err
 	}
-	if settings.Version == 0 {
-		settings.Version = 1
+	settings.Version = 3
+	if len(settings.AllowedImageMIMETypes) == 0 {
+		settings.AllowedImageMIMETypes = append([]string(nil), defaultCreativeImageMIMETypes...)
+	}
+	if settings.MaxRasterBytes <= 0 {
+		settings.MaxRasterBytes = 32 << 20
+	}
+	if settings.MaxSVGBytes <= 0 {
+		settings.MaxSVGBytes = 1 << 20
+	}
+	if settings.ReferenceUploadQueueSize < 0 {
+		settings.ReferenceUploadQueueSize = 16
+	}
+	if settings.ReferenceUploadMaxConcurrent < 1 {
+		settings.ReferenceUploadMaxConcurrent = 1
 	}
 	return settings, nil
 }
 
 func UpdateCreativeStudioSettings(input dto.CreativeStudioSettingsRequest) (CreativeStudioSettings, error) {
-	settings := CreativeStudioSettings{Version: 1, DefaultFileChannelID: input.DefaultFileChannelID}
+	settings := defaultCreativeStudioSettings()
+	settings.DefaultFileChannelID = input.DefaultFileChannelID
+	if len(input.AllowedImageMIMETypes) > 0 {
+		settings.AllowedImageMIMETypes = input.AllowedImageMIMETypes
+	}
+	if input.MaxRasterBytes > 0 {
+		settings.MaxRasterBytes = input.MaxRasterBytes
+	}
+	if input.MaxSVGBytes > 0 {
+		settings.MaxSVGBytes = input.MaxSVGBytes
+	}
+	if input.ReferenceUploadQueueSize > 0 {
+		settings.ReferenceUploadQueueSize = input.ReferenceUploadQueueSize
+	}
+	if input.ReferenceUploadMaxConcurrent > 0 {
+		settings.ReferenceUploadMaxConcurrent = input.ReferenceUploadMaxConcurrent
+	}
+	if settings.MaxRasterBytes > 32<<20 || settings.MaxSVGBytes > 1<<20 {
+		return settings, fmt.Errorf("creative asset size limit exceeds the safe maximum")
+	}
 	if input.DefaultFileChannelID > 0 {
 		var channel model.FileUploadChannel
 		if err := model.DB.Where("id = ?", input.DefaultFileChannelID).First(&channel).Error; err != nil {
@@ -79,6 +124,7 @@ func UpdateCreativeModel(id uint64, input dto.CreativeModelRequest, userID int64
 	if err := model.DB.Where("id = ?", id).First(&creativeModel).Error; err != nil {
 		return nil, err
 	}
+	oldModelName := creativeModel.ModelName
 	if err := applyCreativeModel(&creativeModel, input); err != nil {
 		return nil, err
 	}
@@ -86,7 +132,26 @@ func UpdateCreativeModel(id uint64, input dto.CreativeModelRequest, userID int64
 		return nil, err
 	}
 	creativeModel.UpdatedBy = userID
-	if err := model.DB.Save(&creativeModel).Error; err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&creativeModel).Error; err != nil {
+			return err
+		}
+		if oldModelName == creativeModel.ModelName {
+			return nil
+		}
+		var capabilityIDs []uint64
+		if err := tx.Model(&model.CreativeModelCapability{}).Where("model_id = ?", creativeModel.ID).Pluck("id", &capabilityIDs).Error; err != nil {
+			return err
+		}
+		var publicationIDs []uint64
+		if err := tx.Model(&model.CreativeModelPublication{}).Where("capability_id IN ?", capabilityIDs).Pluck("id", &publicationIDs).Error; err != nil {
+			return err
+		}
+		if len(publicationIDs) == 0 {
+			return nil
+		}
+		return tx.Model(&model.CreativeChannelBinding{}).Where("publication_id IN ?", publicationIDs).Updates(map[string]any{"request_model": creativeModel.ModelName, "enabled": false, "validation_status": "unverified", "validation_message": "model name changed; validation required", "validation_checked_at": nil, "updated_by": userID}).Error
+	}); err != nil {
 		return nil, translateCreativeConflict(err, creativeModelDuplicateError(&creativeModel))
 	}
 	return &creativeModel, nil
@@ -249,6 +314,91 @@ func DeleteCreativeBinding(id uint64) error {
 	return model.DB.Delete(&model.CreativeChannelBinding{}, id).Error
 }
 
+func RevalidateCreativeBinding(id uint64, userID int64) (*model.CreativeChannelBinding, error) {
+	var binding model.CreativeChannelBinding
+	if err := model.DB.Where("id = ?", id).First(&binding).Error; err != nil {
+		return nil, err
+	}
+	startedAt := time.Now()
+	result := model.DB.Model(&model.CreativeChannelBinding{}).Where("id = ? AND validation_status <> ?", id, "validating").Updates(map[string]any{"enabled": false, "validation_status": "validating", "validation_message": "validation in progress", "validation_checked_at": nil, "updated_by": userID, "updated_at": startedAt})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("creative binding validation is already running")
+	}
+	valid, message := validateCreativeBinding(&binding)
+	completedAt := time.Now()
+	updates := map[string]any{"enabled": valid, "validation_status": "invalid", "validation_message": message, "validation_checked_at": completedAt, "updated_by": userID}
+	if valid {
+		updates["validation_status"] = "valid"
+		updates["validation_message"] = "validated"
+	}
+	result = model.DB.Model(&model.CreativeChannelBinding{}).Where("id = ? AND validation_status = ?", id, "validating").Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, fmt.Errorf("creative binding validation state changed unexpectedly")
+	}
+	if err := model.DB.First(&binding, id).Error; err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+func validateCreativeBinding(binding *model.CreativeChannelBinding) (bool, string) {
+	var publication model.CreativeModelPublication
+	if err := model.DB.Where("id = ?", binding.PublicationID).First(&publication).Error; err != nil || !publication.Enabled {
+		return false, "publication is unavailable"
+	}
+	if _, exists := setting.GetUserUsableGroupsCopy()[publication.GroupName]; !exists {
+		return false, "publication group is unavailable"
+	}
+	var capability model.CreativeModelCapability
+	if err := model.DB.Where("id = ?", publication.CapabilityID).First(&capability).Error; err != nil || !capability.Enabled {
+		return false, "capability is unavailable"
+	}
+	if !creativeProtocolMatches(capability) {
+		return false, "protocol does not match the image capability contract"
+	}
+	var creativeModel model.CreativeModel
+	if err := model.DB.Where("id = ?", capability.ModelID).First(&creativeModel).Error; err != nil || creativeModel.Status != "enabled" {
+		return false, "model is unavailable"
+	}
+	if binding.RequestModel != creativeModel.ModelName {
+		return false, "binding model snapshot is stale"
+	}
+	settings, err := GetCreativeStudioSettings()
+	if err != nil || !creativeStorageAvailable(settings) {
+		return false, "creative storage is unavailable"
+	}
+	var channel model.Channel
+	if err := model.DB.Where("id = ? AND status = ?", binding.ChannelID, common.ChannelStatusEnabled).First(&channel).Error; err != nil {
+		return false, "channel is unavailable"
+	}
+	var count int64
+	if err := model.DB.Model(&model.Ability{}).Where(&model.Ability{ChannelId: binding.ChannelID, Enabled: true, Model: creativeModel.ModelName, Group: publication.GroupName}).Count(&count).Error; err != nil || count == 0 {
+		return false, "channel has no enabled matching ability"
+	}
+	if capability.Protocol == "midjourney_image" && channel.Type != constant.ChannelTypeMidjourney && channel.Type != constant.ChannelTypeMidjourneyPlus {
+		return false, "Midjourney protocol requires a Midjourney channel"
+	}
+	if capability.Protocol == "advanced_custom_image" {
+		if channel.Type != constant.ChannelTypeAdvancedCustom {
+			return false, "advanced custom image protocol requires an Advanced Custom channel"
+		}
+		requestPath := "/v1/images/generations"
+		if capability.Operation == "edit" {
+			requestPath = "/v1/images/edits"
+		}
+		if _, matched := channel.GetOtherSettings().AdvancedCustom.MatchPath(requestPath); !matched {
+			return false, "advanced custom channel has no matching image route"
+		}
+	}
+	return true, ""
+}
+
 func CreativeStudioBootstrap() (map[string]any, error) {
 	models, err := ListCreativeModels()
 	if err != nil {
@@ -346,6 +496,9 @@ func applyCreativeCapability(target *model.CreativeModelCapability, input dto.Cr
 	if target.ExecutionMode != "sync" && target.ExecutionMode != "async" && target.ExecutionMode != "sync_artifact" {
 		return fmt.Errorf("invalid execution_mode")
 	}
+	if target.Category == "image" && !creativeProtocolMatches(*target) {
+		return fmt.Errorf("protocol does not match the image capability contract")
+	}
 	inputSchema, err := normalizeCreativeJSONObject(input.InputSchema)
 	if err != nil {
 		return fmt.Errorf("input_schema: %w", err)
@@ -376,7 +529,7 @@ func applyCreativeBinding(target *model.CreativeChannelBinding, input dto.Creati
 		return fmt.Errorf("stage one bindings cannot be enabled until verified")
 	}
 	target.ChannelID, target.RequestModel, target.Priority, target.Enabled = input.ChannelID, strings.TrimSpace(input.RequestModel), input.Priority, false
-	target.ValidationStatus, target.ValidationMessage = "pending", "awaiting protocol validation"
+	target.ValidationStatus, target.ValidationMessage, target.ValidationCheckedAt = "unverified", "not validated", nil
 	var publication model.CreativeModelPublication
 	if err := model.DB.Where("id = ?", target.PublicationID).First(&publication).Error; err != nil {
 		return err
@@ -391,23 +544,6 @@ func applyCreativeBinding(target *model.CreativeChannelBinding, input dto.Creati
 	}
 	if target.RequestModel == "" {
 		target.RequestModel = creativeModel.ModelName
-	}
-	var channel model.Channel
-	if err := model.DB.Where("id = ?", input.ChannelID).First(&channel).Error; err != nil || channel.Status != common.ChannelStatusEnabled {
-		target.ValidationStatus, target.ValidationMessage = "invalid", "channel does not exist or is disabled"
-		return nil
-	}
-	var abilities []model.Ability
-	err := model.DB.Where("channel_id = ? AND enabled = ? AND LOWER(TRIM(model)) = ?", input.ChannelID, true, creativeModel.ModelKey).Find(&abilities).Error
-	matched := false
-	for _, ability := range abilities {
-		if ability.Group == publication.GroupName {
-			matched = true
-			break
-		}
-	}
-	if err != nil || !matched {
-		target.ValidationStatus, target.ValidationMessage = "invalid", "channel has no enabled matching ability"
 	}
 	return nil
 }

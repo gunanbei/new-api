@@ -62,18 +62,19 @@ type CreativeModelPublication struct {
 func (CreativeModelPublication) TableName() string { return "creative_model_publication" }
 
 type CreativeChannelBinding struct {
-	ID                uint64    `json:"id" gorm:"primaryKey"`
-	PublicationID     uint64    `json:"publication_id" gorm:"index;uniqueIndex:idx_creative_binding"`
-	ChannelID         int       `json:"channel_id" gorm:"index;uniqueIndex:idx_creative_binding"`
-	RequestModel      string    `json:"request_model" gorm:"type:varchar(255);not null"`
-	Priority          int       `json:"priority" gorm:"not null"`
-	Enabled           bool      `json:"enabled" gorm:"index;not null"`
-	ValidationStatus  string    `json:"validation_status" gorm:"type:varchar(16);index;not null"`
-	ValidationMessage string    `json:"validation_message" gorm:"type:text;not null"`
-	CreatedBy         int64     `json:"created_by" gorm:"not null"`
-	UpdatedBy         int64     `json:"updated_by" gorm:"not null"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                  uint64     `json:"id" gorm:"primaryKey"`
+	PublicationID       uint64     `json:"publication_id" gorm:"index;uniqueIndex:idx_creative_binding"`
+	ChannelID           int        `json:"channel_id" gorm:"index;uniqueIndex:idx_creative_binding"`
+	RequestModel        string     `json:"request_model" gorm:"type:varchar(255);not null"`
+	Priority            int        `json:"priority" gorm:"not null"`
+	Enabled             bool       `json:"enabled" gorm:"index;not null"`
+	ValidationStatus    string     `json:"validation_status" gorm:"type:varchar(16);index;not null"`
+	ValidationMessage   string     `json:"validation_message" gorm:"type:text;not null"`
+	ValidationCheckedAt *time.Time `json:"validation_checked_at" gorm:"index"`
+	CreatedBy           int64      `json:"created_by" gorm:"not null"`
+	UpdatedBy           int64      `json:"updated_by" gorm:"not null"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 func (CreativeChannelBinding) TableName() string { return "creative_channel_binding" }

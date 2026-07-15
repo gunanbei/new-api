@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
@@ -39,6 +40,9 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 
 	tasks := model.GetAllUnFinishTasks()
 	if len(tasks) == 0 {
+		if err := storage.ObserveCreativeMidjourneyTasks(ctx, 100); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("observe creative Midjourney tasks: %v", err))
+		}
 		return summary
 	}
 	summary.UnfinishedTasks = len(tasks)
@@ -234,6 +238,9 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 	}
 	if report != nil && (ctx == nil || ctx.Err() == nil) {
 		report(totalChannels, totalChannels)
+	}
+	if err := storage.ObserveCreativeMidjourneyTasks(ctx, 100); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("observe creative Midjourney tasks: %v", err))
 	}
 	return summary
 }

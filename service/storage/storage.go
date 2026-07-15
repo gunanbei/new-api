@@ -261,7 +261,7 @@ func Prepare(ctx context.Context, userID int64, input PrepareInput) (*PrepareRes
 		return nil, errors.New("Browser direct upload is not supported for this channel")
 	}
 
-	objectKey := buildObjectKey(channel, input.FileName, input.FileSuffix)
+	objectKey := buildObjectKey(channel, userID, input.FileName, input.FileSuffix)
 	t := ticket{
 		ID: uuid.NewString(), UserID: userID, FileChannelID: channel.Id, ChannelType: channel.Type,
 		FileName: input.FileName, FileSuffix: input.FileSuffix, MimeType: input.MimeType,
@@ -626,7 +626,7 @@ func attachExistingFile(userID int64, channel *model.FileUploadChannel, file *mo
 	return &items[0], nil
 }
 
-func buildObjectKey(channel *model.FileUploadChannel, fileName, suffix string) string {
+func buildObjectKey(channel *model.FileUploadChannel, userID int64, fileName, suffix string) string {
 	config, _ := service.ParseFileUploadChannelConfig(channel.ConfigProflle)
 	prefix := strings.Trim(strings.TrimSpace(stringValue(config["key_prefix"])), "/")
 	if prefix == "" {
@@ -639,9 +639,9 @@ func buildObjectKey(channel *model.FileUploadChannel, fileName, suffix string) s
 		return r
 	}, fileName)
 	if strings.EqualFold(path.Ext(cleanName), "."+suffix) {
-		return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01")+"/"+uuid.NewString()+"_"+cleanName, "/")
+		return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01/02")+"/"+strconv.FormatInt(userID, 10)+"/"+uuid.NewString()+"_"+cleanName, "/")
 	}
-	return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01")+"/"+uuid.NewString()+"_"+cleanName+"."+suffix, "/")
+	return strings.Trim(prefix+"/"+time.Now().UTC().Format("2006/01/02")+"/"+strconv.FormatInt(userID, 10)+"/"+uuid.NewString()+"_"+cleanName+"."+suffix, "/")
 }
 
 func makeS3Plan(ctx context.Context, channel *model.FileUploadChannel, t *ticket) (*UploadPlan, error) {
@@ -839,7 +839,7 @@ func deletePhysical(ctx context.Context, file *model.File) error {
 		if baseURL == "" || token == "" {
 			return errors.New("ImgBed channel configuration is incomplete")
 		}
-		requestURL := baseURL + "/api/manage/delete/" + strings.ReplaceAll(url.PathEscape(strings.Trim(file.ObjectKey, "/")), "%2F", "/")
+		requestURL := baseURL + "/api/manage/delete/" + strings.ReplaceAll(url.PathEscape(imageBedObjectKey(config, file.ObjectKey)), "%2F", "/")
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return err
@@ -961,6 +961,15 @@ func publicURL(channel *model.FileUploadChannel, objectKey string) string {
 		return ""
 	}
 	return value
+}
+
+func imageBedObjectKey(config map[string]any, objectKey string) string {
+	root := strings.Trim(strings.TrimSpace(stringValue(config["upload_folder"])), "/")
+	objectKey = strings.Trim(objectKey, "/")
+	if root == "" {
+		return objectKey
+	}
+	return path.Join(root, objectKey)
 }
 
 func saveTicket(value ticket) error {

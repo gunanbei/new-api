@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -42,13 +42,24 @@ func ImportGeneratedAsset(ctx context.Context, userID int64, channelID uint64, r
 	if !validGeneratedMime(input.MimeType) {
 		return nil, errors.New("generated asset MIME type is not allowed")
 	}
-	buffered := bufio.NewReader(reader)
-	magic, err := buffered.Peek(32)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
+	content, err := common.CreateBodyStorageFromReader(reader, -1, input.MaxBytes)
+	if err != nil {
 		return nil, err
 	}
-	if !generatedMagicMatches(input.MimeType, magic) {
+	defer content.Close()
+	magic := make([]byte, 32)
+	count, err := content.Read(magic)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if _, err := content.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	if !generatedMagicMatches(input.MimeType, magic[:count]) {
 		return nil, errors.New("generated asset content does not match its MIME type")
+	}
+	if content.Size() == 0 {
+		return nil, errors.New("generated asset is empty")
 	}
 	fileName := path.Base(strings.TrimSpace(input.FileName))
 	if fileName == "." || fileName == "" {
@@ -59,20 +70,17 @@ func ImportGeneratedAsset(ctx context.Context, userID int64, channelID uint64, r
 		suffix = generatedAssetSuffix(input.MimeType)
 		fileName += "." + suffix
 	}
-	objectKey := buildObjectKey(&channel, fileName, suffix)
+	objectKey := buildObjectKey(&channel, userID, fileName, suffix)
 	hash := sha256.New()
-	limited := &generatedLimitReader{reader: io.TeeReader(buffered, hash), remaining: input.MaxBytes}
-	fileURL, err := uploadGeneratedAsset(ctx, &channel, objectKey, input.MimeType, limited)
-	if err != nil {
+	if _, err := io.Copy(hash, content); err != nil {
 		return nil, err
 	}
-	if limited.exceeded {
-		_ = deletePhysical(ctx, &model.File{FileChannelId: channel.Id, ChannelType: channel.Type, ObjectKey: objectKey})
-		return nil, errors.New("generated asset exceeds size limit")
+	if _, err := content.Seek(0, io.SeekStart); err != nil {
+		return nil, err
 	}
-	if limited.size == 0 {
-		_ = deletePhysical(ctx, &model.File{FileChannelId: channel.Id, ChannelType: channel.Type, ObjectKey: objectKey})
-		return nil, errors.New("generated asset is empty")
+	fileURL, err := uploadGeneratedAsset(ctx, &channel, objectKey, input.MimeType, content, content.Size())
+	if err != nil {
+		return nil, err
 	}
 	identifier := hex.EncodeToString(hash.Sum(nil))
 	if fileURL == "" {
@@ -80,7 +88,7 @@ func ImportGeneratedAsset(ctx context.Context, userID int64, channelID uint64, r
 	}
 	var userFile model.UserFile
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		physical := model.File{FileChannelId: channel.Id, ChannelType: channel.Type, FileSize: limited.size, ObjectKey: objectKey, FileUrl: fileURL, Identifier: identifier, MimeType: input.MimeType, Status: "1", CreaterUserId: userID}
+		physical := model.File{FileChannelId: channel.Id, ChannelType: channel.Type, FileSize: content.Size(), ObjectKey: objectKey, FileUrl: fileURL, Identifier: identifier, MimeType: input.MimeType, Status: "1", CreaterUserId: userID}
 		if err := tx.Create(&physical).Error; err != nil {
 			return err
 		}
@@ -95,32 +103,6 @@ func ImportGeneratedAsset(ctx context.Context, userID int64, channelID uint64, r
 		return nil, err
 	}
 	return Get(userFile.Id, &userID)
-}
-
-type generatedLimitReader struct {
-	reader    io.Reader
-	remaining int64
-	size      int64
-	exceeded  bool
-}
-
-func (reader *generatedLimitReader) Read(buffer []byte) (int, error) {
-	if reader.remaining <= 0 {
-		var probe [1]byte
-		count, err := reader.reader.Read(probe[:])
-		if count > 0 {
-			reader.exceeded = true
-			return 0, errors.New("generated asset exceeds size limit")
-		}
-		return 0, err
-	}
-	if int64(len(buffer)) > reader.remaining {
-		buffer = buffer[:reader.remaining]
-	}
-	count, err := reader.reader.Read(buffer)
-	reader.remaining -= int64(count)
-	reader.size += int64(count)
-	return count, err
 }
 
 func validGeneratedMime(mimeType string) bool {
@@ -163,7 +145,7 @@ func generatedMagicMatches(mimeType string, bytes []byte) bool {
 	return false
 }
 
-func uploadGeneratedAsset(ctx context.Context, channel *model.FileUploadChannel, objectKey, mimeType string, reader io.Reader) (string, error) {
+func uploadGeneratedAsset(ctx context.Context, channel *model.FileUploadChannel, objectKey, mimeType string, reader io.Reader, fileSize int64) (string, error) {
 	switch channel.Type {
 	case service.FileUploadChannelTypeS3:
 		client, bucket, err := s3Client(channel)
@@ -203,13 +185,13 @@ func uploadGeneratedAsset(ctx context.Context, channel *model.FileUploadChannel,
 		}
 		return publicURL(channel, objectKey), nil
 	case service.FileUploadChannelTypeCloudflareImageBed:
-		return uploadGeneratedImageBed(ctx, channel, objectKey, mimeType, reader)
+		return uploadGeneratedImageBed(ctx, channel, objectKey, mimeType, reader, fileSize)
 	default:
 		return "", errors.New("generated asset import is unsupported for this channel")
 	}
 }
 
-func uploadGeneratedImageBed(ctx context.Context, channel *model.FileUploadChannel, objectKey, mimeType string, reader io.Reader) (string, error) {
+func uploadGeneratedImageBed(ctx context.Context, channel *model.FileUploadChannel, objectKey, mimeType string, reader io.Reader, fileSize int64) (string, error) {
 	config, err := service.ParseFileUploadChannelConfig(channel.ConfigProflle)
 	if err != nil {
 		return "", err
@@ -221,19 +203,9 @@ func uploadGeneratedImageBed(ctx context.Context, channel *model.FileUploadChann
 	if baseURL == "" || token == "" {
 		return "", errors.New("image bed storage configuration is incomplete")
 	}
-	query := url.Values{}
-	if value, _ := config["upload_channel"].(string); strings.TrimSpace(value) != "" {
-		query.Set("uploadChannel", strings.TrimSpace(value))
-	} else {
-		query.Set("uploadChannel", "cfr2")
-	}
-	if value, _ := config["return_format"].(string); strings.TrimSpace(value) != "" {
-		query.Set("returnFormat", strings.TrimSpace(value))
-	} else {
-		query.Set("returnFormat", "default")
-	}
-	if value, _ := config["upload_folder"].(string); strings.TrimSpace(value) != "" {
-		query.Set("uploadFolder", strings.TrimSpace(value))
+	query := imageBedUploadQuery(config, objectKey)
+	if channel.ChunkThreshold > 0 && fileSize > channel.ChunkThreshold {
+		return uploadGeneratedImageBedChunks(ctx, baseURL, token, config, query, objectKey, mimeType, reader, fileSize, channel.ChunkSize)
 	}
 	pipeReader, pipeWriter := io.Pipe()
 	defer pipeReader.Close()
@@ -268,6 +240,28 @@ func uploadGeneratedImageBed(ctx context.Context, channel *model.FileUploadChann
 	if err := <-copyErr; err != nil {
 		return "", err
 	}
+	return imageBedUploadResult(response, baseURL)
+}
+
+func imageBedUploadQuery(config map[string]any, objectKey string) url.Values {
+	query := url.Values{}
+	if value, _ := config["upload_channel"].(string); strings.TrimSpace(value) != "" {
+		query.Set("uploadChannel", strings.TrimSpace(value))
+	} else {
+		query.Set("uploadChannel", "cfr2")
+	}
+	if value, _ := config["return_format"].(string); strings.TrimSpace(value) != "" {
+		query.Set("returnFormat", strings.TrimSpace(value))
+	} else {
+		query.Set("returnFormat", "default")
+	}
+	if uploadFolder := path.Dir(imageBedObjectKey(config, objectKey)); uploadFolder != "." {
+		query.Set("uploadFolder", uploadFolder)
+	}
+	return query
+}
+
+func imageBedUploadResult(response *http.Response, baseURL string) (string, error) {
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("image bed upload returned status %d", response.StatusCode)
 	}
@@ -293,6 +287,144 @@ func uploadGeneratedImageBed(ctx context.Context, channel *model.FileUploadChann
 		}
 	}
 	return "", errors.New("image bed upload returned no file URL")
+}
+
+func uploadGeneratedImageBedChunks(ctx context.Context, baseURL, token string, config map[string]any, query url.Values, objectKey, mimeType string, reader io.Reader, fileSize, chunkSize int64) (string, error) {
+	totalChunks, err := imageBedChunkCount(fileSize, chunkSize)
+	if err != nil {
+		return "", err
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	initBody := &bytes.Buffer{}
+	initWriter := multipart.NewWriter(initBody)
+	for key, value := range map[string]string{"originalFileName": path.Base(objectKey), "originalFileType": mimeType, "totalChunks": strconv.FormatInt(totalChunks, 10)} {
+		if err := initWriter.WriteField(key, value); err != nil {
+			return "", err
+		}
+	}
+	if err := initWriter.Close(); err != nil {
+		return "", err
+	}
+	initQuery := url.Values{"initChunked": {"true"}, "uploadChannel": {query.Get("uploadChannel")}}
+	initRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/upload?"+initQuery.Encode(), initBody)
+	if err != nil {
+		return "", err
+	}
+	initRequest.Header.Set("Authorization", "Bearer "+token)
+	initRequest.Header.Set("Content-Type", initWriter.FormDataContentType())
+	initResponse, err := client.Do(initRequest)
+	if err != nil {
+		return "", err
+	}
+	defer initResponse.Body.Close()
+	if initResponse.StatusCode < http.StatusOK || initResponse.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("image bed chunk initialization returned status %d", initResponse.StatusCode)
+	}
+	var initResult struct {
+		Success  bool   `json:"success"`
+		UploadID string `json:"uploadId"`
+	}
+	if err := common.DecodeJson(io.LimitReader(initResponse.Body, 16*1024), &initResult); err != nil || !initResult.Success || strings.TrimSpace(initResult.UploadID) == "" {
+		return "", errors.New("image bed chunk initialization returned an invalid response")
+	}
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		cleanupQuery := url.Values{"cleanup": {"true"}, "uploadId": {initResult.UploadID}, "totalChunks": {strconv.FormatInt(totalChunks, 10)}}
+		request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/upload?"+cleanupQuery.Encode(), nil)
+		if err != nil {
+			return
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		response, err := client.Do(request)
+		if err == nil {
+			response.Body.Close()
+		}
+	}()
+
+	for chunkIndex := int64(0); chunkIndex < totalChunks; chunkIndex++ {
+		chunkLength := chunkSize
+		if remaining := fileSize - chunkIndex*chunkSize; remaining < chunkLength {
+			chunkLength = remaining
+		}
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", path.Base(objectKey))
+		if err == nil {
+			_, err = io.CopyN(part, reader, chunkLength)
+		}
+		if err == nil {
+			for key, value := range map[string]string{"uploadId": initResult.UploadID, "chunkIndex": strconv.FormatInt(chunkIndex, 10), "totalChunks": strconv.FormatInt(totalChunks, 10), "originalFileName": path.Base(objectKey), "originalFileType": mimeType} {
+				err = writer.WriteField(key, value)
+				if err != nil {
+					break
+				}
+			}
+		}
+		if closeErr := writer.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return "", err
+		}
+		partQuery := url.Values{"chunked": {"true"}, "uploadChannel": {query.Get("uploadChannel")}}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/upload?"+partQuery.Encode(), body)
+		if err != nil {
+			return "", err
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		response, err := client.Do(request)
+		if err != nil {
+			return "", err
+		}
+		response.Body.Close()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return "", fmt.Errorf("image bed chunk upload returned status %d", response.StatusCode)
+		}
+	}
+
+	mergeBody := &bytes.Buffer{}
+	mergeWriter := multipart.NewWriter(mergeBody)
+	for key, value := range map[string]string{"uploadId": initResult.UploadID, "totalChunks": strconv.FormatInt(totalChunks, 10), "originalFileName": path.Base(objectKey), "originalFileType": mimeType} {
+		if err := mergeWriter.WriteField(key, value); err != nil {
+			return "", err
+		}
+	}
+	if err := mergeWriter.Close(); err != nil {
+		return "", err
+	}
+	mergeQuery := url.Values{}
+	for key, values := range query {
+		mergeQuery[key] = append([]string(nil), values...)
+	}
+	mergeQuery.Set("chunked", "true")
+	mergeQuery.Set("merge", "true")
+	mergeRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/upload?"+mergeQuery.Encode(), mergeBody)
+	if err != nil {
+		return "", err
+	}
+	mergeRequest.Header.Set("Authorization", "Bearer "+token)
+	mergeRequest.Header.Set("Content-Type", mergeWriter.FormDataContentType())
+	mergeResponse, err := client.Do(mergeRequest)
+	if err != nil {
+		return "", err
+	}
+	defer mergeResponse.Body.Close()
+	result, err := imageBedUploadResult(mergeResponse, baseURL)
+	if err == nil {
+		completed = true
+	}
+	return result, err
+}
+
+func imageBedChunkCount(fileSize, chunkSize int64) (int64, error) {
+	if fileSize <= 0 || chunkSize <= 0 {
+		return 0, errors.New("image bed chunk size must be positive")
+	}
+	return (fileSize-1)/chunkSize + 1, nil
 }
 
 func ensureGeneratedWebDAVCollections(ctx context.Context, client *http.Client, baseURL, objectKey string, config map[string]any) error {

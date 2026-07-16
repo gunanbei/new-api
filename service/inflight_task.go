@@ -1045,6 +1045,7 @@ type InflightTaskStats struct {
 	UploadedTraceSize       int64  `json:"uploaded_trace_size"`
 	TraceDirectory          string `json:"trace_directory"`
 	TracePendingUploadCount int64  `json:"trace_pending_upload_count"`
+	TraceUploadingCount     int64  `json:"trace_uploading_count"`
 }
 
 func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
@@ -1098,6 +1099,7 @@ func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
 		}
 		stats.TraceDirectory = archiveStats.Directory
 		stats.TracePendingUploadCount = archiveStats.PendingUploadCount
+		stats.TraceUploadingCount = archiveStats.UploadingCount
 
 		archiveIDs := make(map[uint64]struct{})
 		for requestID := range itemSizes {

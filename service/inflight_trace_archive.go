@@ -115,6 +115,7 @@ type InflightTraceArchiveStats struct {
 	FileCount          int64
 	TotalSize          int64
 	PendingUploadCount int64
+	UploadingCount     int64
 }
 
 func GetInflightTraceArchiveStats() (InflightTraceArchiveStats, error) {
@@ -141,12 +142,15 @@ func GetInflightTraceArchiveStats() (InflightTraceArchiveStats, error) {
 		return stats, err
 	}
 	var pendingArchives []model.InflightTraceArchive
-	if err = model.DB.Where("status IN ?", inflightTraceArchivePendingStatuses).Find(&pendingArchives).Error; err != nil {
+	if err = model.DB.Where("status IN ?", []string{inflightTraceArchiveStatusActive, inflightTraceArchiveStatusUploading, inflightTraceArchiveStatusFailed}).Find(&pendingArchives).Error; err != nil {
 		return stats, err
 	}
 	for _, archive := range pendingArchives {
 		if _, err := os.Stat(archive.LocalPath); err == nil {
 			stats.PendingUploadCount++
+			if archive.Status == inflightTraceArchiveStatusUploading {
+				stats.UploadingCount++
+			}
 		}
 	}
 	return stats, nil
@@ -374,7 +378,10 @@ func uploadInflightTraceArchive(archiveID uint64) {
 		if err == nil {
 			archive.StorageChannelID, archive.ObjectKey, archive.RemoteURL = channelID, objectKey, url
 			archive.Status, archive.UploadedAt, archive.RetryCount, archive.LastError = inflightTraceArchiveStatusUploaded, time.Now().Unix(), attempt, ""
-			_ = model.DB.Save(&archive).Error
+			if err = model.DB.Save(&archive).Error; err != nil {
+				common.SysError(fmt.Sprintf("record inflight trace archive upload: id=%d err=%v", archive.ID, err))
+				return
+			}
 			if url != "" {
 				_ = os.Remove(archive.LocalPath)
 			}

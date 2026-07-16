@@ -169,6 +169,7 @@ type InflightTaskStats = {
   uploaded_trace_size: number
   trace_directory?: string
   trace_pending_upload_count?: number
+  trace_uploading_count?: number
 }
 
 type FileUploadChannel = {
@@ -307,6 +308,9 @@ export function LogSettingsSection({
   const [serverLogCleanupLoading, setServerLogCleanupLoading] = useState(false)
   const [archiveChannels, setArchiveChannels] = useState<FileUploadChannel[]>([])
 
+  const archiveUploadInProgress =
+    (inflightTaskStats?.trace_uploading_count ?? 0) > 0
+
   const fetchServerLogInfo = useCallback(async () => {
     try {
       const res = await api.get('/api/performance/logs')
@@ -404,6 +408,27 @@ export function LogSettingsSection({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!archiveUploadInProgress) return
+
+    let cancelled = false
+    const interval = window.setInterval(async () => {
+      try {
+        const res = await getInflightTaskStats()
+        if (!cancelled && res.success && res.data) {
+          setInflightTaskStats(res.data)
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [archiveUploadInProgress])
 
   const purgeTimestamp = useMemo(() => {
     if (!purgeDate) return null
@@ -938,7 +963,7 @@ export function LogSettingsSection({
                 </div>
                 <div className='flex items-center justify-between gap-2 font-medium'>
                   <span>{inflightTaskStats?.trace_pending_upload_count ?? '-'}</span>
-                  <Button type='button' size='sm' variant='outline' onClick={triggerArchiveUpload} disabled={!inflightTaskStats?.trace_pending_upload_count}>
+                  <Button type='button' size='sm' variant='outline' onClick={triggerArchiveUpload} disabled={!inflightTaskStats?.trace_pending_upload_count || archiveUploadInProgress}>
                     {t('Upload pending archives')}
                   </Button>
                 </div>

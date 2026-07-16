@@ -31,21 +31,24 @@ func TestInflightTraceArchiveStatsCountsUnuploadedArchives(t *testing.T) {
 	archiveDirectory := filepath.Join(directory, "inflight-traces")
 	require.NoError(t, os.MkdirAll(archiveDirectory, 0700))
 	activePath := filepath.Join(archiveDirectory, "active.csv")
+	uploadingPath := filepath.Join(archiveDirectory, "uploading.csv")
 	uploadedPath := filepath.Join(archiveDirectory, "uploaded.csv")
 	require.NoError(t, os.WriteFile(activePath, []byte("active"), 0600))
+	require.NoError(t, os.WriteFile(uploadingPath, []byte("uploading"), 0600))
 	require.NoError(t, os.WriteFile(uploadedPath, []byte("uploaded"), 0600))
 	require.NoError(t, database.Create([]model.InflightTraceArchive{
 		{UserID: 1, FileName: "active.csv", LocalPath: activePath, Status: inflightTraceArchiveStatusActive},
 		{UserID: 1, FileName: "failed.csv", LocalPath: filepath.Join(archiveDirectory, "failed.csv"), Status: inflightTraceArchiveStatusFailed},
-		{UserID: 1, FileName: "uploading.csv", LocalPath: filepath.Join(archiveDirectory, "uploading.csv"), Status: inflightTraceArchiveStatusUploading},
+		{UserID: 1, FileName: "uploading.csv", LocalPath: uploadingPath, Status: inflightTraceArchiveStatusUploading},
 		{UserID: 1, FileName: "uploaded.csv", LocalPath: uploadedPath, Status: inflightTraceArchiveStatusUploaded},
 	}).Error)
 
 	stats, err := GetInflightTraceArchiveStats()
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), stats.FileCount)
-	assert.Equal(t, int64(len("active")+len("uploaded")), stats.TotalSize)
-	assert.Equal(t, int64(1), stats.PendingUploadCount)
+	assert.Equal(t, int64(3), stats.FileCount)
+	assert.Equal(t, int64(len("active")+len("uploading")+len("uploaded")), stats.TotalSize)
+	assert.Equal(t, int64(2), stats.PendingUploadCount)
+	assert.Equal(t, int64(1), stats.UploadingCount)
 }
 
 func TestTriggerInflightTraceArchiveUploadsSkipsMissingLocalCSV(t *testing.T) {

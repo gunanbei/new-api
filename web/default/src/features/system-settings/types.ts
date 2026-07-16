@@ -99,6 +99,7 @@ export type InflightTaskStats = {
   uploaded_trace_size: number
   trace_directory?: string
   trace_pending_upload_count?: number
+  trace_uploading_count?: number
 }
 export type InflightTaskStatsResponse = {
   success: boolean

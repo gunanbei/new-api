@@ -194,6 +194,9 @@ export function CreativeStudioSection() {
   const queryClient = useQueryClient()
   const [editor, setEditor] = useState<Editor>(null)
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null)
+  const [validatingModelIDs, setValidatingModelIDs] = useState<Set<number>>(
+    new Set()
+  )
   const { data, isLoading } = useQuery({
     queryKey: ['creative-studio'],
     queryFn: getBootstrap,
@@ -232,7 +235,7 @@ export function CreativeStudioSection() {
     remove.mutate(request.url)
   }
   const revalidateAll = useMutation({
-    mutationFn: async (bindingIDs: number[]) =>
+    mutationFn: async ({ bindingIDs }: { modelID: number; bindingIDs: number[] }) =>
       Promise.all(
         bindingIDs.map(async (bindingID) => {
           const response = await api.post<{
@@ -244,6 +247,9 @@ export function CreativeStudioSection() {
           return response.data.data
         })
       ),
+    onMutate: ({ modelID }) => {
+      setValidatingModelIDs((current) => new Set(current).add(modelID))
+    },
     onSuccess: (bindings) => {
       toast[
         bindings.every((binding) => binding.validation_status === 'valid')
@@ -257,7 +263,14 @@ export function CreativeStudioSection() {
         )
       )
     },
-    onSettled: refresh,
+    onSettled: (_, __, { modelID }) => {
+      setValidatingModelIDs((current) => {
+        const next = new Set(current)
+        next.delete(modelID)
+        return next
+      })
+      refresh()
+    },
   })
 
   if (isLoading || !data) {
@@ -316,8 +329,13 @@ export function CreativeStudioSection() {
                 t={t}
                 onEdit={setEditor}
                 onDelete={handleDelete}
-                onRevalidate={(bindingIDs) => revalidateAll.mutate(bindingIDs)}
-                validating={revalidateAll.isPending}
+                onRevalidate={(bindingIDs) =>
+                  revalidateAll.mutate({
+                    modelID: creativeModel.id,
+                    bindingIDs,
+                  })
+                }
+                validating={validatingModelIDs.has(creativeModel.id)}
               />
             ))}
           </div>

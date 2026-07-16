@@ -140,8 +140,14 @@ func GetInflightTraceArchiveStats() (InflightTraceArchiveStats, error) {
 	if err != nil {
 		return stats, err
 	}
-	if err = model.DB.Model(&model.InflightTraceArchive{}).Where("status IN ?", inflightTraceArchivePendingStatuses).Count(&stats.PendingUploadCount).Error; err != nil {
+	var pendingArchives []model.InflightTraceArchive
+	if err = model.DB.Where("status IN ?", inflightTraceArchivePendingStatuses).Find(&pendingArchives).Error; err != nil {
 		return stats, err
+	}
+	for _, archive := range pendingArchives {
+		if _, err := os.Stat(archive.LocalPath); err == nil {
+			stats.PendingUploadCount++
+		}
 	}
 	return stats, nil
 }
@@ -154,6 +160,10 @@ func TriggerInflightTraceArchiveUploads() (int64, error) {
 	var started int64
 	for index := range archives {
 		archive := archives[index]
+		fileInfo, err := os.Stat(archive.LocalPath)
+		if err != nil || fileInfo.IsDir() {
+			continue
+		}
 		lock := inflightTraceArchiveLock(archive.UserID)
 		lock.Lock()
 		if err := model.DB.Model(&model.InflightTraceArchive{}).Where("id = ? AND status IN ?", archive.ID, inflightTraceArchivePendingStatuses).Update("status", inflightTraceArchiveStatusUploading).Error; err == nil {
@@ -218,8 +228,16 @@ func persistInflightTraceToDisk(ctx context.Context, trace *InflightTaskTrace) e
 	}
 	trace.ArchiveID = archive.ID
 	trace.StorageMode = "disk"
+	fileInfo, err := os.Stat(archive.LocalPath)
+	if err != nil {
+		return err
+	}
 	archive.LatestRecordedAt = trace.RecordedAt
-	if err = model.DB.Model(archive).Update("latest_recorded_at", archive.LatestRecordedAt).Error; err != nil {
+	archive.SizeBytes = fileInfo.Size()
+	if err = model.DB.Model(archive).Updates(map[string]any{
+		"latest_recorded_at": archive.LatestRecordedAt,
+		"size_bytes":         archive.SizeBytes,
+	}).Error; err != nil {
 		return err
 	}
 	if threshold := inflightTraceOptionInt64(inflightTraceArchiveThresholdBytesOptionKey); threshold > 0 {
@@ -339,6 +357,16 @@ func uploadInflightTraceArchive(archiveID uint64) {
 	if channelID == 0 {
 		archive.Status, archive.LastError = inflightTraceArchiveStatusFailed, "archive storage channel is required"
 		_ = model.DB.Save(&archive).Error
+		return
+	}
+	fileInfo, err := os.Stat(archive.LocalPath)
+	if err != nil || fileInfo.IsDir() {
+		archive.Status, archive.LastError = inflightTraceArchiveStatusFailed, "local archive CSV is unavailable"
+		_ = model.DB.Save(&archive).Error
+		return
+	}
+	archive.SizeBytes = fileInfo.Size()
+	if err = model.DB.Model(&archive).Update("size_bytes", archive.SizeBytes).Error; err != nil {
 		return
 	}
 	for attempt := 1; attempt <= 3; attempt++ {

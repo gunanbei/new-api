@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { InformationCircleIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -58,6 +60,12 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
@@ -153,11 +161,13 @@ type InflightTaskStats = {
   user_count: number
   item_count: number
   total_size: number
-  trace_count?: number
-  trace_total_size?: number
+  in_memory_count: number
+  in_memory_size: number
+  local_trace_count: number
+  local_trace_size: number
+  uploaded_trace_count: number
+  uploaded_trace_size: number
   trace_directory?: string
-  trace_file_count?: number
-  trace_disk_size?: number
   trace_pending_upload_count?: number
 }
 
@@ -181,6 +191,31 @@ function formatBytes(bytes: number, decimals = 2): string {
   return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${
     sizes[i]
   }`
+}
+
+function formatKilobytes(bytes: number): string {
+  return `${(bytes / 1024).toFixed(2)} KB`
+}
+
+function InflightMetricTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type='button'
+            className='inline-flex size-3.5 items-center justify-center'
+            aria-label={label}
+          >
+            <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} className='size-3.5' />
+          </button>
+        }
+      />
+      <TooltipContent>
+        <div className='space-y-1'>{children}</div>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 const getDateHoursAgo = (hours: number) => {
@@ -847,12 +882,13 @@ export function LogSettingsSection({
           <SettingsControlGroup className='grid gap-2'>
             <FormLabel>{t('Current inflight log usage')}</FormLabel>
             <FormDescription>
-              {t('View the current Redis space used by inflight logs.')}
+              {t('View inflight log storage across memory, local CSV files, and archived cloud files.')}
             </FormDescription>
-            <div className='grid gap-2 text-sm md:grid-cols-3'>
+            <TooltipProvider>
+              <div className='grid gap-2 text-sm md:grid-cols-3'>
               <div className='rounded-md border p-3'>
                 <div className='text-muted-foreground text-xs'>
-                  {t('Users')}
+                  {t('User count')}
                 </div>
                 <div className='font-medium'>
                   {inflightTaskStats?.user_count ?? '-'}
@@ -869,19 +905,31 @@ export function LogSettingsSection({
                 </div>
               ) : null}
               <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
+                <div className='text-muted-foreground flex items-center gap-1 text-xs'>
                   {t('Inflight CSV files')}
+                  {(inflightTaskStats?.local_trace_count ?? 0) + (inflightTaskStats?.uploaded_trace_count ?? 0) > 0 ? (
+                    <InflightMetricTooltip label={t('Inflight CSV files')}>
+                      {inflightTaskStats?.uploaded_trace_count ? <div>{t('Uploaded archives')}: {inflightTaskStats.uploaded_trace_count}</div> : null}
+                      {inflightTaskStats?.local_trace_count ? <div>{t('Pending archives')}: {inflightTaskStats.local_trace_count}</div> : null}
+                    </InflightMetricTooltip>
+                  ) : null}
                 </div>
                 <div className='font-medium'>
-                  {inflightTaskStats?.trace_file_count ?? '-'}
+                  {inflightTaskStats ? inflightTaskStats.local_trace_count + inflightTaskStats.uploaded_trace_count : '-'}
                 </div>
               </div>
               <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
-                  {t('Inflight CSV disk usage')}
+                <div className='text-muted-foreground flex items-center gap-1 text-xs'>
+                  {t('Inflight CSV size (KB)')}
+                  {(inflightTaskStats?.local_trace_size ?? 0) + (inflightTaskStats?.uploaded_trace_size ?? 0) > 0 ? (
+                    <InflightMetricTooltip label={t('Inflight CSV size (KB)')}>
+                      {inflightTaskStats?.local_trace_size ? <div>{t('Retained local CSV size (KB)')}: {formatKilobytes(inflightTaskStats.local_trace_size)}</div> : null}
+                      {inflightTaskStats?.uploaded_trace_size ? <div>{t('Archived cloud CSV size (KB)')}: {formatKilobytes(inflightTaskStats.uploaded_trace_size)}</div> : null}
+                    </InflightMetricTooltip>
+                  ) : null}
                 </div>
                 <div className='font-medium'>
-                  {formatBytes(inflightTaskStats?.trace_disk_size ?? 0)}
+                  {formatKilobytes((inflightTaskStats?.local_trace_size ?? 0) + (inflightTaskStats?.uploaded_trace_size ?? 0))}
                 </div>
               </div>
               <div className='rounded-md border p-3'>
@@ -896,38 +944,37 @@ export function LogSettingsSection({
                 </div>
               </div>
               <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
+                <div className='text-muted-foreground flex items-center gap-1 text-xs'>
                   {t('Inflight log entries')}
+                  {(inflightTaskStats?.item_count ?? 0) > 0 ? (
+                    <InflightMetricTooltip label={t('Inflight log entries')}>
+                      {inflightTaskStats?.in_memory_count ? <div>{t('Memory-only records')}: {inflightTaskStats.in_memory_count} {t('records')}</div> : null}
+                      {inflightTaskStats?.local_trace_count ? <div>{t('Local storage')}: {inflightTaskStats.local_trace_count} {t('records')}</div> : null}
+                      {inflightTaskStats?.uploaded_trace_count ? <div>{t('Uploaded cloud archives')}: {inflightTaskStats.uploaded_trace_count} {t('records')}</div> : null}
+                    </InflightMetricTooltip>
+                  ) : null}
                 </div>
                 <div className='font-medium'>
                   {inflightTaskStats?.item_count ?? '-'}
                 </div>
               </div>
               <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
+                <div className='text-muted-foreground flex items-center gap-1 text-xs'>
                   {t('Total inflight log size')}
+                  {(inflightTaskStats?.total_size ?? 0) > 0 ? (
+                    <InflightMetricTooltip label={t('Total inflight log size')}>
+                      {inflightTaskStats?.in_memory_size ? <div>{t('Memory-only records')}: {formatKilobytes(inflightTaskStats.in_memory_size)}</div> : null}
+                      {inflightTaskStats?.local_trace_size ? <div>{t('Local storage')}: {formatKilobytes(inflightTaskStats.local_trace_size)}</div> : null}
+                      {inflightTaskStats?.uploaded_trace_size ? <div>{t('Uploaded cloud archives')}: {formatKilobytes(inflightTaskStats.uploaded_trace_size)}</div> : null}
+                    </InflightMetricTooltip>
+                  ) : null}
                 </div>
                 <div className='font-medium'>
-                  {formatBytes(inflightTaskStats?.total_size ?? 0)}
+                  {formatKilobytes(inflightTaskStats?.total_size ?? 0)}
                 </div>
               </div>
-              <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
-                  {t('Inflight debug log entries')}
-                </div>
-                <div className='font-medium'>
-                  {inflightTaskStats?.trace_count ?? '-'}
-                </div>
               </div>
-              <div className='rounded-md border p-3'>
-                <div className='text-muted-foreground text-xs'>
-                  {t('Total inflight debug log size')}
-                </div>
-                <div className='font-medium'>
-                  {formatBytes(inflightTaskStats?.trace_total_size ?? 0)}
-                </div>
-              </div>
-            </div>
+            </TooltipProvider>
           </SettingsControlGroup>
 
           <SettingsControlGroup className='space-y-3'>

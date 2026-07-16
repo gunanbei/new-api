@@ -91,11 +91,13 @@ export type InflightTaskStats = {
   user_count: number
   item_count: number
   total_size: number
-  trace_count?: number
-  trace_total_size?: number
+  in_memory_count: number
+  in_memory_size: number
+  local_trace_count: number
+  local_trace_size: number
+  uploaded_trace_count: number
+  uploaded_trace_size: number
   trace_directory?: string
-  trace_file_count?: number
-  trace_disk_size?: number
   trace_pending_upload_count?: number
 }
 export type InflightTaskStatsResponse = {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -1036,11 +1037,13 @@ type InflightTaskStats struct {
 	UserCount               int64  `json:"user_count"`
 	ItemCount               int64  `json:"item_count"`
 	TotalSize               int64  `json:"total_size"`
-	TraceCount              int64  `json:"trace_count"`
-	TraceTotalSize          int64  `json:"trace_total_size"`
+	InMemoryCount           int64  `json:"in_memory_count"`
+	InMemorySize            int64  `json:"in_memory_size"`
+	LocalTraceCount         int64  `json:"local_trace_count"`
+	LocalTraceSize          int64  `json:"local_trace_size"`
+	UploadedTraceCount      int64  `json:"uploaded_trace_count"`
+	UploadedTraceSize       int64  `json:"uploaded_trace_size"`
 	TraceDirectory          string `json:"trace_directory"`
-	TraceFileCount          int64  `json:"trace_file_count"`
-	TraceDiskSize           int64  `json:"trace_disk_size"`
 	TracePendingUploadCount int64  `json:"trace_pending_upload_count"`
 }
 
@@ -1050,6 +1053,13 @@ func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
 		return InflightTaskStats{}, err
 	}
 	var stats InflightTaskStats
+	itemSizes := make(map[string]int64)
+	type traceInfo struct {
+		archiveID   uint64
+		storageMode string
+		size        int64
+	}
+	traces := make(map[string]traceInfo)
 	var cursor uint64
 	for {
 		keys, next, err := client.Scan(ctx, cursor, "inflight:*", 100).Result()
@@ -1058,32 +1068,90 @@ func GetInflightTaskStats(ctx context.Context) (InflightTaskStats, error) {
 		}
 		cursor = next
 		for _, key := range keys {
+			size := int64(0)
+			if memoryUsage, err := client.MemoryUsage(ctx, key).Result(); err == nil {
+				size = memoryUsage
+			}
 			if strings.HasPrefix(key, inflightTaskUserKeyPrefix) {
 				stats.UserCount++
+				stats.InMemorySize += size
 			} else if strings.HasPrefix(key, inflightTaskItemKeyPrefix) {
 				stats.ItemCount++
+				itemSizes[strings.TrimPrefix(key, inflightTaskItemKeyPrefix)] = size
 			} else if strings.HasPrefix(key, inflightTaskTraceKeyPrefix) {
-				stats.TraceCount++
-			}
-			size, err := client.MemoryUsage(ctx, key).Result()
-			if err == nil {
-				stats.TotalSize += size
-				if strings.HasPrefix(key, inflightTaskTraceKeyPrefix) {
-					stats.TraceTotalSize += size
+				requestID := strings.TrimPrefix(key, inflightTaskTraceKeyPrefix)
+				if raw, err := client.Get(ctx, key).Result(); err == nil {
+					var trace InflightTaskTrace
+					if common.UnmarshalJsonStr(raw, &trace) == nil {
+						traces[requestID] = traceInfo{archiveID: trace.ArchiveID, storageMode: trace.StorageMode, size: size}
+					}
 				}
 			}
 		}
-		if cursor == 0 {
-			archiveStats, archiveErr := GetInflightTraceArchiveStats()
-			if archiveErr != nil {
-				return stats, archiveErr
-			}
-			stats.TraceDirectory = archiveStats.Directory
-			stats.TraceFileCount = archiveStats.FileCount
-			stats.TraceDiskSize = archiveStats.TotalSize
-			stats.TracePendingUploadCount = archiveStats.PendingUploadCount
-			return stats, nil
+		if cursor != 0 {
+			continue
 		}
+
+		archiveStats, archiveErr := GetInflightTraceArchiveStats()
+		if archiveErr != nil {
+			return stats, archiveErr
+		}
+		stats.TraceDirectory = archiveStats.Directory
+		stats.TracePendingUploadCount = archiveStats.PendingUploadCount
+
+		archiveIDs := make(map[uint64]struct{})
+		for requestID := range itemSizes {
+			trace, ok := traces[requestID]
+			if ok && trace.storageMode == "disk" && trace.archiveID > 0 {
+				archiveIDs[trace.archiveID] = struct{}{}
+			}
+		}
+		archivesByID := make(map[uint64]model.InflightTraceArchive, len(archiveIDs))
+		if len(archiveIDs) > 0 {
+			ids := make([]uint64, 0, len(archiveIDs))
+			for id := range archiveIDs {
+				ids = append(ids, id)
+			}
+			var archives []model.InflightTraceArchive
+			if err := model.DB.Where("id IN ?", ids).Find(&archives).Error; err != nil {
+				return stats, err
+			}
+			for _, archive := range archives {
+				archivesByID[archive.ID] = archive
+			}
+		}
+
+		localArchives := make(map[uint64]struct{})
+		uploadedArchives := make(map[uint64]struct{})
+		for requestID, itemSize := range itemSizes {
+			trace, ok := traces[requestID]
+			if ok && trace.storageMode == "disk" && trace.archiveID > 0 {
+				if archive, found := archivesByID[trace.archiveID]; found {
+					if archive.Status == inflightTraceArchiveStatusUploaded {
+						stats.UploadedTraceCount++
+						uploadedArchives[archive.ID] = struct{}{}
+						continue
+					}
+					if fileInfo, err := os.Stat(archive.LocalPath); err == nil && !fileInfo.IsDir() {
+						stats.LocalTraceCount++
+						localArchives[archive.ID] = struct{}{}
+						continue
+					}
+				}
+			}
+			stats.InMemoryCount++
+			stats.InMemorySize += itemSize + trace.size
+		}
+		for id := range localArchives {
+			if fileInfo, err := os.Stat(archivesByID[id].LocalPath); err == nil && !fileInfo.IsDir() {
+				stats.LocalTraceSize += fileInfo.Size()
+			}
+		}
+		for id := range uploadedArchives {
+			stats.UploadedTraceSize += archivesByID[id].SizeBytes
+		}
+		stats.TotalSize = stats.InMemorySize + stats.LocalTraceSize + stats.UploadedTraceSize
+		return stats, nil
 	}
 }
 

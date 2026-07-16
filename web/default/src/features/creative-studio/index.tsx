@@ -149,6 +149,22 @@ type ReferenceImage = {
   cacheKey?: string
 }
 
+async function getCreativeTaskDetail(
+  taskKey: string | undefined,
+  signal?: AbortSignal
+): Promise<CreativeTaskDetail> {
+  const response = await api.get<Envelope<CreativeTaskDetail>>(
+    `/api/creative/tasks/${taskKey}`,
+    {
+      signal,
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    }
+  )
+  if (!response.data.success) throw new Error(response.data.message)
+  return response.data.data
+}
+
 const promptExamples = [
   'Cyberpunk city nightscape, neon reflections, cinematic lighting, 8k',
   'A Shiba Inu wearing sunglasses, flat illustration style, vibrant colors',
@@ -501,12 +517,8 @@ export function CreativeStudio() {
   const historyDetails = useQueries({
     queries: (historyOpen ? historyTasks : []).map((task) => ({
       queryKey: ['creative-task', task.task_key],
-      queryFn: async () =>
-        (
-          await api.get<Envelope<CreativeTaskDetail>>(
-            `/api/creative/tasks/${task.task_key}`
-          )
-        ).data.data,
+      queryFn: ({ signal }) =>
+        getCreativeTaskDetail(task.task_key, signal),
     })),
   })
   const options = useMemo<CapabilityOption[]>(
@@ -560,6 +572,14 @@ export function CreativeStudio() {
       ),
     [activeOperation, groupCapabilities]
   )
+  const modelItems = useMemo(
+    () =>
+      models.map(({ capability, creativeModel }) => ({
+        value: String(capability.id),
+        label: creativeModel.display_name,
+      })),
+    [models]
+  )
   const activeCapabilityID = models.some(
     ({ capability }) => capability.id === capabilityID
   )
@@ -578,12 +598,7 @@ export function CreativeStudio() {
     : undefined
   const taskDetail = useQuery({
     queryKey: ['creative-task', activeTaskKey],
-    queryFn: async () =>
-      (
-        await api.get<Envelope<CreativeTaskDetail>>(
-          `/api/creative/tasks/${activeTaskKey}`
-        )
-      ).data.data,
+    queryFn: ({ signal }) => getCreativeTaskDetail(activeTaskKey, signal),
     enabled: Boolean(activeTaskKey),
     refetchInterval: 4000,
   })
@@ -638,6 +653,11 @@ export function CreativeStudio() {
   })
   const deleteTask = useMutation({
     mutationFn: async (taskKeys: string[]) => {
+      await Promise.all(
+        taskKeys.map((taskKey) =>
+          queryClient.cancelQueries({ queryKey: ['creative-task', taskKey] })
+        )
+      )
       await Promise.all(
         taskKeys.map((taskKey) => api.delete(`/api/creative/tasks/${taskKey}`))
       )
@@ -882,6 +902,7 @@ export function CreativeStudio() {
                   {t('Choose a model')}
                   <Select
                     disabled={models.length === 0}
+                    items={modelItems}
                     value={String(activeCapabilityID ?? '')}
                     onValueChange={(value) => {
                       setCapabilityID(Number(value))
@@ -1611,12 +1632,8 @@ function CreativeTaskPreviewDialog(props: {
   const [closeCountdown, setCloseCountdown] = useState<number>()
   const detail = useQuery({
     queryKey: ['creative-task', props.preview?.taskKey],
-    queryFn: async () =>
-      (
-        await api.get<Envelope<CreativeTaskDetail>>(
-          `/api/creative/tasks/${props.preview?.taskKey}`
-        )
-      ).data.data,
+    queryFn: ({ signal }) =>
+      getCreativeTaskDetail(props.preview?.taskKey, signal),
     enabled: Boolean(props.preview?.taskKey),
   })
   const outputs = outputAssets(detail.data?.assets ?? []).sort(
@@ -2175,31 +2192,38 @@ function CreativeField(props: {
     )
   }
   if (props.field.type === 'select') {
+    const selectItems = options.map((option) => ({
+      value: String(option.value),
+      label: t(option.label),
+    }))
     return (
       <label className='grid gap-2 text-sm font-medium'>
         {label}
-        <NativeSelect
-          className='w-full'
+        <Select
+          items={selectItems}
           value={String(props.value ?? '')}
-          onChange={(event) =>
+          onValueChange={(value) =>
             props.onChange(
               options.find(
-                (option) => String(option.value) === event.target.value
-              )?.value ?? event.target.value
+                (option) => String(option.value) === String(value)
+              )?.value ?? value
             )
           }
         >
-          {options.map((option) => {
-            return (
-              <NativeSelectOption
+          <SelectTrigger className='w-full'>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem
                 key={String(option.value)}
                 value={String(option.value)}
               >
                 {t(option.label)}
-              </NativeSelectOption>
-            )
-          })}
-        </NativeSelect>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {props.field.description && (
           <span className='text-muted-foreground text-xs leading-5 font-normal'>
             {t(props.field.description)}

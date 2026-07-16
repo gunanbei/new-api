@@ -11,6 +11,7 @@ type InflightTraceArchive struct {
 	Status           string `json:"status" gorm:"type:varchar(32);index"`
 	RetryCount       int    `json:"retry_count"`
 	LastError        string `json:"last_error" gorm:"type:text"`
+	SizeBytes        int64  `json:"size_bytes"`
 	CreatedAt        int64  `json:"created_at" gorm:"bigint;index"`
 	LatestRecordedAt int64  `json:"latest_recorded_at" gorm:"bigint;index"`
 	UploadedAt       int64  `json:"uploaded_at" gorm:"bigint;index"`

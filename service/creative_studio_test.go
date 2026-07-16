@@ -95,6 +95,56 @@ func TestCreativeStudioRejectsDuplicateRecords(t *testing.T) {
 	require.NotZero(t, binding.ID)
 }
 
+func TestCreativeDeleteRequiresConfirmationAndCascades(t *testing.T) {
+	tests := []struct {
+		level    string
+		expected [4]int64
+	}{
+		{level: "publication", expected: [4]int64{1, 1, 0, 0}},
+		{level: "capability", expected: [4]int64{1, 0, 0, 0}},
+		{level: "model", expected: [4]int64{}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.level, func(t *testing.T) {
+			database, err := gorm.Open(sqlite.Open("file:creative-recursive-delete-"+test.level+"?mode=memory&cache=shared"), &gorm.Config{})
+			require.NoError(t, err)
+			previousDB := model.DB
+			model.DB = database
+			t.Cleanup(func() { model.DB = previousDB })
+			require.NoError(t, database.AutoMigrate(&model.CreativeModel{}, &model.CreativeModelCapability{}, &model.CreativeModelPublication{}, &model.CreativeChannelBinding{}))
+
+			creativeModel := model.CreativeModel{ModelName: "delete-" + test.level, ModelKey: "delete-" + test.level, DisplayName: "Delete", Status: "enabled"}
+			require.NoError(t, database.Create(&creativeModel).Error)
+			capability := model.CreativeModelCapability{ModelID: creativeModel.ID, Category: "image", Operation: "generate", AssetKind: "raster", Protocol: "openai_image", ExecutionMode: "sync", InputSchema: "{}", DefaultParams: "{}", Enabled: true}
+			require.NoError(t, database.Create(&capability).Error)
+			publication := model.CreativeModelPublication{CapabilityID: capability.ID, GroupName: "default", GroupDefaultParams: "{}", Enabled: true}
+			require.NoError(t, database.Create(&publication).Error)
+			binding := model.CreativeChannelBinding{PublicationID: publication.ID, ChannelID: 1, RequestModel: creativeModel.ModelName, Enabled: true, ValidationStatus: "valid", ValidationMessage: "ready"}
+			require.NoError(t, database.Create(&binding).Error)
+
+			switch test.level {
+			case "publication":
+				require.EqualError(t, DeleteCreativePublication(publication.ID, false), "publication has channel bindings and cannot be deleted")
+				require.NoError(t, DeleteCreativePublication(publication.ID, true))
+			case "capability":
+				require.EqualError(t, DeleteCreativeCapability(capability.ID, false), "capability has publications and cannot be deleted")
+				require.NoError(t, DeleteCreativeCapability(capability.ID, true))
+			case "model":
+				require.EqualError(t, DeleteCreativeModel(creativeModel.ID, false), "model has capabilities and cannot be deleted")
+				require.NoError(t, DeleteCreativeModel(creativeModel.ID, true))
+			}
+
+			var counts [4]int64
+			require.NoError(t, database.Model(&model.CreativeModel{}).Count(&counts[0]).Error)
+			require.NoError(t, database.Model(&model.CreativeModelCapability{}).Count(&counts[1]).Error)
+			require.NoError(t, database.Model(&model.CreativeModelPublication{}).Count(&counts[2]).Error)
+			require.NoError(t, database.Model(&model.CreativeChannelBinding{}).Count(&counts[3]).Error)
+			assert.Equal(t, test.expected, counts)
+		})
+	}
+}
+
 func TestCreativePublicationRequiresEnabledCurrentModelInGroup(t *testing.T) {
 	database, err := gorm.Open(sqlite.Open("file:creative-publication-eligibility?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)

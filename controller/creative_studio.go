@@ -348,7 +348,7 @@ func DeleteCreativeModel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := service.DeleteCreativeModel(id); err != nil {
+	if err := service.DeleteCreativeModel(id, c.Query("cascade") == "true"); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -413,7 +413,7 @@ func DeleteCreativeCapability(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := service.DeleteCreativeCapability(id); err != nil {
+	if err := service.DeleteCreativeCapability(id, c.Query("cascade") == "true"); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -478,7 +478,7 @@ func DeleteCreativePublication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := service.DeleteCreativePublication(id); err != nil {
+	if err := service.DeleteCreativePublication(id, c.Query("cascade") == "true"); err != nil {
 		common.ApiError(c, err)
 		return
 	}

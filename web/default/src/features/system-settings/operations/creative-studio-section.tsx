@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -166,6 +167,11 @@ type Editor =
     }
   | null
 
+type DeleteRequest = {
+  url: string
+  description?: string
+}
+
 async function getBootstrap(): Promise<Bootstrap> {
   const response = await api.get<{
     success: boolean
@@ -187,6 +193,7 @@ export function CreativeStudioSection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [editor, setEditor] = useState<Editor>(null)
+  const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['creative-studio'],
     queryFn: getBootstrap,
@@ -213,9 +220,17 @@ export function CreativeStudioSection() {
     mutationFn: async (url: string) => requireSuccess(await api.delete(url)),
     onSuccess: () => {
       toast.success(t('Deleted successfully'))
+      setDeleteRequest(null)
       refresh()
     },
   })
+  const handleDelete = (request: DeleteRequest) => {
+    if (request.description) {
+      setDeleteRequest(request)
+      return
+    }
+    remove.mutate(request.url)
+  }
   const revalidateAll = useMutation({
     mutationFn: async (bindingIDs: number[]) =>
       Promise.all(
@@ -300,7 +315,7 @@ export function CreativeStudioSection() {
                 data={data}
                 t={t}
                 onEdit={setEditor}
-                onDelete={(url) => remove.mutate(url)}
+                onDelete={handleDelete}
                 onRevalidate={(bindingIDs) => revalidateAll.mutate(bindingIDs)}
                 validating={revalidateAll.isPending}
               />
@@ -317,6 +332,20 @@ export function CreativeStudioSection() {
           onSaved={refresh}
         />
       )}
+      <ConfirmDialog
+        open={deleteRequest !== null}
+        onOpenChange={(open) => {
+          if (!open && !remove.isPending) setDeleteRequest(null)
+        }}
+        title={t('Are you sure?')}
+        desc={deleteRequest?.description ?? ''}
+        confirmText={t('Delete')}
+        destructive
+        isLoading={remove.isPending}
+        handleConfirm={() => {
+          if (deleteRequest) remove.mutate(deleteRequest.url)
+        }}
+      />
     </SettingsSection>
   )
 }
@@ -374,20 +403,33 @@ function ModelTree(props: {
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
-  onDelete: (url: string) => void
+  onDelete: (request: DeleteRequest) => void
   onRevalidate: (bindingIDs: number[]) => void
   validating: boolean
 }) {
   const capabilities =
     props.data.capabilities[String(props.creativeModel.id)] ?? []
-  const bindingIDs = capabilities.flatMap((capability) =>
-    (props.data.publications[String(capability.id)] ?? []).flatMap(
-      (publication) =>
-        (props.data.bindings[String(publication.id)] ?? []).map(
-          (binding) => binding.id
-        )
-    )
+  const publications = capabilities.flatMap(
+    (capability) => props.data.publications[String(capability.id)] ?? []
   )
+  const bindings = publications.flatMap(
+    (publication) => props.data.bindings[String(publication.id)] ?? []
+  )
+  const bindingIDs = bindings.map((binding) => binding.id)
+  const hasActiveDescendants =
+    capabilities.some((capability) => capability.enabled) ||
+    publications.some((publication) => publication.enabled) ||
+    bindings.some((binding) => binding.enabled)
+  let deleteDescription = props.t('This action cannot be undone.')
+  if (capabilities.length > 0) {
+    deleteDescription = hasActiveDescendants
+      ? props.t(
+          'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+      : props.t(
+          'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+  }
   return (
     <details open className='bg-card rounded-xl border'>
       <summary className='cursor-pointer list-none px-4 py-3'>
@@ -450,9 +492,10 @@ function ModelTree(props: {
               size='sm'
               variant='destructive'
               onClick={() =>
-                props.onDelete(
-                  `/api/creative/admin/models/${props.creativeModel.id}`
-                )
+                props.onDelete({
+                  url: `/api/creative/admin/models/${props.creativeModel.id}?cascade=true`,
+                  description: deleteDescription,
+                })
               }
             >
               {props.t('Delete')}
@@ -732,10 +775,26 @@ function CapabilityTree(props: {
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
-  onDelete: (url: string) => void
+  onDelete: (request: DeleteRequest) => void
 }) {
   const publications =
     props.data.publications[String(props.capability.id)] ?? []
+  const bindings = publications.flatMap(
+    (publication) => props.data.bindings[String(publication.id)] ?? []
+  )
+  const hasActiveDescendants =
+    publications.some((publication) => publication.enabled) ||
+    bindings.some((binding) => binding.enabled)
+  let deleteDescription = props.t('This action cannot be undone.')
+  if (publications.length > 0) {
+    deleteDescription = hasActiveDescendants
+      ? props.t(
+          'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+      : props.t(
+          'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+  }
   return (
     <details className='ml-3 rounded-lg border border-dashed'>
       <summary className='cursor-pointer list-none px-3 py-2'>
@@ -793,9 +852,10 @@ function CapabilityTree(props: {
               size='sm'
               variant='destructive'
               onClick={() =>
-                props.onDelete(
-                  `/api/creative/admin/capabilities/${props.capability.id}`
-                )
+                props.onDelete({
+                  url: `/api/creative/admin/capabilities/${props.capability.id}?cascade=true`,
+                  description: deleteDescription,
+                })
               }
             >
               {props.t('Delete')}
@@ -943,9 +1003,20 @@ function PublicationTree(props: {
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
-  onDelete: (url: string) => void
+  onDelete: (request: DeleteRequest) => void
 }) {
   const bindings = props.data.bindings[String(props.publication.id)] ?? []
+  const hasActiveDescendants = bindings.some((binding) => binding.enabled)
+  let deleteDescription = props.t('This action cannot be undone.')
+  if (bindings.length > 0) {
+    deleteDescription = hasActiveDescendants
+      ? props.t(
+          'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+      : props.t(
+          'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.'
+        )
+  }
   return (
     <details className='ml-3 rounded-lg border border-dashed'>
       <summary className='cursor-pointer list-none px-3 py-2'>
@@ -1000,9 +1071,10 @@ function PublicationTree(props: {
               size='sm'
               variant='destructive'
               onClick={() =>
-                props.onDelete(
-                  `/api/creative/admin/publications/${props.publication.id}`
-                )
+                props.onDelete({
+                  url: `/api/creative/admin/publications/${props.publication.id}?cascade=true`,
+                  description: deleteDescription,
+                })
               }
             >
               {props.t('Delete')}
@@ -1088,7 +1160,7 @@ function BindingCard(props: {
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
-  onDelete: (url: string) => void
+  onDelete: (request: DeleteRequest) => void
 }) {
   const queryClient = useQueryClient()
   const channel = props.data.channels.find(
@@ -1174,7 +1246,9 @@ function BindingCard(props: {
             size='sm'
             variant='destructive'
             onClick={() =>
-              props.onDelete(`/api/creative/admin/bindings/${props.binding.id}`)
+              props.onDelete({
+                url: `/api/creative/admin/bindings/${props.binding.id}`,
+              })
             }
           >
             {props.t('Delete')}
@@ -1595,7 +1669,7 @@ function CreativeEditor(props: {
   )
   let duplicateMessage: string | undefined
   if (editor.kind === 'model') {
-    const modelName = (form.model_name ?? selected.model_name ?? '').trim()
+    const modelName = selectedModelName.trim()
     if (
       modelName &&
       props.data.models.some(

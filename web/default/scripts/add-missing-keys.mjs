@@ -1038,11 +1038,88 @@ const creativeStudioUi = {
   },
 }
 
+const cascadeDeleteMessages = {
+  en: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.',
+  },
+  zh: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '当前能力下仍有生效的分组或渠道配置。确认删除吗？确认后将递归删除所有下级配置。',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '当前分组下仍有生效的渠道配置。确认删除吗？确认后将递归删除所有下级配置。',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '当前配置仍有下级配置。确认删除吗？确认后将递归删除所有下级配置。',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '当前模型下仍有生效的能力、分组或渠道配置。确认删除吗？确认后将递归删除所有下级配置。',
+  },
+  'zh-TW': {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '目前能力下仍有生效的群組或渠道設定。確認刪除嗎？確認後將遞迴刪除所有下級設定。',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '目前群組下仍有生效的渠道設定。確認刪除嗎？確認後將遞迴刪除所有下級設定。',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '目前設定仍有下級設定。確認刪除嗎？確認後將遞迴刪除所有下級設定。',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      '目前模型下仍有生效的能力、群組或渠道設定。確認刪除嗎？確認後將遞迴刪除所有下級設定。',
+  },
+  fr: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Cette capacité contient encore des configurations de groupe ou de canal actives. Confirmer la suppression ? Toutes les configurations imbriquées seront supprimées récursivement.',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Ce groupe contient encore des configurations de canal actives. Confirmer la suppression ? Toutes les configurations imbriquées seront supprimées récursivement.',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Cet élément contient encore des configurations imbriquées. Confirmer la suppression ? Elles seront toutes supprimées récursivement.',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Ce modèle contient encore des configurations de capacité, de groupe ou de canal actives. Confirmer la suppression ? Toutes les configurations imbriquées seront supprimées récursivement.',
+  },
+  ja: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'この機能には有効なグループ設定またはチャネル設定が残っています。削除しますか？確認すると、すべての下位設定が再帰的に削除されます。',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'このグループには有効なチャネル設定が残っています。削除しますか？確認すると、すべての下位設定が再帰的に削除されます。',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'この項目には下位設定が残っています。削除しますか？確認すると、すべての下位設定が再帰的に削除されます。',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'このモデルには有効な機能、グループ、またはチャネル設定が残っています。削除しますか？確認すると、すべての下位設定が再帰的に削除されます。',
+  },
+  ru: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'У этой возможности ещё есть активные настройки групп или каналов. Подтвердить удаление? Все вложенные настройки будут удалены рекурсивно.',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'У этой группы ещё есть активные настройки каналов. Подтвердить удаление? Все вложенные настройки будут удалены рекурсивно.',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'У этого элемента ещё есть вложенные настройки. Подтвердить удаление? Все они будут удалены рекурсивно.',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'У этой модели ещё есть активные настройки возможностей, групп или каналов. Подтвердить удаление? Все вложенные настройки будут удалены рекурсивно.',
+  },
+  vi: {
+    'This capability still has active group or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Khả năng này vẫn có cấu hình nhóm hoặc kênh đang hoạt động. Xác nhận xóa? Tất cả cấu hình con sẽ bị xóa đệ quy.',
+    'This group still has active channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Nhóm này vẫn có cấu hình kênh đang hoạt động. Xác nhận xóa? Tất cả cấu hình con sẽ bị xóa đệ quy.',
+    'This item still has nested configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Mục này vẫn có cấu hình con. Xác nhận xóa? Tất cả cấu hình con sẽ bị xóa đệ quy.',
+    'This model still has active capability, group, or channel configurations. Confirm deletion? All nested configurations will be deleted recursively.':
+      'Mô hình này vẫn có cấu hình khả năng, nhóm hoặc kênh đang hoạt động. Xác nhận xóa? Tất cả cấu hình con sẽ bị xóa đệ quy.',
+  },
+}
+
 for (const [locale, translations] of Object.entries(creativeStudioUi)) {
   Object.assign(newKeys[locale], translations)
 }
 
 for (const [locale, translations] of Object.entries(validationMessages)) {
+  Object.assign(newKeys[locale], translations)
+}
+
+for (const [locale, translations] of Object.entries(cascadeDeleteMessages)) {
   Object.assign(newKeys[locale], translations)
 }
 

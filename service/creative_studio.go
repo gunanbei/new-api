@@ -165,15 +165,36 @@ func UpdateCreativeModel(id uint64, input dto.CreativeModelRequest, userID int64
 	return &creativeModel, nil
 }
 
-func DeleteCreativeModel(id uint64) error {
-	var count int64
-	if err := model.DB.Model(&model.CreativeModelCapability{}).Where("model_id = ?", id).Count(&count).Error; err != nil {
-		return err
+func DeleteCreativeModel(id uint64, cascade bool) error {
+	if !cascade {
+		var count int64
+		if err := model.DB.Model(&model.CreativeModelCapability{}).Where("model_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("model has capabilities and cannot be deleted")
+		}
+		return model.DB.Delete(&model.CreativeModel{}, id).Error
 	}
-	if count > 0 {
-		return fmt.Errorf("model has capabilities and cannot be deleted")
-	}
-	return model.DB.Delete(&model.CreativeModel{}, id).Error
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var capabilityIDs []uint64
+		if err := tx.Model(&model.CreativeModelCapability{}).Where("model_id = ?", id).Pluck("id", &capabilityIDs).Error; err != nil {
+			return err
+		}
+		if len(capabilityIDs) > 0 {
+			var publicationIDs []uint64
+			if err := tx.Model(&model.CreativeModelPublication{}).Where("capability_id IN ?", capabilityIDs).Pluck("id", &publicationIDs).Error; err != nil {
+				return err
+			}
+			if err := deleteCreativePublications(tx, publicationIDs); err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", capabilityIDs).Delete(&model.CreativeModelCapability{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&model.CreativeModel{}, id).Error
+	})
 }
 
 func ListCreativeCapabilities(modelID uint64) ([]model.CreativeModelCapability, error) {
@@ -256,15 +277,27 @@ func UpdateCreativeCapability(id uint64, input dto.CreativeCapabilityRequest, us
 	return &capability, nil
 }
 
-func DeleteCreativeCapability(id uint64) error {
-	var count int64
-	if err := model.DB.Model(&model.CreativeModelPublication{}).Where("capability_id = ?", id).Count(&count).Error; err != nil {
-		return err
+func DeleteCreativeCapability(id uint64, cascade bool) error {
+	if !cascade {
+		var count int64
+		if err := model.DB.Model(&model.CreativeModelPublication{}).Where("capability_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("capability has publications and cannot be deleted")
+		}
+		return model.DB.Delete(&model.CreativeModelCapability{}, id).Error
 	}
-	if count > 0 {
-		return fmt.Errorf("capability has publications and cannot be deleted")
-	}
-	return model.DB.Delete(&model.CreativeModelCapability{}, id).Error
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var publicationIDs []uint64
+		if err := tx.Model(&model.CreativeModelPublication{}).Where("capability_id = ?", id).Pluck("id", &publicationIDs).Error; err != nil {
+			return err
+		}
+		if err := deleteCreativePublications(tx, publicationIDs); err != nil {
+			return err
+		}
+		return tx.Delete(&model.CreativeModelCapability{}, id).Error
+	})
 }
 
 func ListCreativePublications(capabilityID uint64) ([]model.CreativeModelPublication, error) {
@@ -342,15 +375,30 @@ func UpdateCreativePublication(id uint64, input dto.CreativePublicationRequest, 
 	return &publication, nil
 }
 
-func DeleteCreativePublication(id uint64) error {
-	var count int64
-	if err := model.DB.Model(&model.CreativeChannelBinding{}).Where("publication_id = ?", id).Count(&count).Error; err != nil {
+func DeleteCreativePublication(id uint64, cascade bool) error {
+	if !cascade {
+		var count int64
+		if err := model.DB.Model(&model.CreativeChannelBinding{}).Where("publication_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("publication has channel bindings and cannot be deleted")
+		}
+		return model.DB.Delete(&model.CreativeModelPublication{}, id).Error
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		return deleteCreativePublications(tx, []uint64{id})
+	})
+}
+
+func deleteCreativePublications(tx *gorm.DB, publicationIDs []uint64) error {
+	if len(publicationIDs) == 0 {
+		return nil
+	}
+	if err := tx.Where("publication_id IN ?", publicationIDs).Delete(&model.CreativeChannelBinding{}).Error; err != nil {
 		return err
 	}
-	if count > 0 {
-		return fmt.Errorf("publication has channel bindings and cannot be deleted")
-	}
-	return model.DB.Delete(&model.CreativeModelPublication{}, id).Error
+	return tx.Where("id IN ?", publicationIDs).Delete(&model.CreativeModelPublication{}).Error
 }
 
 func ListCreativeBindings(publicationID uint64) ([]model.CreativeChannelBinding, error) {

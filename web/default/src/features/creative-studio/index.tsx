@@ -62,6 +62,13 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -873,24 +880,28 @@ export function CreativeStudio() {
               <div className='grid items-start gap-4 sm:grid-cols-2'>
                 <label className='grid gap-2 text-sm font-medium'>
                   {t('Choose a model')}
-                  <NativeSelect
-                    className='w-full'
+                  <Select
                     disabled={models.length === 0}
-                    value={activeCapabilityID ?? ''}
-                    onChange={(event) => {
-                      setCapabilityID(Number(event.target.value))
+                    value={String(activeCapabilityID ?? '')}
+                    onValueChange={(value) => {
+                      setCapabilityID(Number(value))
                       setParams({})
                     }}
                   >
-                    {models.map(({ capability, creativeModel }) => (
-                      <NativeSelectOption
-                        key={capability.id}
-                        value={capability.id}
-                      >
-                        {creativeModel.display_name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map(({ capability, creativeModel }) => (
+                        <SelectItem
+                          key={capability.id}
+                          value={String(capability.id)}
+                        >
+                          {creativeModel.display_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 {fields.n && (
                   <CreativeField

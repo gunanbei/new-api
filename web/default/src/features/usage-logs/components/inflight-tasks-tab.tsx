@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
-import { Eye, FolderOpen, GitBranch, RefreshCw, ScrollText, Trash2 } from 'lucide-react'
+import {
+  Eye,
+  FolderOpen,
+  GitBranch,
+  RefreshCw,
+  ScrollText,
+  Trash2,
+} from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -42,16 +49,16 @@ import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   Popover,
@@ -66,6 +73,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -75,15 +90,15 @@ import { useIsAdmin } from '@/hooks/use-admin'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
-import { cn } from '@/lib/utils'
+import { cn, tryPrettyJson } from '@/lib/utils'
 
-import { getDefaultTimeRange } from '../lib/utils'
 import {
   deleteInflightTraceLocalCacheFiles,
   listInflightTraceLocalCacheFiles,
-  selectInflightTraceLocalCacheDirectory,
-  supportsInflightTraceLocalCache,
+  readInflightTraceLocalCacheRows,
+  type InflightTraceLocalCacheFile,
 } from '../lib/inflight-trace-local-cache'
+import { getDefaultTimeRange } from '../lib/utils'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   InflightDetailRow,
@@ -97,7 +112,8 @@ import {
 } from './logs-filter-toolbar'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const inflightColumnVisibilityStorageKey = 'usage-logs:inflight:column-visibility'
+const inflightColumnVisibilityStorageKey =
+  'usage-logs:inflight:column-visibility'
 const inflightListLiveRefreshMs = 5000
 
 type InflightTaskStatusStep = {
@@ -500,7 +516,10 @@ function getRetryState(task: InflightTask) {
   return 'idle'
 }
 
-function getRetryStateLabel(task: InflightTask, t: (key: string, options?: Record<string, unknown>) => string) {
+function getRetryStateLabel(
+  task: InflightTask,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (isFinalFailure(task)) {
     return t('Final Failure')
   }
@@ -511,14 +530,20 @@ function getRetryStateLabel(task: InflightTask, t: (key: string, options?: Recor
   return t('No Retry')
 }
 
-function getRetryAttemptLabel(task: InflightTask, t: (key: string, options?: Record<string, unknown>) => string) {
+function getRetryAttemptLabel(
+  task: InflightTask,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   return t('Attempt {{current}} of {{total}}', {
     current: getRetryIndex(task) + 1,
     total: getAttemptCount(task),
   })
 }
 
-function getAttemptDisplayStatus(attempt: InflightTaskAttempt, task: InflightTask) {
+function getAttemptDisplayStatus(
+  attempt: InflightTaskAttempt,
+  task: InflightTask
+) {
   if (
     attempt.retry_index === getRetryIndex(task) &&
     task.status === 'completed' &&
@@ -529,14 +554,20 @@ function getAttemptDisplayStatus(attempt: InflightTaskAttempt, task: InflightTas
   return attempt.status
 }
 
-function getAttemptDisplayError(attempt: InflightTaskAttempt, task: InflightTask) {
+function getAttemptDisplayError(
+  attempt: InflightTaskAttempt,
+  task: InflightTask
+) {
   if (getAttemptDisplayStatus(attempt, task) === 'completed') {
     return ''
   }
   return attempt.error ?? ''
 }
 
-function isBetterAttempt(candidate: InflightTaskAttempt, current: InflightTaskAttempt) {
+function isBetterAttempt(
+  candidate: InflightTaskAttempt,
+  current: InflightTaskAttempt
+) {
   const candidateTerminal =
     candidate.status === 'failed' || candidate.status === 'completed'
   const currentTerminal =
@@ -555,7 +586,9 @@ function isBetterAttempt(candidate: InflightTaskAttempt, current: InflightTaskAt
 // dedupeAndSortAttempts guarantees a single entry per retry_index rendered in
 // ascending retry order, tolerating older backend data that may still carry
 // duplicate or out-of-order attempts.
-function dedupeAndSortAttempts(attempts: InflightTaskAttempt[]): InflightTaskAttempt[] {
+function dedupeAndSortAttempts(
+  attempts: InflightTaskAttempt[]
+): InflightTaskAttempt[] {
   const byRetry = new Map<number, InflightTaskAttempt>()
   for (const attempt of attempts) {
     const existing = byRetry.get(attempt.retry_index)
@@ -643,7 +676,9 @@ function getAttempts(task: InflightTask): InflightTaskAttempt[] {
     if (chain.length === 0) {
       resolved = []
     } else {
-      resolved = dedupeAndSortAttempts(chain.map((attempt) => attemptFromChannel(attempt, task)))
+      resolved = dedupeAndSortAttempts(
+        chain.map((attempt) => attemptFromChannel(attempt, task))
+      )
     }
   }
 
@@ -660,7 +695,10 @@ function getTimelineAccentClass(status: string) {
   return 'bg-amber-400/80'
 }
 
-function getRetryPathAccentClass(task: InflightTask, attempt: InflightTaskChannelAttempt) {
+function getRetryPathAccentClass(
+  task: InflightTask,
+  attempt: InflightTaskChannelAttempt
+) {
   if (attempt.status === 'failed') {
     return 'bg-red-400/80'
   }
@@ -670,7 +708,10 @@ function getRetryPathAccentClass(task: InflightTask, attempt: InflightTaskChanne
   return 'bg-border'
 }
 
-function shouldAttemptDefaultOpen(attempts: InflightTaskAttempt[], retryIndex: number) {
+function shouldAttemptDefaultOpen(
+  attempts: InflightTaskAttempt[],
+  retryIndex: number
+) {
   if (attempts.length <= 1) {
     return true
   }
@@ -766,7 +807,9 @@ async function fetchInflightTaskByRequestId(
   return result.data?.items?.[0] ?? null
 }
 
-function getMockInflightTasksResponse(params: Record<string, unknown>): NonNullable<InflightTasksResponse['data']> {
+function getMockInflightTasksResponse(
+  params: Record<string, unknown>
+): NonNullable<InflightTasksResponse['data']> {
   const page = typeof params.p === 'number' ? params.p : 1
   const pageSize = typeof params.page_size === 'number' ? params.page_size : 100
   const status = typeof params.status === 'string' ? params.status : ''
@@ -784,14 +827,22 @@ function getMockInflightTasksResponse(params: Record<string, unknown>): NonNulla
     if (kind && task.kind !== kind) return false
     if (stream === 'true' && !task.is_stream) return false
     if (stream === 'false' && task.is_stream) return false
-    if (modelName && !task.model_name.toLowerCase().includes(modelName)) return false
-    if (requestId && !task.request_id.toLowerCase().includes(requestId)) return false
+    if (modelName && !task.model_name.toLowerCase().includes(modelName))
+      return false
+    if (requestId && !task.request_id.toLowerCase().includes(requestId))
+      return false
     if (channel) {
-      const currentChannel = `${task.detail?.channel_id ?? ''} ${task.detail?.channel_name ?? ''}`.toLowerCase()
+      const currentChannel =
+        `${task.detail?.channel_id ?? ''} ${task.detail?.channel_name ?? ''}`.toLowerCase()
       const retryChannels = (task.detail?.channel_chain ?? [])
-        .map((attempt) => `${attempt.channel_id ?? ''} ${attempt.channel_name ?? ''}`.toLowerCase())
+        .map((attempt) =>
+          `${attempt.channel_id ?? ''} ${attempt.channel_name ?? ''}`.toLowerCase()
+        )
         .join(' ')
-      if (!currentChannel.includes(channel) && !retryChannels.includes(channel)) {
+      if (
+        !currentChannel.includes(channel) &&
+        !retryChannels.includes(channel)
+      ) {
         return false
       }
     }
@@ -859,7 +910,10 @@ function renderChannelCell(task: InflightTask, t: (key: string) => string) {
                 />
               }
             >
-              <GitBranch className='size-3.5 text-amber-500' aria-hidden='true' />
+              <GitBranch
+                className='size-3.5 text-amber-500'
+                aria-hidden='true'
+              />
             </PopoverTrigger>
             <PopoverContent side='top' align='start' className='w-64 text-xs'>
               <div className='flex flex-col gap-1'>
@@ -894,7 +948,10 @@ function buildDetailsSummary(task: InflightTask, t: (key: string) => string) {
     t(statusLabel[task.status] || task.status),
     `${totalDuration}s`,
   ]
-  if (getRetryIndex(task) > 0 || (task.detail?.channel_chain?.length ?? 0) > 1) {
+  if (
+    getRetryIndex(task) > 0 ||
+    (task.detail?.channel_chain?.length ?? 0) > 1
+  ) {
     summary.push(getRetryStateLabel(task, t))
   }
   if (getLatestError(task)) {
@@ -913,10 +970,23 @@ function InflightTaskDetailsDialog(props: {
 }) {
   const { t } = useTranslation()
   const requestId = props.task?.request_id
-  const { data: liveTask, isFetched, isLoading } = useQuery({
-    queryKey: ['inflight-task-detail', requestId, props.fetchParams, props.useMock],
+  const {
+    data: liveTask,
+    isFetched,
+    isLoading,
+  } = useQuery({
+    queryKey: [
+      'inflight-task-detail',
+      requestId,
+      props.fetchParams,
+      props.useMock,
+    ],
     queryFn: () =>
-      fetchInflightTaskByRequestId(requestId!, props.fetchParams, props.useMock),
+      fetchInflightTaskByRequestId(
+        requestId!,
+        props.fetchParams,
+        props.useMock
+      ),
     enabled: props.open && !!requestId,
     placeholderData: props.task ?? undefined,
     refetchInterval: (query) => {
@@ -933,13 +1003,7 @@ function InflightTaskDetailsDialog(props: {
   })
 
   useEffect(() => {
-    if (
-      !props.open ||
-      props.useMock ||
-      !requestId ||
-      isLoading ||
-      !isFetched
-    ) {
+    if (!props.open || props.useMock || !requestId || isLoading || !isFetched) {
       return
     }
     if (liveTask === null) {
@@ -959,8 +1023,7 @@ function InflightTaskDetailsDialog(props: {
     t,
   ])
 
-  const task =
-    isFetched && liveTask === null ? null : (liveTask ?? props.task)
+  const task = isFetched && liveTask === null ? null : (liveTask ?? props.task)
 
   return (
     <Dialog
@@ -990,10 +1053,7 @@ function InflightTaskDetailsDialog(props: {
   )
 }
 
-function InflightTaskDetails(props: {
-  task: InflightTask
-  isAdmin: boolean
-}) {
+function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
   const { t } = useTranslation()
   const timeline = props.task.detail?.timeline ?? []
   const attempts = getAttempts(props.task)
@@ -1036,7 +1096,11 @@ function InflightTaskDetails(props: {
       </div>
 
       <div className='min-w-0 space-y-1'>
-        <InflightDetailRow label={t('Request ID')} value={props.task.request_id} mono />
+        <InflightDetailRow
+          label={t('Request ID')}
+          value={props.task.request_id}
+          mono
+        />
         <InflightDetailRow
           label={t('Model')}
           value={props.task.model_name || '-'}
@@ -1064,7 +1128,11 @@ function InflightTaskDetails(props: {
           </>
         ) : null}
         {props.isAdmin && props.task.detail?.channel_id ? (
-          <InflightDetailRow label={t('Current Node')} value={channelDisplay} mono />
+          <InflightDetailRow
+            label={t('Current Node')}
+            value={channelDisplay}
+            mono
+          />
         ) : null}
         <InflightDetailRow
           label={t('Type')}
@@ -1095,7 +1163,7 @@ function InflightTaskDetails(props: {
             {timeline.map((step) => (
               <div
                 key={`${step.status}-${step.started_at}-${step.updated_at}`}
-                className='relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3'
+                className='border-border/60 bg-background/80 relative space-y-1 rounded-md border p-2 pl-3'
               >
                 <span
                   className={cn(
@@ -1157,7 +1225,10 @@ function InflightTaskDetails(props: {
                 updated_at: attempt.updated_at,
               }
               const attemptTimeline = attempt.timeline ?? []
-              const defaultOpen = shouldAttemptDefaultOpen(attempts, attempt.retry_index)
+              const defaultOpen = shouldAttemptDefaultOpen(
+                attempts,
+                attempt.retry_index
+              )
               return (
                 <Collapsible
                   key={`${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
@@ -1199,7 +1270,9 @@ function InflightTaskDetails(props: {
                         ) : null}
                         {displayStatus ? (
                           <StatusBadge
-                            label={t(statusLabel[displayStatus] || displayStatus)}
+                            label={t(
+                              statusLabel[displayStatus] || displayStatus
+                            )}
                             variant={statusVariant[displayStatus] || 'neutral'}
                             size='sm'
                             copyable={false}
@@ -1231,7 +1304,10 @@ function InflightTaskDetails(props: {
                           aria-hidden='true'
                         />
                         {attempt.channel_name ? (
-                          <InflightDetailRow label={t('Channel')} value={attempt.channel_name} />
+                          <InflightDetailRow
+                            label={t('Channel')}
+                            value={attempt.channel_name}
+                          />
                         ) : null}
                         {attempt.started_at ? (
                           <InflightDetailRow
@@ -1260,7 +1336,7 @@ function InflightTaskDetails(props: {
                           {attemptTimeline.map((step) => (
                             <div
                               key={`${attempt.retry_index}-${step.status}-${step.started_at}-${step.updated_at}`}
-                              className='relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3'
+                              className='border-border/60 bg-background/80 relative space-y-1 rounded-md border p-2 pl-3'
                             >
                               <span
                                 className={cn(
@@ -1271,8 +1347,12 @@ function InflightTaskDetails(props: {
                               />
                               <div className='flex flex-wrap items-center gap-2'>
                                 <StatusBadge
-                                  label={t(statusLabel[step.status] || step.status)}
-                                  variant={statusVariant[step.status] || 'neutral'}
+                                  label={t(
+                                    statusLabel[step.status] || step.status
+                                  )}
+                                  variant={
+                                    statusVariant[step.status] || 'neutral'
+                                  }
                                   size='sm'
                                   copyable={false}
                                 />
@@ -1315,9 +1395,7 @@ function InflightTaskDetails(props: {
 
       {latestError ? (
         <InflightDetailSection label={t('Latest Error')} variant='danger'>
-          <p className='text-xs wrap-break-word'>
-            {latestError}
-          </p>
+          <p className='text-xs wrap-break-word'>{latestError}</p>
         </InflightDetailSection>
       ) : null}
     </div>
@@ -1793,34 +1871,41 @@ function InflightFilterBar<TData>(props: {
       searchLoading={props.isFetching && !props.liveRefresh}
       actionStart={
         <div className='flex items-center gap-2'>
-          <Button type='button' variant='outline' size='sm' onClick={props.onOpenLocalCache}>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={props.onOpenLocalCache}
+          >
             <FolderOpen />
-            {t('Local cache files')}
+            {t('Browser debug cache files')}
           </Button>
           <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type='button'
-                variant={props.liveRefresh ? 'secondary' : 'outline'}
-                size='icon'
-                onClick={props.onToggleLiveRefresh}
-                aria-pressed={props.liveRefresh}
-                aria-label={
-                  props.liveRefresh
-                    ? t('Stop live refresh')
-                    : t('Start live refresh')
-                }
+            <TooltipTrigger
+              render={
+                <Button
+                  type='button'
+                  variant={props.liveRefresh ? 'secondary' : 'outline'}
+                  size='icon'
+                  onClick={props.onToggleLiveRefresh}
+                  aria-pressed={props.liveRefresh}
+                  aria-label={
+                    props.liveRefresh
+                      ? t('Stop live refresh')
+                      : t('Start live refresh')
+                  }
+                />
+              }
+            >
+              <RefreshCw
+                className={cn('size-4', props.liveRefresh && 'animate-spin')}
               />
-            }
-          >
-            <RefreshCw
-              className={cn('size-4', props.liveRefresh && 'animate-spin')}
-            />
-          </TooltipTrigger>
-          <TooltipContent>
-            {props.liveRefresh ? t('Stop live refresh') : t('Start live refresh')}
-          </TooltipContent>
+            </TooltipTrigger>
+            <TooltipContent>
+              {props.liveRefresh
+                ? t('Stop live refresh')
+                : t('Start live refresh')}
+            </TooltipContent>
           </Tooltip>
         </div>
       }
@@ -1837,14 +1922,24 @@ export function InflightTasksTab() {
   const [traceTask, setTraceTask] = useState<InflightTask | null>(null)
   const [liveRefresh, setLiveRefresh] = useState(false)
   const [localCacheOpen, setLocalCacheOpen] = useState(false)
-  const [localCacheFiles, setLocalCacheFiles] = useState<string[]>([])
-  const [selectedLocalCacheFiles, setSelectedLocalCacheFiles] = useState<string[]>([])
+  const [localCacheFiles, setLocalCacheFiles] = useState<
+    InflightTraceLocalCacheFile[]
+  >([])
+  const [selectedLocalCacheFiles, setSelectedLocalCacheFiles] = useState<
+    string[]
+  >([])
+  const [localCacheDetail, setLocalCacheDetail] = useState<{
+    fileName: string
+    headers: string[]
+    rows: Array<{
+      requestId: string
+      recordedAt: string
+      traceJson: string
+      formattedTraceJson: string
+    }>
+  } | null>(null)
 
   const refreshLocalCacheFiles = useCallback(async () => {
-    if (!supportsInflightTraceLocalCache()) {
-      toast.error(t('Local cache is only supported in Chromium browsers.'))
-      return
-    }
     try {
       setLocalCacheFiles(await listInflightTraceLocalCacheFiles())
     } catch {
@@ -1856,6 +1951,18 @@ export function InflightTasksTab() {
     setLocalCacheOpen(true)
     await refreshLocalCacheFiles()
   }, [refreshLocalCacheFiles])
+  const localCacheSize = useMemo(() => {
+    const selectedFileNames = new Set(selectedLocalCacheFiles)
+    const sizeBytes = localCacheFiles.reduce(
+      (total, file) =>
+        total +
+        (selectedFileNames.size === 0 || selectedFileNames.has(file.fileName)
+          ? file.sizeBytes
+          : 0),
+      0
+    )
+    return (sizeBytes / 1024).toFixed(2)
+  }, [localCacheFiles, selectedLocalCacheFiles])
   const {
     columnFilters,
     onColumnFiltersChange,
@@ -2031,24 +2138,209 @@ export function InflightTasksTab() {
       <Dialog
         open={localCacheOpen}
         onOpenChange={setLocalCacheOpen}
-        title={t('Local cache files')}
-        description={t('Manage CSV archives downloaded by this browser.')}
-        footer={<Button variant='outline' onClick={() => setLocalCacheOpen(false)}>{t('Close')}</Button>}
+        title={t('Browser debug cache files')}
+        description={t('Manage debug archives cached in this browser.')}
+        footer={
+          <Button variant='outline' onClick={() => setLocalCacheOpen(false)}>
+            {t('Close')}
+          </Button>
+        }
       >
         <div className='flex flex-wrap gap-2'>
-          <Button type='button' variant='outline' size='sm' onClick={async () => { await selectInflightTraceLocalCacheDirectory(); await refreshLocalCacheFiles() }}>
-            {t('Choose cache directory')}
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() =>
+              setSelectedLocalCacheFiles(
+                localCacheFiles.map((file) => file.fileName)
+              )
+            }
+          >
+            {t('Select all')}
           </Button>
-          <Button type='button' variant='outline' size='sm' onClick={() => setSelectedLocalCacheFiles(localCacheFiles)}>{t('Select all')}</Button>
-          <Button type='button' variant='outline' size='sm' onClick={() => setSelectedLocalCacheFiles((selected) => localCacheFiles.filter((file) => !selected.includes(file)))}>{t('Invert selection')}</Button>
-          <Button type='button' variant='destructive' size='sm' disabled={!selectedLocalCacheFiles.length} onClick={async () => { await deleteInflightTraceLocalCacheFiles(selectedLocalCacheFiles); setSelectedLocalCacheFiles([]); await refreshLocalCacheFiles() }}>
-            <Trash2 />{t('Delete selected')}
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() =>
+              setSelectedLocalCacheFiles((selected) =>
+                localCacheFiles
+                  .filter((file) => !selected.includes(file.fileName))
+                  .map((file) => file.fileName)
+              )
+            }
+          >
+            {t('Invert selection')}
           </Button>
+          <Button
+            type='button'
+            variant='destructive'
+            size='sm'
+            disabled={!selectedLocalCacheFiles.length}
+            onClick={async () => {
+              await deleteInflightTraceLocalCacheFiles(selectedLocalCacheFiles)
+              setSelectedLocalCacheFiles([])
+              await refreshLocalCacheFiles()
+            }}
+          >
+            <Trash2 />
+            {t('Delete selected')}
+          </Button>
+          <span className='text-muted-foreground self-center text-sm'>
+            {selectedLocalCacheFiles.length > 0
+              ? t('Current selected cached files size: {{size}} KB', {
+                  size: localCacheSize,
+                })
+              : t('Current total cached files size: {{size}} KB', {
+                  size: localCacheSize,
+                })}
+          </span>
         </div>
         <div className='mt-4 max-h-80 space-y-2 overflow-auto rounded-md border p-3'>
-          {localCacheFiles.length === 0 ? <p className='text-muted-foreground text-sm'>{t('No local cache files.')}</p> : localCacheFiles.map((file) => (
-            <label key={file} className='flex items-center gap-2 text-sm'><Checkbox checked={selectedLocalCacheFiles.includes(file)} onCheckedChange={(checked) => setSelectedLocalCacheFiles((selected) => checked ? [...selected, file] : selected.filter((value) => value !== file))} />{file}</label>
-          ))}
+          {localCacheFiles.length === 0 ? (
+            <p className='text-muted-foreground text-sm'>
+              {t('No local cache files.')}
+            </p>
+          ) : (
+            localCacheFiles.map((file) => (
+              <div
+                key={file.fileName}
+                className='flex items-center gap-2 text-sm'
+              >
+                <label className='flex min-w-0 flex-1 items-center gap-2'>
+                  <Checkbox
+                    checked={selectedLocalCacheFiles.includes(file.fileName)}
+                    onCheckedChange={(checked) =>
+                      setSelectedLocalCacheFiles((selected) =>
+                        checked
+                          ? [...selected, file.fileName]
+                          : selected.filter((value) => value !== file.fileName)
+                      )
+                    }
+                  />
+                  <span className='min-w-0 flex-1 truncate'>{file.fileName}</span>
+                </label>
+                <div className='flex shrink-0 gap-2'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={async () => {
+                      try {
+                        const csvRows = await readInflightTraceLocalCacheRows(
+                          file.fileName
+                        )
+                        if (csvRows === null) {
+                          toast.error(t('Failed to load local cache files'))
+                          return
+                        }
+                        const [headers = [], ...rows] = csvRows
+                        setLocalCacheDetail({
+                          fileName: file.fileName,
+                          headers,
+                          rows: rows.map((row) => ({
+                            requestId: row[0] ?? '',
+                            recordedAt: row[1] ?? '',
+                            traceJson: row[2] ?? '',
+                            formattedTraceJson: tryPrettyJson(row[2] ?? ''),
+                          })),
+                        })
+                      } catch {
+                        toast.error(t('Failed to load local cache files'))
+                      }
+                    }}
+                  >
+                    <Eye />
+                    {t('Details')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='destructive'
+                    size='sm'
+                    onClick={async () => {
+                      await deleteInflightTraceLocalCacheFiles([file.fileName])
+                      setSelectedLocalCacheFiles((selected) =>
+                        selected.filter((value) => value !== file.fileName)
+                      )
+                      await refreshLocalCacheFiles()
+                    }}
+                  >
+                    <Trash2 />
+                    {t('Delete')}
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Dialog>
+      <Dialog
+        open={localCacheDetail !== null}
+        onOpenChange={(open) => {
+          if (!open) setLocalCacheDetail(null)
+        }}
+        title={t('Details')}
+        description={localCacheDetail?.fileName}
+        contentClassName='max-h-[calc(100dvh-2rem)] sm:max-w-6xl'
+        footer={
+          <Button variant='outline' onClick={() => setLocalCacheDetail(null)}>
+            {t('Close')}
+          </Button>
+        }
+      >
+        <div className='max-h-[60vh] overflow-auto rounded-md border'>
+          <Table className='table-fixed'>
+            <colgroup>
+              <col className='w-64' />
+              <col className='w-36' />
+              <col />
+            </colgroup>
+            <TableHeader className='bg-background sticky top-0 z-10'>
+              <TableRow>
+                {(localCacheDetail?.headers ?? []).map((header) => (
+                  <TableHead key={header}>{header}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(localCacheDetail?.rows ?? []).map((row, index) => (
+                <TableRow key={`${row.requestId}-${row.recordedAt}-${index}`}>
+                  <TableCell className='truncate font-mono text-xs'>
+                    {row.requestId}
+                  </TableCell>
+                  <TableCell className='font-mono text-xs'>
+                    {row.recordedAt}
+                  </TableCell>
+                  <TableCell className='min-w-0 overflow-hidden'>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type='button'
+                            className='block w-full truncate text-left font-mono text-xs'
+                          />
+                        }
+                      >
+                        {row.traceJson}
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side='top'
+                        align='end'
+                        sideOffset={8}
+                        arrowClassName='bg-popover fill-popover'
+                        className='bg-popover text-popover-foreground border-border max-h-[40vh] w-[48rem] max-w-[calc(100vw-3rem)] items-start overflow-auto border p-3 shadow-lg'
+                      >
+                        <pre className='text-popover-foreground min-w-0 max-w-full text-left font-mono text-xs whitespace-pre-wrap break-all'>
+                          {row.formattedTraceJson}
+                        </pre>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </Dialog>
       <InflightTaskDetailsDialog

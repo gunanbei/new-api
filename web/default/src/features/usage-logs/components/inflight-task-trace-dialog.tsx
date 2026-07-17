@@ -65,7 +65,6 @@ import { cn } from '@/lib/utils'
 import {
   cacheInflightTraceArchive,
   readInflightTraceArchiveRecord,
-  supportsInflightTraceLocalCache,
 } from '../lib/inflight-trace-local-cache'
 
 import {
@@ -844,10 +843,6 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
 
   const cacheArchive = async () => {
     if (!props.requestId || !trace?.archive) return
-    if (!supportsInflightTraceLocalCache()) {
-      toast.error(t('Local cache is only supported in Chromium browsers.'))
-      return
-    }
     setShowArchiveDownloadConfirm(false)
     setIsCachingArchive(true)
     try {
@@ -860,7 +855,7 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
           archive: trace.archive,
         })
       }
-      toast.success(t('Archive downloaded to local cache.'))
+      toast.success(t('Archive downloaded to browser debug cache.'))
     } catch {
       toast.error(t('Failed to download archive'))
     } finally {
@@ -922,7 +917,7 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{t('Download archive')}</AlertDialogTitle>
-                <AlertDialogDescription>{t('Download this archive to your selected local cache directory?')}</AlertDialogDescription>
+                <AlertDialogDescription>{t('Download this archive to browser debug cache?')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <label className='mr-auto flex items-center gap-2 text-sm'>

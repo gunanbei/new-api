@@ -130,6 +130,133 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+.click-effects-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  pointer-events: none;
+}
+
+.click-effect {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-style: normal;
+  will-change: transform, opacity;
+}
+
+.click-effect--ring {
+  width: 14px;
+  height: 14px;
+  border: 2.5px solid rgba(139, 124, 246, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 12px 2px rgba(139, 124, 246, 0.45);
+  animation: click-effect-ring 0.5s ease-out forwards;
+}
+
+.click-effect--stars {
+  color: #ffd76a;
+  text-shadow: 0 0 8px rgba(255, 215, 106, 0.9);
+  animation: click-effect-star 0.55s ease-out forwards;
+}
+
+.click-effect--heart {
+  font-size: 15px;
+  animation: click-effect-heart 0.8s ease-out forwards;
+}
+
+.click-effect--paw {
+  font-size: 16px;
+  animation: click-effect-paw 0.65s ease-out forwards;
+}
+
+.click-effect--confetti {
+  width: 7px;
+  height: 10px;
+  border-radius: 2px;
+  animation: click-effect-confetti 0.7s cubic-bezier(0.2, 0.6, 0.6, 1) forwards;
+}
+
+@keyframes click-effect-ring {
+  from {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(4.6);
+    opacity: 0;
+  }
+}
+
+@keyframes click-effect-star {
+  from {
+    transform: translate(-50%, -50%) scale(0.4) rotate(0);
+    opacity: 1;
+  }
+  to {
+    transform: translate(
+        calc(-50% + var(--click-effect-x)),
+        calc(-50% + var(--click-effect-y))
+      )
+      scale(1.1) rotate(140deg);
+    opacity: 0;
+  }
+}
+
+@keyframes click-effect-heart {
+  from {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0;
+  }
+  25% {
+    transform: translate(-50%, -90%) scale(1.15) rotate(-8deg);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -260%) scale(0.9) rotate(10deg);
+    opacity: 0;
+  }
+}
+
+@keyframes click-effect-paw {
+  from {
+    transform: translate(-50%, -50%) scale(0.2)
+      rotate(var(--click-effect-rotation));
+    opacity: 0;
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(1.25)
+      rotate(var(--click-effect-rotation));
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1)
+      rotate(var(--click-effect-rotation));
+    opacity: 0;
+  }
+}
+
+@keyframes click-effect-confetti {
+  from {
+    transform: translate(-50%, -50%) rotate(0);
+    opacity: 1;
+  }
+  to {
+    transform: translate(
+        calc(-50% + var(--click-effect-x)),
+        calc(-50% + var(--click-effect-y))
+      )
+      rotate(var(--click-effect-rotation));
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .click-effects-layer {
+    display: none;
+  }
+}
+
 @utility container {
   margin-inline: auto;
   padding-inline: 2rem;

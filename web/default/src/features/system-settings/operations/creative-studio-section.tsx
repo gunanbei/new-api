@@ -1,7 +1,8 @@
 import { InformationCircleIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { ChevronRight, GripVertical } from 'lucide-react'
+import { type DragEvent, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -38,6 +39,7 @@ import {
 } from '@/components/ui/tooltip'
 import { getEnabledModels } from '@/features/channels/api'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 import { SettingsSection } from '../components/settings-section'
 
@@ -172,6 +174,95 @@ type DeleteRequest = {
   description?: string
 }
 
+type CreativeReorderKind = 'model' | 'capability' | 'publication' | 'binding'
+type CreativeReorderRequest = {
+  kind: CreativeReorderKind
+  parentID: number
+  ids: number[]
+}
+type CreativeReorderHandler = (
+  kind: CreativeReorderKind,
+  parentID: number,
+  ids: number[]
+) => void
+
+function orderCreativeItems<T extends { id: number }>(
+  items: T[],
+  ids: number[]
+): T[] {
+  const itemsByID = new Map(items.map((item) => [item.id, item]))
+  const ordered: T[] = []
+  const included = new Set<number>()
+  ids.forEach((id) => {
+    const item = itemsByID.get(id)
+    if (item && !included.has(id)) {
+      ordered.push(item)
+      included.add(id)
+    }
+  })
+  items.forEach((item) => {
+    if (!included.has(item.id)) ordered.push(item)
+  })
+  return ordered
+}
+
+function reorderCreativeBootstrap(
+  data: Bootstrap,
+  request: CreativeReorderRequest
+): Bootstrap {
+  if (request.kind === 'model') {
+    return {
+      ...data,
+      models: orderCreativeItems(data.models, request.ids).map(
+        (creativeModel, index) => ({ ...creativeModel, sort_order: index })
+      ),
+    }
+  }
+
+  const parentKey = String(request.parentID)
+  if (request.kind === 'capability') {
+    return {
+      ...data,
+      capabilities: {
+        ...data.capabilities,
+        [parentKey]: orderCreativeItems(
+          data.capabilities[parentKey] ?? [],
+          request.ids
+        ).map((capability, index) => ({ ...capability, sort_order: index })),
+      },
+    }
+  }
+  if (request.kind === 'publication') {
+    return {
+      ...data,
+      publications: {
+        ...data.publications,
+        [parentKey]: orderCreativeItems(
+          data.publications[parentKey] ?? [],
+          request.ids
+        ).map((publication, index) => ({
+          ...publication,
+          sort_order: index,
+        })),
+      },
+    }
+  }
+  const bindings = orderCreativeItems(
+    data.bindings[parentKey] ?? [],
+    request.ids
+  )
+  return {
+    ...data,
+    bindings: {
+      ...data.bindings,
+      [parentKey]: bindings.map((binding, index) => ({
+        ...binding,
+        priority: bindings.length - index,
+      })),
+    },
+  }
+}
+
 async function getBootstrap(): Promise<Bootstrap> {
   const response = await api.get<{
     success: boolean
@@ -207,6 +298,42 @@ export function CreativeStudioSection() {
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['creative-studio'] })
+  const reorder = useMutation({
+    mutationFn: async (request: CreativeReorderRequest) =>
+      requireSuccess(
+        await api.post('/api/creative/admin/reorder', {
+          kind: request.kind,
+          parent_id: request.parentID,
+          ids: request.ids,
+        })
+      ),
+    onMutate: async (request) => {
+      await queryClient.cancelQueries({ queryKey: ['creative-studio'] })
+      const previous = queryClient.getQueryData<Bootstrap>(['creative-studio'])
+      if (previous) {
+        queryClient.setQueryData<Bootstrap>(
+          ['creative-studio'],
+          reorderCreativeBootstrap(previous, request)
+        )
+      }
+      return { previous }
+    },
+    onError: (error, _, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['creative-studio'], context.previous)
+      }
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t('Save failed')
+      )
+    },
+    onSuccess: () => toast.success(t('Updated successfully')),
+    onSettled: refresh,
+  })
+  const handleReorder: CreativeReorderHandler = (kind, parentID, ids) => {
+    reorder.mutate({ kind, parentID, ids })
+  }
   const updateSettings = useMutation({
     mutationFn: async (defaultFileChannelID: number) =>
       requireSuccess(
@@ -235,7 +362,12 @@ export function CreativeStudioSection() {
     remove.mutate(request.url)
   }
   const revalidateAll = useMutation({
-    mutationFn: async ({ bindingIDs }: { modelID: number; bindingIDs: number[] }) =>
+    mutationFn: async ({
+      bindingIDs,
+    }: {
+      modelID: number
+      bindingIDs: number[]
+    }) =>
       Promise.all(
         bindingIDs.map(async (bindingID) => {
           const response = await api.post<{
@@ -294,8 +426,10 @@ export function CreativeStudioSection() {
   return (
     <SettingsSection title={t('Creative Studio Management')}>
       <div className='space-y-6'>
-        <div className='rounded-xl border p-4'>
-          <h4 className='mb-2 font-medium'>{t('Default work storage')}</h4>
+        <div className='flex items-center justify-between gap-4 rounded-xl border p-4'>
+          <h4 className='shrink-0 font-medium whitespace-nowrap'>
+            {t('Default work storage')}
+          </h4>
           <Select
             items={fileChannelItems}
             value={String(data.settings.default_file_channel_id)}
@@ -320,15 +454,21 @@ export function CreativeStudioSection() {
               {t('Add model')}
             </Button>
           </div>
-          <div className='space-y-3'>
-            {data.models.map((creativeModel) => (
+          <SortableList
+            items={data.models}
+            disabled={reorder.isPending}
+            dragLabel={t('Sort order')}
+            onReorder={(ids) => handleReorder('model', 0, ids)}
+            renderItem={(creativeModel, dragHandle) => (
               <ModelTree
-                key={creativeModel.id}
                 creativeModel={creativeModel}
+                dragHandle={dragHandle}
                 data={data}
                 t={t}
                 onEdit={setEditor}
                 onDelete={handleDelete}
+                onReorder={handleReorder}
+                reorderDisabled={reorder.isPending}
                 onRevalidate={(bindingIDs) =>
                   revalidateAll.mutate({
                     modelID: creativeModel.id,
@@ -337,8 +477,8 @@ export function CreativeStudioSection() {
                 }
                 validating={validatingModelIDs.has(creativeModel.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         </div>
       </div>
       {editor && (
@@ -404,6 +544,146 @@ function FieldGrid(props: {
   )
 }
 
+type DropPosition = 'before' | 'after'
+
+function SortableList<T extends { id: number }>(props: {
+  items: T[]
+  disabled: boolean
+  dragLabel: string
+  onReorder: (ids: number[]) => void
+  renderItem: (item: T, dragHandle: React.ReactNode) => React.ReactNode
+}) {
+  const [draggedID, setDraggedID] = useState<number | null>(null)
+  const [dragOverID, setDragOverID] = useState<number | null>(null)
+  const [dropPosition, setDropPosition] = useState<DropPosition>('before')
+  const resetDragState = useCallback(() => {
+    setDraggedID(null)
+    setDragOverID(null)
+    setDropPosition('before')
+  }, [])
+
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLButtonElement>, id: number) => {
+      event.stopPropagation()
+      if (props.disabled || props.items.length < 2) {
+        event.preventDefault()
+        return
+      }
+      setDraggedID(id)
+      setDragOverID(null)
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', String(id))
+    },
+    [props.disabled, props.items.length]
+  )
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>, targetID: number) => {
+      if (props.disabled || draggedID === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (draggedID === targetID) {
+        setDragOverID(null)
+        return
+      }
+      const rect = event.currentTarget.getBoundingClientRect()
+      const position: DropPosition =
+        event.clientY - rect.top > rect.height / 2 ? 'after' : 'before'
+      setDragOverID(targetID)
+      setDropPosition(position)
+      event.dataTransfer.dropEffect = 'move'
+    },
+    [draggedID, props.disabled]
+  )
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, targetID: number) => {
+      if (props.disabled || draggedID === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      const sourceItem = props.items.find((item) => item.id === draggedID)
+      if (!sourceItem || draggedID === targetID) {
+        resetDragState()
+        return
+      }
+      const nextItems = props.items.filter((item) => item.id !== draggedID)
+      const targetIndex = nextItems.findIndex((item) => item.id === targetID)
+      if (targetIndex < 0) {
+        resetDragState()
+        return
+      }
+      const rect = event.currentTarget.getBoundingClientRect()
+      const position: DropPosition =
+        event.clientY - rect.top > rect.height / 2 ? 'after' : 'before'
+      nextItems.splice(
+        targetIndex + (position === 'after' ? 1 : 0),
+        0,
+        sourceItem
+      )
+      const nextIDs = nextItems.map((item) => item.id)
+      if (nextIDs.some((id, index) => id !== props.items[index]?.id)) {
+        props.onReorder(nextIDs)
+      }
+      resetDragState()
+    },
+    [draggedID, props, resetDragState]
+  )
+
+  return (
+    <div className='space-y-3'>
+      {props.items.map((item) => {
+        const isDropTarget = dragOverID === item.id
+        const canDrag = !props.disabled && props.items.length > 1
+        const dragHandle = (
+          <button
+            type='button'
+            aria-label={props.dragLabel}
+            title={props.dragLabel}
+            disabled={!canDrag}
+            draggable={canDrag}
+            className={cn(
+              'text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 shrink-0 items-center justify-center rounded-md',
+              canDrag
+                ? 'cursor-grab active:cursor-grabbing'
+                : 'cursor-default opacity-40'
+            )}
+            onClick={(event) => event.stopPropagation()}
+            onDragEnd={(event) => {
+              event.stopPropagation()
+              resetDragState()
+            }}
+            onDragStart={(event) => handleDragStart(event, item.id)}
+          >
+            <GripVertical className='size-4' aria-hidden='true' />
+          </button>
+        )
+        return (
+          <div
+            key={item.id}
+            className={cn(
+              'relative min-w-0 pl-9',
+              draggedID === item.id && 'opacity-50'
+            )}
+            onDragOver={(event) => handleDragOver(event, item.id)}
+            onDrop={(event) => handleDrop(event, item.id)}
+          >
+            {isDropTarget && (
+              <span
+                aria-hidden='true'
+                className={cn(
+                  'bg-primary pointer-events-none absolute right-0 left-0 z-10 h-0.5 rounded-full',
+                  dropPosition === 'before' ? '-top-1' : '-bottom-1'
+                )}
+              />
+            )}
+            <div className='min-w-0'>{props.renderItem(item, dragHandle)}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function statusLabel(t: (key: string) => string, status: string) {
   const key = status.charAt(0).toUpperCase() + status.slice(1)
   return t(key)
@@ -418,10 +698,13 @@ function bindingValidationLabel(t: (key: string) => string, status: string) {
 
 function ModelTree(props: {
   creativeModel: CreativeModel
+  dragHandle: React.ReactNode
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
   onDelete: (request: DeleteRequest) => void
+  onReorder: CreativeReorderHandler
+  reorderDisabled: boolean
   onRevalidate: (bindingIDs: number[]) => void
   validating: boolean
 }) {
@@ -449,17 +732,30 @@ function ModelTree(props: {
         )
   }
   return (
-    <details open className='bg-card rounded-xl border'>
-      <summary className='cursor-pointer list-none px-4 py-3'>
+    <details open className='group/model bg-card rounded-xl border'>
+      <summary className='relative cursor-pointer list-none px-4 py-3'>
+        <span className='absolute top-1/2 -left-9 -translate-y-1/2'>
+          {props.dragHandle}
+        </span>
         <div className='flex flex-wrap items-center justify-between gap-3'>
-          <div>
-            <p className='font-semibold'>{props.creativeModel.display_name}</p>
-            <p className='text-muted-foreground text-sm'>
-              {props.t('Model directory')} · {props.creativeModel.model_name}
-            </p>
+          <div className='flex min-w-0 items-center gap-2'>
+            {capabilities.length > 0 && (
+              <ChevronRight
+                aria-hidden='true'
+                className='text-muted-foreground size-4 shrink-0 transition-transform group-open/model:rotate-90'
+              />
+            )}
+            <div className='min-w-0'>
+              <p className='font-semibold'>
+                {props.creativeModel.display_name}
+              </p>
+              <p className='text-muted-foreground text-sm'>
+                {props.t('Model directory')} · {props.creativeModel.model_name}
+              </p>
+            </div>
           </div>
           <div
-            className='flex flex-wrap justify-end gap-2'
+            className='flex w-full flex-wrap justify-start gap-1 sm:w-auto sm:justify-end sm:gap-2'
             onClick={(event) => event.stopPropagation()}
           >
             <Button
@@ -571,43 +867,32 @@ function ModelTree(props: {
             [
               props.t('Status'),
               statusLabel(props.t, props.creativeModel.status),
-              <ModelStatusHelp key='status-help' />,
             ],
-            [
-              props.t('Sort order'),
-              props.creativeModel.sort_order,
-              <FieldHelp
-                key='sort-order-help'
-                label={props.t('Sort order')}
-                content={props.t(
-                  'Lower values appear first. Use 0 for the default order.'
-                )}
-              />,
-            ],
-            [
-              props.t('Description'),
-              props.creativeModel.description,
-              <FieldHelp
-                key='description-help'
-                label={props.t('Description')}
-                content={props.t(
-                  'Optional administrative notes. It does not change routing.'
-                )}
-              />,
-            ],
+            [props.t('Sort order'), props.creativeModel.sort_order],
+            [props.t('Description'), props.creativeModel.description],
           ]}
         />
-        {capabilities.map((capability) => (
-          <CapabilityTree
-            key={capability.id}
-            capability={capability}
-            creativeModel={props.creativeModel}
-            data={props.data}
-            t={props.t}
-            onEdit={props.onEdit}
-            onDelete={props.onDelete}
-          />
-        ))}
+        <SortableList
+          items={capabilities}
+          disabled={props.reorderDisabled}
+          dragLabel={props.t('Sort order')}
+          onReorder={(ids) =>
+            props.onReorder('capability', props.creativeModel.id, ids)
+          }
+          renderItem={(capability, dragHandle) => (
+            <CapabilityTree
+              capability={capability}
+              creativeModel={props.creativeModel}
+              dragHandle={dragHandle}
+              data={props.data}
+              t={props.t}
+              onEdit={props.onEdit}
+              onDelete={props.onDelete}
+              onReorder={props.onReorder}
+              reorderDisabled={props.reorderDisabled}
+            />
+          )}
+        />
       </div>
     </details>
   )
@@ -694,7 +979,7 @@ function MediaFormatHelp() {
   )
   return (
     <Tooltip>
-      <TooltipTrigger render={button} />
+      <TooltipTrigger render={button} closeOnClick={false} />
       <TooltipContent className='max-w-md'>
         <div className='space-y-1.5'>
           <p>{t('The media format of generated results.')}</p>
@@ -739,7 +1024,7 @@ function ModelStatusHelp() {
   )
   return (
     <Tooltip>
-      <TooltipTrigger render={button} />
+      <TooltipTrigger render={button} closeOnClick={false} />
       <TooltipContent className='max-w-md'>
         <div className='space-y-1.5'>
           <p>
@@ -781,7 +1066,7 @@ function FieldHelp(props: { label: string; content: string }) {
   )
   return (
     <Tooltip>
-      <TooltipTrigger render={button} />
+      <TooltipTrigger render={button} closeOnClick={false} />
       <TooltipContent className='max-w-md'>{props.content}</TooltipContent>
     </Tooltip>
   )
@@ -790,10 +1075,13 @@ function FieldHelp(props: { label: string; content: string }) {
 function CapabilityTree(props: {
   capability: Capability
   creativeModel: CreativeModel
+  dragHandle: React.ReactNode
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
   onDelete: (request: DeleteRequest) => void
+  onReorder: CreativeReorderHandler
+  reorderDisabled: boolean
 }) {
   const publications =
     props.data.publications[String(props.capability.id)] ?? []
@@ -814,17 +1102,32 @@ function CapabilityTree(props: {
         )
   }
   return (
-    <details className='ml-3 rounded-lg border border-dashed'>
-      <summary className='cursor-pointer list-none px-3 py-2'>
+    <details className='group/capability ml-3 rounded-lg border border-dashed'>
+      <summary className='relative cursor-pointer list-none px-3 py-2'>
+        <span className='absolute top-1/2 -left-12 -translate-y-1/2'>
+          {props.dragHandle}
+        </span>
         <div className='flex flex-wrap items-center justify-between gap-2'>
-          <span className='font-medium'>
-            {props.t('Capability')}:
-            {capabilityValue(props.t, 'category', props.capability.category)}/
-            {capabilityValue(props.t, 'operation', props.capability.operation)}
-            ｜{props.capability.protocol}
-          </span>
+          <div className='flex min-w-0 items-center gap-2'>
+            {publications.length > 0 && (
+              <ChevronRight
+                aria-hidden='true'
+                className='text-muted-foreground size-4 shrink-0 transition-transform group-open/capability:rotate-90'
+              />
+            )}
+            <span className='font-medium'>
+              {props.t('Capability')}:
+              {capabilityValue(props.t, 'category', props.capability.category)}/
+              {capabilityValue(
+                props.t,
+                'operation',
+                props.capability.operation
+              )}
+              ｜{props.capability.protocol}
+            </span>
+          </div>
           <div
-            className='flex flex-wrap justify-end gap-2'
+            className='flex w-full flex-wrap justify-start gap-1 sm:w-auto sm:justify-end sm:gap-2'
             onClick={(event) => event.stopPropagation()}
           >
             <Button
@@ -933,38 +1236,14 @@ function CapabilityTree(props: {
                 'executionMode',
                 props.capability.execution_mode
               ),
-              <FieldHelp
-                key='execution-mode-help'
-                label={props.t('Execution mode')}
-                content={props.t(
-                  'Describes whether the result is returned immediately, later, or as a synchronous artifact.'
-                )}
-              />,
             ],
             [
               props.t('Status'),
               props.capability.enabled
                 ? props.t('Enabled')
                 : props.t('Disabled'),
-              <FieldHelp
-                key='capability-status-help'
-                label={props.t('Status')}
-                content={props.t(
-                  'Enables this capability for later publication and routing.'
-                )}
-              />,
             ],
-            [
-              props.t('Sort order'),
-              props.capability.sort_order,
-              <FieldHelp
-                key='capability-sort-help'
-                label={props.t('Sort order')}
-                content={props.t(
-                  'Lower values appear first. Use 0 for the default order.'
-                )}
-              />,
-            ],
+            [props.t('Sort order'), props.capability.sort_order],
             [
               <JsonPreview
                 key='input-schema'
@@ -997,18 +1276,28 @@ function CapabilityTree(props: {
             ],
           ]}
         />
-        {publications.map((publication) => (
-          <PublicationTree
-            key={publication.id}
-            publication={publication}
-            capability={props.capability}
-            creativeModel={props.creativeModel}
-            data={props.data}
-            t={props.t}
-            onEdit={props.onEdit}
-            onDelete={props.onDelete}
-          />
-        ))}
+        <SortableList
+          items={publications}
+          disabled={props.reorderDisabled}
+          dragLabel={props.t('Sort order')}
+          onReorder={(ids) =>
+            props.onReorder('publication', props.capability.id, ids)
+          }
+          renderItem={(publication, dragHandle) => (
+            <PublicationTree
+              publication={publication}
+              capability={props.capability}
+              creativeModel={props.creativeModel}
+              dragHandle={dragHandle}
+              data={props.data}
+              t={props.t}
+              onEdit={props.onEdit}
+              onDelete={props.onDelete}
+              onReorder={props.onReorder}
+              reorderDisabled={props.reorderDisabled}
+            />
+          )}
+        />
       </div>
     </details>
   )
@@ -1018,10 +1307,13 @@ function PublicationTree(props: {
   publication: Publication
   capability: Capability
   creativeModel: CreativeModel
+  dragHandle: React.ReactNode
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
   onDelete: (request: DeleteRequest) => void
+  onReorder: CreativeReorderHandler
+  reorderDisabled: boolean
 }) {
   const bindings = props.data.bindings[String(props.publication.id)] ?? []
   const hasActiveDescendants = bindings.some((binding) => binding.enabled)
@@ -1036,14 +1328,25 @@ function PublicationTree(props: {
         )
   }
   return (
-    <details className='ml-3 rounded-lg border border-dashed'>
-      <summary className='cursor-pointer list-none px-3 py-2'>
+    <details className='group/publication ml-3 rounded-lg border border-dashed'>
+      <summary className='relative cursor-pointer list-none px-3 py-2'>
+        <span className='absolute top-1/2 -left-12 -translate-y-1/2'>
+          {props.dragHandle}
+        </span>
         <div className='flex flex-wrap items-center justify-between gap-2'>
-          <span className='font-medium'>
-            {props.t('Group')}: {props.publication.group_name}
-          </span>
+          <div className='flex min-w-0 items-center gap-2'>
+            {bindings.length > 0 && (
+              <ChevronRight
+                aria-hidden='true'
+                className='text-muted-foreground size-4 shrink-0 transition-transform group-open/publication:rotate-90'
+              />
+            )}
+            <span className='font-medium'>
+              {props.t('Group')}: {props.publication.group_name}
+            </span>
+          </div>
           <div
-            className='flex flex-wrap justify-end gap-2'
+            className='flex w-full flex-wrap justify-start gap-1 sm:w-auto sm:justify-end sm:gap-2'
             onClick={(event) => event.stopPropagation()}
           >
             <Button
@@ -1103,41 +1406,14 @@ function PublicationTree(props: {
       <div className='space-y-3 border-t p-3'>
         <FieldGrid
           fields={[
-            [
-              props.t('Group'),
-              props.publication.group_name,
-              <FieldHelp
-                key='group-help'
-                label={props.t('Group')}
-                content={props.t(
-                  'Selects the user group that can see this capability.'
-                )}
-              />,
-            ],
+            [props.t('Group'), props.publication.group_name],
             [
               props.t('Status'),
               props.publication.enabled
                 ? props.t('Enabled')
                 : props.t('Disabled'),
-              <FieldHelp
-                key='publication-status-help'
-                label={props.t('Status')}
-                content={props.t(
-                  'Controls whether this group publication is available to users.'
-                )}
-              />,
             ],
-            [
-              props.t('Sort order'),
-              props.publication.sort_order,
-              <FieldHelp
-                key='publication-sort-help'
-                label={props.t('Sort order')}
-                content={props.t(
-                  'Lower values appear first. Use 0 for the default order.'
-                )}
-              />,
-            ],
+            [props.t('Sort order'), props.publication.sort_order],
             [
               <JsonPreview
                 key='group-default-parameters'
@@ -1156,17 +1432,25 @@ function PublicationTree(props: {
             ],
           ]}
         />
-        {bindings.map((binding) => (
-          <BindingCard
-            key={binding.id}
-            binding={binding}
-            creativeModel={props.creativeModel}
-            data={props.data}
-            t={props.t}
-            onEdit={props.onEdit}
-            onDelete={props.onDelete}
-          />
-        ))}
+        <SortableList
+          items={bindings}
+          disabled={props.reorderDisabled}
+          dragLabel={props.t('Sort order')}
+          onReorder={(ids) =>
+            props.onReorder('binding', props.publication.id, ids)
+          }
+          renderItem={(binding, dragHandle) => (
+            <BindingCard
+              binding={binding}
+              creativeModel={props.creativeModel}
+              dragHandle={dragHandle}
+              data={props.data}
+              t={props.t}
+              onEdit={props.onEdit}
+              onDelete={props.onDelete}
+            />
+          )}
+        />
       </div>
     </details>
   )
@@ -1175,6 +1459,7 @@ function PublicationTree(props: {
 function BindingCard(props: {
   binding: Binding
   creativeModel: CreativeModel
+  dragHandle: React.ReactNode
   data: Bootstrap
   t: (key: string, options?: Record<string, unknown>) => string
   onEdit: (editor: Editor) => void
@@ -1219,12 +1504,15 @@ function BindingCard(props: {
   }
   return (
     <div className='bg-muted/30 ml-3 rounded-lg p-3'>
-      <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
+      <div className='relative mb-3 flex flex-wrap items-center justify-between gap-2'>
+        <span className='absolute top-1/2 -left-[60px] -translate-y-1/2'>
+          {props.dragHandle}
+        </span>
         <span className='font-medium'>
           {props.t('Channel routing')}: #{props.binding.channel_id}{' '}
           {channel?.name}
         </span>
-        <div className='flex flex-wrap justify-end gap-2'>
+        <div className='flex w-full flex-wrap justify-start gap-1 sm:w-auto sm:justify-end sm:gap-2'>
           <Button
             size='sm'
             variant='outline'
@@ -1275,26 +1563,8 @@ function BindingCard(props: {
       </div>
       <FieldGrid
         fields={[
-          [
-            props.t('Channel'),
-            channel?.name,
-            <FieldHelp
-              key='channel-help'
-              label={props.t('Channel')}
-              content={props.t(
-                'Selects the existing enabled channel used for this group publication.'
-              )}
-            />,
-          ],
-          [
-            props.t('Channel ID'),
-            props.binding.channel_id,
-            <FieldHelp
-              key='channel-id-help'
-              label={props.t('Channel ID')}
-              content={props.t('The internal ID of the selected channel.')}
-            />,
-          ],
+          [props.t('Channel'), channel?.name],
+          [props.t('Channel ID'), props.binding.channel_id],
           [
             props.t('Requested model'),
             props.binding.request_model || props.creativeModel.model_name,
@@ -1320,13 +1590,6 @@ function BindingCard(props: {
           [
             props.t('Status'),
             props.binding.enabled ? props.t('Enabled') : props.t('Disabled'),
-            <FieldHelp
-              key='binding-status-help'
-              label={props.t('Status')}
-              content={props.t(
-                'Bindings remain disabled until protocol verification passes.'
-              )}
-            />,
           ],
           [
             props.t('Validation'),

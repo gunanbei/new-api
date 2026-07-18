@@ -80,6 +80,7 @@ func SetApiRouter(router *gin.Engine) {
 		creativeAdminRoute.Use(middleware.AdminAuth())
 		{
 			creativeAdminRoute.GET("/bootstrap", controller.GetCreativeStudioBootstrap)
+			creativeAdminRoute.POST("/reorder", controller.ReorderCreativeStudio)
 			creativeAdminRoute.GET("/models", controller.GetCreativeModels)
 			creativeAdminRoute.POST("/models", controller.CreateCreativeModel)
 			creativeAdminRoute.PUT("/models/:id", controller.UpdateCreativeModel)

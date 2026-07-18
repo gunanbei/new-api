@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Copy,
   Download,
-  ExternalLink,
   History,
   ImageIcon,
   RefreshCw,
@@ -22,6 +21,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -61,7 +61,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Select,
   SelectContent,
@@ -517,8 +516,7 @@ export function CreativeStudio() {
   const historyDetails = useQueries({
     queries: (historyOpen ? historyTasks : []).map((task) => ({
       queryKey: ['creative-task', task.task_key],
-      queryFn: ({ signal }) =>
-        getCreativeTaskDetail(task.task_key, signal),
+      queryFn: ({ signal }) => getCreativeTaskDetail(task.task_key, signal),
     })),
   })
   const options = useMemo<CapabilityOption[]>(
@@ -829,20 +827,26 @@ export function CreativeStudio() {
                 {t('Image workspace')}
               </p>
             </div>
-            <NativeSelect
-              className='w-[min(16rem,calc(100vw-10rem))]'
+            <Select
+              items={groups.map((group) => ({ label: group, value: group }))}
               value={activeGroupName}
-              onChange={(event) => {
-                setGroupName(event.target.value)
+              onValueChange={(value) => {
+                if (value === null) return
+                setGroupName(value)
                 resetSelection()
               }}
             >
-              {groups.map((group) => (
-                <NativeSelectOption key={group} value={group}>
-                  {group}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              <SelectTrigger className='w-[min(16rem,calc(100vw-10rem))]'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((group) => (
+                  <SelectItem key={group} value={group}>
+                    {group}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               size='icon'
               variant='outline'
@@ -856,15 +860,6 @@ export function CreativeStudio() {
             </Button>
           </div>
           <div className='flex items-center gap-2'>
-            <Button
-              variant='outline'
-              onClick={() =>
-                window.open('/imgen', '_blank', 'noopener,noreferrer')
-              }
-            >
-              <ExternalLink data-icon='inline-start' />
-              {t('Open in new window')}
-            </Button>
             <Button variant='outline' onClick={() => setHistoryOpen(true)}>
               <History data-icon='inline-start' />
               {t('History works')}
@@ -1311,8 +1306,8 @@ function CreativeTaskAssetImage(props: {
       ).data.data.base64,
     enabled: Boolean(
       props.taskKey &&
-        props.asset.id &&
-        props.asset.mime_type === 'image/svg+xml'
+      props.asset.id &&
+      props.asset.mime_type === 'image/svg+xml'
     ),
   })
   let src = assetUrl(props.asset)
@@ -1326,7 +1321,9 @@ function CreativeTaskAssetImage(props: {
     <StableCreativeImage
       src={src}
       fallbackSrc={
-        props.asset.mime_type === 'image/svg+xml' ? undefined : props.fallbackSrc
+        props.asset.mime_type === 'image/svg+xml'
+          ? undefined
+          : props.fallbackSrc
       }
       alt={props.alt}
       className={props.className}
@@ -1439,10 +1436,13 @@ function InteractiveCreativeImage(props: {
 }) {
   const { t } = useTranslation()
   const [zoom, setZoom] = useState(1)
-  const [rotation, setRotation] = useState(0)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLDivElement>(null)
+  const zoomRef = useRef(1)
+  const rotationRef = useRef(0)
   const offset = useRef({ x: 0, y: 0 })
   const frame = useRef<number | undefined>(undefined)
+  const wheelCommitTimer = useRef<number | undefined>(undefined)
   const dragStart = useRef<
     | {
         x: number
@@ -1454,28 +1454,67 @@ function InteractiveCreativeImage(props: {
   >(undefined)
   const didDrag = useRef(false)
 
-  const applyTransform = (
-    nextZoom = zoom,
-    nextRotation = rotation,
-    nextOffset = offset.current
-  ) => {
+  const applyTransform = useCallback(() => {
     if (!imageRef.current) return
-    imageRef.current.style.transform = `translate3d(${nextOffset.x}px, ${nextOffset.y}px, 0) scale(${nextZoom}) rotate(${nextRotation}deg)`
-  }
+    imageRef.current.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0) scale(${zoomRef.current}) rotate(${rotationRef.current}deg)`
+  }, [])
+
+  const scheduleTransform = useCallback(() => {
+    if (frame.current !== undefined) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined
+      applyTransform()
+    })
+  }, [applyTransform])
 
   useEffect(() => {
+    zoomRef.current = 1
+    rotationRef.current = 0
     setZoom(1)
-    setRotation(0)
     offset.current = { x: 0, y: 0 }
-    if (imageRef.current) {
-      imageRef.current.style.transform =
-        'translate3d(0, 0, 0) scale(1) rotate(0deg)'
+    if (wheelCommitTimer.current !== undefined) {
+      window.clearTimeout(wheelCommitTimer.current)
+      wheelCommitTimer.current = undefined
     }
-  }, [props.asset?.id, props.src])
+    applyTransform()
+  }, [applyTransform, props.asset?.id, props.src])
+
+  const updateZoom = useCallback(
+    (nextZoom: number, commit = true) => {
+      const clampedZoom = Math.min(3, Math.max(1, nextZoom))
+      zoomRef.current = clampedZoom
+      if (clampedZoom === 1) {
+        offset.current = { x: 0, y: 0 }
+      }
+      scheduleTransform()
+      if (commit) setZoom(clampedZoom)
+    },
+    [scheduleTransform]
+  )
 
   useEffect(() => {
-    applyTransform()
-  }, [rotation, zoom])
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      updateZoom(zoomRef.current * Math.exp(-event.deltaY * 0.0015), false)
+      if (wheelCommitTimer.current !== undefined) {
+        window.clearTimeout(wheelCommitTimer.current)
+      }
+      wheelCommitTimer.current = window.setTimeout(() => {
+        wheelCommitTimer.current = undefined
+        setZoom(zoomRef.current)
+      }, 80)
+    }
+    viewport.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel)
+      if (wheelCommitTimer.current !== undefined) {
+        window.clearTimeout(wheelCommitTimer.current)
+      }
+    }
+  }, [updateZoom])
 
   useEffect(
     () => () => {
@@ -1485,27 +1524,26 @@ function InteractiveCreativeImage(props: {
   )
 
   return (
-    <div className='relative flex max-h-[calc(100svh-14rem)] max-w-full items-center justify-center overflow-hidden'>
+    <div
+      ref={viewportRef}
+      className='relative flex max-h-[calc(100svh-14rem)] max-w-full items-center justify-center overflow-hidden'
+    >
       <div
         ref={imageRef}
         className={
           zoom > 1
             ? 'cursor-grab touch-none will-change-transform select-none active:cursor-grabbing'
-            : 'cursor-zoom-in touch-none transition-transform duration-150 will-change-transform select-none'
+            : 'cursor-zoom-in touch-none will-change-transform select-none'
         }
         onClick={() => {
           if (didDrag.current) {
             didDrag.current = false
             return
           }
-          setZoom((value) => {
-            const next = value === 1 ? 1.5 : 1
-            if (next === 1) offset.current = { x: 0, y: 0 }
-            return next
-          })
+          updateZoom(zoomRef.current === 1 ? 1.5 : 1)
         }}
         onPointerDown={(event) => {
-          if (zoom <= 1 || !event.isPrimary) return
+          if (zoomRef.current <= 1 || !event.isPrimary) return
           event.currentTarget.setPointerCapture(event.pointerId)
           dragStart.current = {
             x: event.clientX,
@@ -1523,11 +1561,7 @@ function InteractiveCreativeImage(props: {
             x: dragStart.current.offsetX + event.clientX - dragStart.current.x,
             y: dragStart.current.offsetY + event.clientY - dragStart.current.y,
           }
-          if (frame.current !== undefined) return
-          frame.current = requestAnimationFrame(() => {
-            frame.current = undefined
-            applyTransform()
-          })
+          scheduleTransform()
         }}
         onPointerUp={() => {
           dragStart.current = undefined
@@ -1541,7 +1575,7 @@ function InteractiveCreativeImage(props: {
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            setZoom((value) => (value === 1 ? 1.5 : 1))
+            updateZoom(zoomRef.current === 1 ? 1.5 : 1)
           }
         }}
       >
@@ -1570,7 +1604,7 @@ function InteractiveCreativeImage(props: {
           variant='ghost'
           aria-label={t('Zoom out')}
           disabled={zoom <= 1}
-          onClick={() => setZoom((value) => Math.max(1, value - 0.25))}
+          onClick={() => updateZoom(zoomRef.current - 0.25)}
         >
           <ZoomOut />
         </Button>
@@ -1579,7 +1613,7 @@ function InteractiveCreativeImage(props: {
           variant='ghost'
           aria-label={t('Zoom in')}
           disabled={zoom >= 3}
-          onClick={() => setZoom((value) => Math.min(3, value + 0.25))}
+          onClick={() => updateZoom(zoomRef.current + 0.25)}
         >
           <ZoomIn />
         </Button>
@@ -1587,7 +1621,10 @@ function InteractiveCreativeImage(props: {
           size='icon-xs'
           variant='ghost'
           aria-label={t('Rotate left')}
-          onClick={() => setRotation((value) => value - 90)}
+          onClick={() => {
+            rotationRef.current -= 90
+            scheduleTransform()
+          }}
         >
           <RotateCcw />
         </Button>
@@ -1595,7 +1632,10 @@ function InteractiveCreativeImage(props: {
           size='icon-xs'
           variant='ghost'
           aria-label={t('Rotate right')}
-          onClick={() => setRotation((value) => value + 90)}
+          onClick={() => {
+            rotationRef.current += 90
+            scheduleTransform()
+          }}
         >
           <RotateCw />
         </Button>
@@ -1604,10 +1644,11 @@ function InteractiveCreativeImage(props: {
           variant='ghost'
           aria-label={t('Reset')}
           onClick={() => {
+            zoomRef.current = 1
+            rotationRef.current = 0
             setZoom(1)
-            setRotation(0)
             offset.current = { x: 0, y: 0 }
-            applyTransform(1, 0, offset.current)
+            scheduleTransform()
           }}
         >
           <RefreshCw />
@@ -2204,9 +2245,8 @@ function CreativeField(props: {
           value={String(props.value ?? '')}
           onValueChange={(value) =>
             props.onChange(
-              options.find(
-                (option) => String(option.value) === String(value)
-              )?.value ?? value
+              options.find((option) => String(option.value) === String(value))
+                ?.value ?? value
             )
           }
         >

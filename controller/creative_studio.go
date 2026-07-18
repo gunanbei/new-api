@@ -300,6 +300,19 @@ func UpdateCreativeStudioSettings(c *gin.Context) {
 	common.ApiSuccess(c, settings)
 }
 
+func ReorderCreativeStudio(c *gin.Context) {
+	var request dto.CreativeReorderRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		common.ApiErrorMsg(c, "invalid request body")
+		return
+	}
+	if err := service.ReorderCreativeStudio(request, int64(c.GetInt("id"))); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"ids": request.IDs})
+}
+
 func GetCreativeModels(c *gin.Context) {
 	models, err := service.ListCreativeModels()
 	if err != nil {

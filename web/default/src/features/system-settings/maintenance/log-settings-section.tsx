@@ -199,14 +199,18 @@ function formatKilobytes(bytes: number): string {
 }
 
 function InflightMetricTooltip({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
+        closeOnClick={false}
         render={
           <button
             type='button'
             className='inline-flex size-3.5 items-center justify-center'
             aria-label={label}
+            onClick={() => setOpen(true)}
           >
             <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} className='size-3.5' />
           </button>
@@ -696,13 +700,15 @@ export function LogSettingsSection({
             control={form.control}
             name='InflightTaskCleanupRule'
             render={({ field }) => (
-              <SettingsControlGroup className='grid gap-2'>
-                <FormLabel>{t('Inflight log cleanup rule')}</FormLabel>
-                <FormDescription>
-                  {t(
-                    'Choose whether terminal inflight logs are cleaned automatically.'
-                  )}
-                </FormDescription>
+              <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                <div className='min-w-0'>
+                  <FormLabel>{t('Inflight log cleanup rule')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Choose whether terminal inflight logs are cleaned automatically.'
+                    )}
+                  </FormDescription>
+                </div>
                 <FormControl>
                   <Select
                     items={[
@@ -727,7 +733,7 @@ export function LogSettingsSection({
                     </SelectContent>
                   </Select>
                 </FormControl>
-                <FormMessage />
+                <FormMessage className='w-full' />
               </SettingsControlGroup>
             )}
           />
@@ -793,9 +799,11 @@ export function LogSettingsSection({
               control={form.control}
               name='InflightTaskTraceStorageMode'
               render={({ field }) => (
-                <SettingsControlGroup className='grid gap-2'>
-                  <FormLabel>{t('Debug log body storage')}</FormLabel>
-                  <FormDescription>{t('Store request and response bodies in memory or per-user CSV files.')}</FormDescription>
+                <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                  <div className='min-w-0'>
+                    <FormLabel>{t('Debug log body storage')}</FormLabel>
+                    <FormDescription>{t('Store request and response bodies in memory or per-user CSV files.')}</FormDescription>
+                  </div>
                   <FormControl>
                     <Select
                       items={[
@@ -812,33 +820,37 @@ export function LogSettingsSection({
                       </SelectContent>
                     </Select>
                   </FormControl>
-                  {field.value === 'memory' ? <Alert><AlertDescription>{t('Memory storage increases Redis usage.')}</AlertDescription></Alert> : null}
+                  {field.value === 'memory' ? <Alert className='w-full'><AlertDescription>{t('Memory storage increases Redis usage.')}</AlertDescription></Alert> : null}
                 </SettingsControlGroup>
               )}
             />
             {form.watch('InflightTaskTraceStorageMode') === 'disk' ? (
               <>
                 <FormField control={form.control} name='InflightTaskTraceArchiveChannelID' render={({ field }) => (
-                  <SettingsControlGroup className='grid gap-2'>
+                  <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
                     <FormLabel>{t('Archive storage channel')}</FormLabel>
                     <FormControl><Select items={archiveChannels.map((channel) => ({ value: String(channel.id), label: channel.name }))} value={String(field.value || '')} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger className='w-[320px]'><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}>{archiveChannels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}</SelectContent></Select></FormControl>
-                    <FormMessage />
+                    <FormMessage className='w-full' />
                   </SettingsControlGroup>
                 )} />
                 <FormField control={form.control} name='InflightTaskTraceArchiveThresholdBytes' render={({ field }) => (
-                  <SettingsControlGroup className='grid gap-2'><FormLabel>{t('Archive upload threshold (KB)')}</FormLabel><FormControl><Input type='number' min={1} step='any' className='w-[220px]' value={field.value / 1024} onChange={(event) => field.onChange(Math.round(event.currentTarget.valueAsNumber * 1024))} /></FormControl><FormMessage /></SettingsControlGroup>
+                  <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'><FormLabel>{t('Archive upload threshold (KB)')}</FormLabel><FormControl><Input type='number' min={1} step='any' className='w-[220px]' value={field.value / 1024} onChange={(event) => field.onChange(Math.round(event.currentTarget.valueAsNumber * 1024))} /></FormControl><FormMessage className='w-full' /></SettingsControlGroup>
                 )} />
                 <FormField control={form.control} name='InflightTracePath' render={({ field }) => (
-                  <SettingsControlGroup className='grid gap-2'>
-                    <FormLabel>{t('Inflight trace directory')}</FormLabel>
-                    <FormDescription>{t('Stores disk-mode inflight trace CSV archives separately from request-body cache files.')}</FormDescription>
-                    <FormControl><Input placeholder={t('Leave empty to use the disk cache directory')} {...field} /></FormControl>
-                    <FormMessage />
+                  <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                    <div className='min-w-0'>
+                      <FormLabel>{t('Inflight trace directory')}</FormLabel>
+                      <FormDescription>{t('Stores disk-mode inflight trace CSV archives separately from request-body cache files.')}</FormDescription>
+                    </div>
+                    <FormControl><Input className='w-[320px] max-w-full' placeholder={t('Leave empty to use the disk cache directory')} {...field} /></FormControl>
+                    <FormMessage className='w-full' />
                   </SettingsControlGroup>
                 )} />
-                <SettingsControlGroup className='grid gap-2'>
-                  <FormLabel>{t('Archive retention')}</FormLabel>
-                  <FormDescription>{t('Set all values to 0 to keep archives permanently.')}</FormDescription>
+                <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                  <div className='min-w-0'>
+                    <FormLabel>{t('Archive retention')}</FormLabel>
+                    <FormDescription>{t('Set all values to 0 to keep archives permanently.')}</FormDescription>
+                  </div>
                   <div className='grid max-w-2xl gap-3 sm:grid-cols-4'>
                     {([
                       ['InflightTaskTraceArchiveRetentionYears', t('Years')],
@@ -859,23 +871,28 @@ export function LogSettingsSection({
               control={form.control}
               name='InflightTaskTraceMaxRequestBytes'
               render={({ field }) => (
-                <SettingsControlGroup className='grid gap-2'>
-                  <FormLabel>
-                    {t('Max inflight debug log request size (bytes)')}
-                  </FormLabel>
-                  <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                  <div className='min-w-0'>
+                    <FormLabel>
+                      {t('Max inflight debug log request size (KB)')}
+                    </FormLabel>
+                    <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                  </div>
                   <FormControl>
                     <Input
                       type='number'
                       min={0}
                       className='w-[200px]'
                       {...field}
+                      value={field.value / 1024}
                       onChange={(event) =>
-                        field.onChange(event.currentTarget.valueAsNumber)
+                        field.onChange(
+                          Math.round(event.currentTarget.valueAsNumber * 1024)
+                        )
                       }
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className='w-full' />
                 </SettingsControlGroup>
               )}
             />
@@ -883,23 +900,28 @@ export function LogSettingsSection({
               control={form.control}
               name='InflightTaskTraceMaxResponseBytes'
               render={({ field }) => (
-                <SettingsControlGroup className='grid gap-2'>
-                  <FormLabel>
-                    {t('Max inflight debug log response size (bytes)')}
-                  </FormLabel>
-                  <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                <SettingsControlGroup className='flex flex-wrap items-center justify-between gap-4'>
+                  <div className='min-w-0'>
+                    <FormLabel>
+                      {t('Max inflight debug log response size (KB)')}
+                    </FormLabel>
+                    <FormDescription>{t('0 means no extra limit')}</FormDescription>
+                  </div>
                   <FormControl>
                     <Input
                       type='number'
                       min={0}
                       className='w-[200px]'
                       {...field}
+                      value={field.value / 1024}
                       onChange={(event) =>
-                        field.onChange(event.currentTarget.valueAsNumber)
+                        field.onChange(
+                          Math.round(event.currentTarget.valueAsNumber * 1024)
+                        )
                       }
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className='w-full' />
                 </SettingsControlGroup>
               )}
             />
@@ -920,7 +942,7 @@ export function LogSettingsSection({
                 </div>
               </div>
               {inflightTaskStats?.trace_directory ? (
-                <div className='rounded-md border p-3 md:col-span-3'>
+                <div className='rounded-md border p-3 md:col-span-2'>
                   <div className='text-muted-foreground text-xs'>
                     {t('Inflight trace directory')}
                   </div>

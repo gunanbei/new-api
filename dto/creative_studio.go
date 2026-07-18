@@ -40,6 +40,12 @@ type CreativeBindingRequest struct {
 	Enabled      bool   `json:"enabled"`
 }
 
+type CreativeReorderRequest struct {
+	Kind     string   `json:"kind"`
+	ParentID uint64   `json:"parent_id"`
+	IDs      []uint64 `json:"ids"`
+}
+
 type CreativeStudioSettingsRequest struct {
 	DefaultFileChannelID         uint64   `json:"default_file_channel_id"`
 	AllowedImageMIMETypes        []string `json:"allowed_image_mime_types"`

@@ -105,6 +105,111 @@ func ListCreativeModels() ([]model.CreativeModel, error) {
 	return models, err
 }
 
+func ReorderCreativeStudio(input dto.CreativeReorderRequest, userID int64) error {
+	kind := strings.ToLower(strings.TrimSpace(input.Kind))
+	if len(input.IDs) == 0 {
+		return fmt.Errorf("reorder ids cannot be empty")
+	}
+	seen := make(map[uint64]struct{}, len(input.IDs))
+	for _, id := range input.IDs {
+		if id == 0 {
+			return fmt.Errorf("reorder ids must be non-zero")
+		}
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("reorder ids must be unique")
+		}
+		seen[id] = struct{}{}
+	}
+
+	switch kind {
+	case "model":
+		if input.ParentID != 0 {
+			return fmt.Errorf("model reorder does not accept a parent")
+		}
+	case "capability", "publication", "binding":
+		if input.ParentID == 0 {
+			return fmt.Errorf("child reorder requires a parent")
+		}
+	default:
+		return fmt.Errorf("invalid reorder kind")
+	}
+
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		switch kind {
+		case "model":
+			return reorderCreativeSiblings[model.CreativeModel](
+				tx,
+				tx.Model(&model.CreativeModel{}),
+				input.IDs,
+				userID,
+				"sort_order",
+				false,
+			)
+		case "capability":
+			return reorderCreativeSiblings[model.CreativeModelCapability](
+				tx,
+				tx.Model(&model.CreativeModelCapability{}).Where("model_id = ?", input.ParentID),
+				input.IDs,
+				userID,
+				"sort_order",
+				false,
+			)
+		case "publication":
+			return reorderCreativeSiblings[model.CreativeModelPublication](
+				tx,
+				tx.Model(&model.CreativeModelPublication{}).Where("capability_id = ?", input.ParentID),
+				input.IDs,
+				userID,
+				"sort_order",
+				false,
+			)
+		default:
+			return reorderCreativeSiblings[model.CreativeChannelBinding](
+				tx,
+				tx.Model(&model.CreativeChannelBinding{}).Where("publication_id = ?", input.ParentID),
+				input.IDs,
+				userID,
+				"priority",
+				true,
+			)
+		}
+	})
+}
+
+func reorderCreativeSiblings[T any](tx *gorm.DB, query *gorm.DB, ids []uint64, userID int64, orderColumn string, descending bool) error {
+	var siblingIDs []uint64
+	if err := query.Pluck("id", &siblingIDs).Error; err != nil {
+		return err
+	}
+	if len(siblingIDs) != len(ids) {
+		return fmt.Errorf("reorder ids must contain every sibling exactly once")
+	}
+	siblings := make(map[uint64]struct{}, len(siblingIDs))
+	for _, id := range siblingIDs {
+		siblings[id] = struct{}{}
+	}
+	for _, id := range ids {
+		if _, exists := siblings[id]; !exists {
+			return fmt.Errorf("reorder ids must belong to the requested parent")
+		}
+	}
+
+	var target T
+	for index, id := range ids {
+		order := index
+		if descending {
+			order = len(ids) - index
+		}
+		if err := tx.Model(&target).Where("id = ?", id).Updates(map[string]any{
+			orderColumn:  order,
+			"updated_by": userID,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func CreateCreativeModel(input dto.CreativeModelRequest, userID int64) (*model.CreativeModel, error) {
 	creativeModel := &model.CreativeModel{CreatedBy: userID, UpdatedBy: userID}
 	if err := applyCreativeModel(creativeModel, input); err != nil {

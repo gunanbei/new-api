@@ -10,6 +10,48 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestApplyDefaultUserAgent(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	t.Run("forwards client user agent", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		ctx.Request.Header.Set("User-Agent", "Codex Desktop/test")
+
+		headers := http.Header{}
+		applyDefaultUserAgent(ctx, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, headers)
+
+		require.Equal(t, "Codex Desktop/test", headers.Get("User-Agent"))
+	})
+
+	t.Run("uses configured fallback when client user agent is missing", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+		headers := http.Header{}
+		applyDefaultUserAgent(ctx, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, headers)
+
+		require.Contains(t, defaultUserAgents, headers.Get("User-Agent"))
+	})
+
+	t.Run("keeps channel header override behavior unchanged", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		ctx.Request.Header.Set("User-Agent", "Codex Desktop/test")
+
+		headers := http.Header{}
+		applyDefaultUserAgent(ctx, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{
+			HeadersOverride: map[string]any{"X-Example": "configured"},
+		}}, headers)
+
+		require.Empty(t, headers.Get("User-Agent"))
+	})
+}
+
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()
 

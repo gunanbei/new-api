@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strings"
@@ -40,6 +41,32 @@ func applyUpstreamContentLength(req *http.Request, info *common.RelayInfo) {
 	if info.UpstreamRequestBodySize > 0 && req.ContentLength <= 0 {
 		req.ContentLength = info.UpstreamRequestBodySize
 	}
+}
+
+var defaultUserAgents = []string{
+	"Mozilla/5.0 (Wayland like X11; U; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.7105.97 Safari/537.36",
+	"Mozilla/5.0 (Android 14; Mobile; Lenovo TB-X306F; rv:136.0) Gecko/136.0 Firefox/136.0",
+	"Mozilla/5.0 (X11; U; Linux x86_64; rv:135.0) Gecko/20221314 Firefox/135.0",
+	"Mozilla/5.0 (Android 10.2; Mobile; TVBOX; rv:134.0esr) Gecko/134.0esr Firefox/134.0esr",
+	"Mozilla/5.0 (X11; Linux; en-GB; rv:136.0esr) Gecko/20212700 Firefox/136.0esr",
+	"Mozilla/5.0 (Android 10; Mobile; AGS3-W09; rv:136.0) Gecko/136.0 Firefox/136.0",
+}
+
+func applyDefaultUserAgent(c *gin.Context, info *common.RelayInfo, headers http.Header) {
+	if headers.Get("User-Agent") != "" {
+		return
+	}
+	if info != nil && info.ChannelMeta != nil && len(info.ChannelMeta.HeadersOverride) != 0 {
+		return
+	}
+	userAgent := ""
+	if c != nil && c.Request != nil {
+		userAgent = strings.TrimSpace(c.Request.UserAgent())
+	}
+	if userAgent == "" {
+		userAgent = defaultUserAgents[rand.Intn(len(defaultUserAgents))]
+	}
+	headers.Set("User-Agent", userAgent)
 }
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
@@ -327,6 +354,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyDefaultUserAgent(c, info, req.Header)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -359,6 +387,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	applyDefaultUserAgent(c, info, req.Header)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -386,6 +415,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		targetHeader.Set(key, value)
 	}
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
+	applyDefaultUserAgent(c, info, targetHeader)
 	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed to %s: %w", common.SanitizeURLForLog(fullRequestURL), err)
@@ -542,6 +572,7 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
+	applyDefaultUserAgent(c, info, req.Header)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)

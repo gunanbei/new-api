@@ -433,6 +433,16 @@ func loadTerminalStatusesByRequestID(userID int, requestIDs []string) (map[strin
 	return statuses, nil
 }
 
+func inflightTaskGroup(info *relaycommon.RelayInfo) string {
+	if info == nil {
+		return ""
+	}
+	if group := strings.TrimSpace(info.UsingGroup); group != "" {
+		return group
+	}
+	return strings.TrimSpace(info.UserGroup)
+}
+
 func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *InflightTask {
 	now := time.Now().Unix()
 	task := &InflightTask{
@@ -441,7 +451,7 @@ func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *Infl
 		Status:    status,
 		Kind:      inflightTaskKindFromRelayMode(info.RelayMode),
 		ModelName: info.OriginModelName,
-		Group:     info.UsingGroup,
+		Group:     inflightTaskGroup(info),
 		IsStream:  info.IsStream,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -1043,7 +1053,60 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 	if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
 		return nil, 0, err
 	}
+	fillMissingInflightTaskGroups(userID, pageItems)
 	return pageItems, total, nil
+}
+
+// fillMissingInflightTaskGroups backfills empty group fields for records written
+// before group was persisted, using the owner's current user group.
+func fillMissingInflightTaskGroups(userID int, tasks []InflightTask) {
+	needsFill := false
+	for i := range tasks {
+		if strings.TrimSpace(tasks[i].Group) == "" {
+			needsFill = true
+			break
+		}
+	}
+	if !needsFill {
+		return
+	}
+	userCache, err := model.GetUserCache(userID)
+	if err != nil || userCache == nil {
+		return
+	}
+	fallback := strings.TrimSpace(userCache.Group)
+	if fallback == "" {
+		return
+	}
+	for i := range tasks {
+		if strings.TrimSpace(tasks[i].Group) == "" {
+			tasks[i].Group = fallback
+		}
+	}
+}
+
+// SanitizeInflightTasksForUser clears channel identifiers from list responses for
+// non-admin callers, matching usage-log user views that hide channel details.
+func SanitizeInflightTasksForUser(tasks []InflightTask) {
+	for i := range tasks {
+		sanitizeInflightTaskDetailForUser(tasks[i].Detail)
+	}
+}
+
+func sanitizeInflightTaskDetailForUser(detail *InflightTaskDetail) {
+	if detail == nil {
+		return
+	}
+	detail.ChannelID = 0
+	detail.ChannelName = ""
+	for i := range detail.ChannelChain {
+		detail.ChannelChain[i].ChannelID = 0
+		detail.ChannelChain[i].ChannelName = ""
+	}
+	for i := range detail.Attempts {
+		detail.Attempts[i].ChannelID = 0
+		detail.Attempts[i].ChannelName = ""
+	}
 }
 
 type InflightTaskStats struct {

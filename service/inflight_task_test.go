@@ -553,3 +553,53 @@ func TestFinalInflightTaskStatusUsesStreamStatus(t *testing.T) {
 
 	assert.Equal(t, InflightTaskStatusFailed, FinalInflightTaskStatus(info))
 }
+
+func TestInflightTaskGroupPrefersUsingGroup(t *testing.T) {
+	assert.Equal(t, "vip", inflightTaskGroup(&relaycommon.RelayInfo{
+		UsingGroup: "vip",
+		UserGroup:  "default",
+	}))
+	assert.Equal(t, "default", inflightTaskGroup(&relaycommon.RelayInfo{
+		UserGroup: "default",
+	}))
+	assert.Empty(t, inflightTaskGroup(nil))
+}
+
+func TestSanitizeInflightTasksForUserClearsChannelFields(t *testing.T) {
+	tasks := []InflightTask{
+		{
+			RequestID: "req_1",
+			Group:     "default",
+			Detail: &InflightTaskDetail{
+				ChannelID:   3,
+				ChannelName: "Neco",
+				RetryIndex:  1,
+				LatestError: "timeout",
+				ChannelChain: []InflightTaskChannelAttempt{
+					{RetryIndex: 0, ChannelID: 2, ChannelName: "Hiyo", Status: "failed"},
+					{RetryIndex: 1, ChannelID: 3, ChannelName: "Neco", Status: "completed"},
+				},
+				Attempts: []InflightTaskAttempt{
+					{RetryIndex: 0, ChannelID: 2, ChannelName: "Hiyo", Status: "failed"},
+					{RetryIndex: 1, ChannelID: 3, ChannelName: "Neco", Status: "completed"},
+				},
+			},
+		},
+	}
+
+	SanitizeInflightTasksForUser(tasks)
+
+	require.NotNil(t, tasks[0].Detail)
+	assert.Equal(t, "default", tasks[0].Group)
+	assert.Equal(t, 0, tasks[0].Detail.ChannelID)
+	assert.Empty(t, tasks[0].Detail.ChannelName)
+	assert.Equal(t, 1, tasks[0].Detail.RetryIndex)
+	assert.Equal(t, "timeout", tasks[0].Detail.LatestError)
+	require.Len(t, tasks[0].Detail.ChannelChain, 2)
+	assert.Equal(t, 0, tasks[0].Detail.ChannelChain[0].ChannelID)
+	assert.Empty(t, tasks[0].Detail.ChannelChain[0].ChannelName)
+	assert.Equal(t, "failed", tasks[0].Detail.ChannelChain[0].Status)
+	require.Len(t, tasks[0].Detail.Attempts, 2)
+	assert.Equal(t, 0, tasks[0].Detail.Attempts[1].ChannelID)
+	assert.Empty(t, tasks[0].Detail.Attempts[1].ChannelName)
+}

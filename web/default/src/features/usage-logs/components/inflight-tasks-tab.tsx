@@ -28,6 +28,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -45,6 +46,7 @@ import {
   useDataTable,
 } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
+import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -86,7 +88,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useMediaQuery } from '@/hooks'
-import { useIsAdmin } from '@/hooks/use-admin'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
@@ -110,11 +111,14 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
+import { useLogsViewScope } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const inflightColumnVisibilityStorageKey =
-  'usage-logs:inflight:column-visibility'
 const inflightListLiveRefreshMs = 5000
+
+function getInflightColumnVisibilityStorageKey(isAdmin: boolean) {
+  return `usage-logs:inflight:${isAdmin ? 'admin' : 'user'}:column-visibility`
+}
 
 type InflightTaskStatusStep = {
   status: string
@@ -160,6 +164,7 @@ type InflightTask = {
   status: string
   kind: string
   model_name: string
+  group?: string
   is_stream: boolean
   created_at: number
   updated_at: number
@@ -187,6 +192,7 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
     status: 'streaming',
     kind: 'chat',
     model_name: 'gpt-4.1',
+    group: 'default',
     is_stream: true,
     created_at: 1751905200,
     updated_at: 1751905228,
@@ -307,6 +313,7 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
     status: 'failed',
     kind: 'image',
     model_name: 'gpt-image-1',
+    group: 'vip',
     is_stream: false,
     has_trace: true,
     created_at: 1751905000,
@@ -487,6 +494,15 @@ function isFinalFailure(task: InflightTask) {
 
 function isInflightTaskTerminal(task: InflightTask) {
   return task.status === 'completed' || task.status === 'failed'
+}
+
+// A finished task only keeps its trace when the backend archived one, while a
+// running task can always stream its trace.
+function canOpenInflightTrace(task: InflightTask, traceMenuVisible: boolean) {
+  return (
+    traceMenuVisible &&
+    (!isInflightTaskTerminal(task) || task.has_trace === true)
+  )
 }
 
 function getCurrentStage(task: InflightTask) {
@@ -752,6 +768,7 @@ function buildParams(props: {
   page: number
   pageSize: number
   searchParams: Record<string, unknown>
+  isAdmin: boolean
 }) {
   const { start, end } = getDefaultTimeRange()
   const startTime =
@@ -770,7 +787,7 @@ function buildParams(props: {
     is_stream: props.searchParams.stream,
     model_name: props.searchParams.model,
     request_id: props.searchParams.requestId,
-    channel: props.searchParams.channel,
+    channel: props.isAdmin ? props.searchParams.channel : undefined,
     start_timestamp: Math.floor(startTime / 1000),
     end_timestamp: Math.floor(endTime / 1000),
   }
@@ -1412,9 +1429,7 @@ function useInflightTaskColumns(props: {
   const { isAdmin, onOpenDetails, onOpenTrace, traceMenuVisible } = props
 
   const showTraceMenu = useCallback(
-    (task: InflightTask) =>
-      traceMenuVisible &&
-      (!isInflightTaskTerminal(task) || task.has_trace === true),
+    (task: InflightTask) => canOpenInflightTrace(task, traceMenuVisible),
     [traceMenuVisible]
   )
 
@@ -1439,46 +1454,58 @@ function useInflightTaskColumns(props: {
         header: t('Type'),
         cell: ({ row }) => t(kindLabel[row.original.kind] || row.original.kind),
       },
+      isAdmin
+        ? ({
+            id: 'channel',
+            header: t('Channel'),
+            accessorFn: (row: InflightTask) => row.detail?.channel_id,
+            cell: ({ row }: { row: Row<InflightTask> }) =>
+              renderChannelCell(row.original, t),
+          } satisfies ColumnDef<InflightTask>)
+        : ({
+            id: 'group',
+            header: t('Group'),
+            accessorFn: (row: InflightTask) => row.group,
+            cell: ({ row }: { row: Row<InflightTask> }) =>
+              row.original.group ? (
+                <GroupBadge group={row.original.group} size='sm' />
+              ) : (
+                <span className='text-muted-foreground/60 text-xs'>-</span>
+              ),
+          } satisfies ColumnDef<InflightTask>),
       ...(isAdmin
         ? [
             {
-              id: 'channel',
-              header: t('Channel'),
-              accessorFn: (row: InflightTask) => row.detail?.channel_id,
-              cell: ({ row }: { row: Row<InflightTask> }) =>
-                renderChannelCell(row.original, t),
+              id: 'retry',
+              header: t('Retry'),
+              accessorFn: (row: InflightTask) => getRetryIndex(row),
+              cell: ({ row }: { row: Row<InflightTask> }) => {
+                const task = row.original
+                const retryState = getRetryState(task)
+                return (
+                  <div className='flex max-w-[170px] flex-col gap-1'>
+                    <div className='flex flex-wrap items-center gap-1'>
+                      <StatusBadge
+                        label={getRetryStateLabel(task, t)}
+                        variant={retryStateVariant[retryState] || 'neutral'}
+                        size='sm'
+                        copyable={false}
+                      />
+                      <StatusBadge
+                        label={getRetryAttemptLabel(task, t)}
+                        variant='neutral'
+                        size='sm'
+                        copyable={false}
+                        showDot={false}
+                        className='font-mono'
+                      />
+                    </div>
+                  </div>
+                )
+              },
             } satisfies ColumnDef<InflightTask>,
           ]
         : []),
-      {
-        id: 'retry',
-        header: t('Retry'),
-        accessorFn: (row: InflightTask) => getRetryIndex(row),
-        cell: ({ row }) => {
-          const task = row.original
-          const retryState = getRetryState(task)
-          return (
-            <div className='flex max-w-[170px] flex-col gap-1'>
-              <div className='flex flex-wrap items-center gap-1'>
-                <StatusBadge
-                  label={getRetryStateLabel(task, t)}
-                  variant={retryStateVariant[retryState] || 'neutral'}
-                  size='sm'
-                  copyable={false}
-                />
-                <StatusBadge
-                  label={getRetryAttemptLabel(task, t)}
-                  variant='neutral'
-                  size='sm'
-                  copyable={false}
-                  showDot={false}
-                  className='font-mono'
-                />
-              </div>
-            </div>
-          )
-        },
-      },
       {
         accessorKey: 'model_name',
         header: t('Model'),
@@ -1488,27 +1515,33 @@ function useInflightTaskColumns(props: {
           </TruncatedCell>
         ),
       },
-      {
-        id: 'latest_error',
-        header: t('Latest Error'),
-        accessorFn: (row: InflightTask) => getLatestError(row),
-        cell: ({ row }) => {
-          const latestError = getLatestError(row.original)
-          if (!latestError) {
-            return <span className='text-muted-foreground/60 text-xs'>-</span>
-          }
-          return (
-            <TruncatedCell
-              className={cn(
-                'max-w-[280px] text-xs',
-                isFinalFailure(row.original) && 'text-red-500'
-              )}
-            >
-              {latestError}
-            </TruncatedCell>
-          )
-        },
-      },
+      ...(isAdmin
+        ? [
+            {
+              id: 'latest_error',
+              header: t('Latest Error'),
+              accessorFn: (row: InflightTask) => getLatestError(row),
+              cell: ({ row }: { row: Row<InflightTask> }) => {
+                const latestError = getLatestError(row.original)
+                if (!latestError) {
+                  return (
+                    <span className='text-muted-foreground/60 text-xs'>-</span>
+                  )
+                }
+                return (
+                  <TruncatedCell
+                    className={cn(
+                      'max-w-[280px] text-xs',
+                      isFinalFailure(row.original) && 'text-red-500'
+                    )}
+                  >
+                    {latestError}
+                  </TruncatedCell>
+                )
+              },
+            } satisfies ColumnDef<InflightTask>,
+          ]
+        : []),
       {
         accessorKey: 'request_id',
         header: t('Request ID'),
@@ -1542,26 +1575,32 @@ function useInflightTaskColumns(props: {
             className='flex items-center justify-end gap-1'
             onClick={(event) => event.stopPropagation()}
           >
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={() => onOpenDetails(row.original)}
-              aria-label={t('Details')}
-            >
-              <Eye />
-            </Button>
-            <DataTableRowActionMenu ariaLabel={t('Actions')}>
-              <DropdownMenuItem onClick={() => onOpenDetails(row.original)}>
+            {isAdmin ? (
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => onOpenDetails(row.original)}
+                aria-label={t('Details')}
+              >
                 <Eye />
-                {t('Details')}
-              </DropdownMenuItem>
-              {showTraceMenu(row.original) ? (
-                <DropdownMenuItem onClick={() => onOpenTrace(row.original)}>
-                  <ScrollText />
-                  {t('Debug Log')}
-                </DropdownMenuItem>
-              ) : null}
-            </DataTableRowActionMenu>
+              </Button>
+            ) : null}
+            {isAdmin || showTraceMenu(row.original) ? (
+              <DataTableRowActionMenu ariaLabel={t('Actions')}>
+                {isAdmin ? (
+                  <DropdownMenuItem onClick={() => onOpenDetails(row.original)}>
+                    <Eye />
+                    {t('Details')}
+                  </DropdownMenuItem>
+                ) : null}
+                {showTraceMenu(row.original) ? (
+                  <DropdownMenuItem onClick={() => onOpenTrace(row.original)}>
+                    <ScrollText />
+                    {t('Debug Log')}
+                  </DropdownMenuItem>
+                ) : null}
+              </DataTableRowActionMenu>
+            ) : null}
           </div>
         ),
       },
@@ -1915,7 +1954,7 @@ function InflightFilterBar<TData>(props: {
 
 export function InflightTasksTab() {
   const { t } = useTranslation()
-  const isAdmin = useIsAdmin()
+  const { isAdminView: isAdmin } = useLogsViewScope()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
   const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
@@ -1990,8 +2029,9 @@ export function InflightTasksTab() {
         page: 1,
         pageSize: 1,
         searchParams,
+        isAdmin,
       }),
-    [searchParams]
+    [isAdmin, searchParams]
   )
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -2000,6 +2040,7 @@ export function InflightTasksTab() {
       pagination.pageIndex + 1,
       pagination.pageSize,
       searchParams,
+      isAdmin,
     ],
     queryFn: async () => {
       if (searchParams.mock === 'inflight') {
@@ -2008,6 +2049,7 @@ export function InflightTasksTab() {
             page: pagination.pageIndex + 1,
             pageSize: pagination.pageSize,
             searchParams,
+            isAdmin,
           })
         )
       }
@@ -2016,6 +2058,7 @@ export function InflightTasksTab() {
           page: pagination.pageIndex + 1,
           pageSize: pagination.pageSize,
           searchParams,
+          isAdmin,
         })
       )
 
@@ -2061,7 +2104,7 @@ export function InflightTasksTab() {
     data: data?.items ?? [],
     columns,
     columnFilters,
-    columnVisibilityStorageKey: inflightColumnVisibilityStorageKey,
+    columnVisibilityStorageKey: getInflightColumnVisibilityStorageKey(isAdmin),
     pagination,
     enableRowSelection: false,
     onPaginationChange,
@@ -2097,42 +2140,50 @@ export function InflightTasksTab() {
             onOpenLocalCache={openLocalCache}
           />
         }
-        renderRow={(row, helpers) => (
-          <ContextMenu key={row.id}>
-            <ContextMenuTrigger
-              render={
-                <DataTableRow
-                  row={row}
-                  className={cn(
-                    isFinalFailure(row.original) &&
-                      'bg-red-50/40 dark:bg-red-950/15',
-                    !isFinalFailure(row.original) &&
-                      getRetryIndex(row.original) > 0 &&
-                      'bg-amber-50/30 dark:bg-amber-950/10'
-                  )}
-                  getColumnClassName={(columnId) =>
-                    helpers.getCellClassName(columnId, 'py-3.5')
-                  }
-                  cellRenderColumns={columns}
-                />
+        renderRow={(row, helpers) => {
+          const canOpenTrace = canOpenInflightTrace(
+            row.original,
+            data?.meta?.trace_menu_visible === true
+          )
+          const tableRow = (
+            <DataTableRow
+              row={row}
+              className={cn(
+                isFinalFailure(row.original) &&
+                  'bg-red-50/40 dark:bg-red-950/15',
+                !isFinalFailure(row.original) &&
+                  getRetryIndex(row.original) > 0 &&
+                  'bg-amber-50/30 dark:bg-amber-950/10'
+              )}
+              getColumnClassName={(columnId) =>
+                helpers.getCellClassName(columnId, 'py-3.5')
               }
+              cellRenderColumns={columns}
             />
-            <ContextMenuContent>
-              <ContextMenuItem onClick={() => onOpenDetails(row.original)}>
-                <Eye />
-                {t('Details')}
-              </ContextMenuItem>
-              {data?.meta?.trace_menu_visible === true &&
-              (!isInflightTaskTerminal(row.original) ||
-                row.original.has_trace === true) ? (
-                <ContextMenuItem onClick={() => onOpenTrace(row.original)}>
-                  <ScrollText />
-                  {t('Debug Log')}
-                </ContextMenuItem>
-              ) : null}
-            </ContextMenuContent>
-          </ContextMenu>
-        )}
+          )
+          if (!isAdmin && !canOpenTrace) {
+            return <Fragment key={row.id}>{tableRow}</Fragment>
+          }
+          return (
+            <ContextMenu key={row.id}>
+              <ContextMenuTrigger render={tableRow} />
+              <ContextMenuContent>
+                {isAdmin ? (
+                  <ContextMenuItem onClick={() => onOpenDetails(row.original)}>
+                    <Eye />
+                    {t('Details')}
+                  </ContextMenuItem>
+                ) : null}
+                {canOpenTrace ? (
+                  <ContextMenuItem onClick={() => onOpenTrace(row.original)}>
+                    <ScrollText />
+                    {t('Debug Log')}
+                  </ContextMenuItem>
+                ) : null}
+              </ContextMenuContent>
+            </ContextMenu>
+          )
+        }}
         tableClassName='[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
       />
       <Dialog

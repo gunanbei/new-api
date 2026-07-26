@@ -25,10 +25,16 @@ func GetUserInflightTasks(c *gin.Context) {
 		isStream = &v
 	}
 
+	isAdmin := c.GetInt("role") >= common.RoleAdminUser
+	channelFilter := ""
+	if isAdmin {
+		channelFilter = c.Query("channel")
+	}
+
 	tasks, total, err := service.ListUserInflightTasks(c.Request.Context(), c.GetInt("id"), service.InflightTaskQuery{
 		Status:         c.Query("status"),
 		Kind:           c.Query("kind"),
-		Channel:        c.Query("channel"),
+		Channel:        channelFilter,
 		ModelName:      c.Query("model_name"),
 		RequestID:      c.Query("request_id"),
 		StartTimestamp: startTimestamp,
@@ -50,6 +56,10 @@ func GetUserInflightTasks(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+
+	if !isAdmin {
+		service.SanitizeInflightTasksForUser(tasks)
 	}
 
 	pageInfo.SetTotal(total)

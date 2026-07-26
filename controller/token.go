@@ -1,18 +1,84 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
+
+// normalizeTokenFailover validates the failover settings submitted by the user and
+// rewrites them into their canonical stored form. Failover is mutually exclusive with
+// the auto group cross-group retry, and its retry budget can never exceed the system
+// wide RetryTimes, otherwise a single key could multiply upstream load at will.
+// token.Group is deliberately left untouched so turning failover off restores it.
+func normalizeTokenFailover(c *gin.Context, token *model.Token) error {
+	if !token.FailoverEnabled {
+		token.FailoverGroups = ""
+		token.FailoverStrategy = ""
+		token.FailoverMaxRetry = 0
+		return nil
+	}
+	if common.RetryTimes <= 0 {
+		return errors.New("系统未开启重试，无法启用故障转移模式，请联系管理员配置最大重试次数")
+	}
+	if !constant.IsValidFailoverStrategy(token.FailoverStrategy) {
+		return errors.New("故障转移策略无效")
+	}
+	if token.FailoverMaxRetry < 1 || token.FailoverMaxRetry > common.RetryTimes {
+		return fmt.Errorf("故障转移的最大重试次数必须在 1 到 %d 之间", common.RetryTimes)
+	}
+
+	var groups []string
+	if token.FailoverGroups != "" {
+		if err := common.UnmarshalJsonStr(token.FailoverGroups, &groups); err != nil {
+			return errors.New("故障转移分组格式错误")
+		}
+	}
+
+	userGroup, err := model.GetUserGroup(c.GetInt("id"), false)
+	if err != nil {
+		return err
+	}
+	usableGroups := service.GetUserUsableGroups(userGroup)
+	seen := make(map[string]struct{}, len(groups))
+	cleaned := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" || group == "auto" {
+			return errors.New("故障转移分组不能为空，且不能选择 auto 分组")
+		}
+		if _, duplicate := seen[group]; duplicate {
+			continue
+		}
+		if _, ok := usableGroups[group]; !ok {
+			return fmt.Errorf("无权访问 %s 分组", group)
+		}
+		seen[group] = struct{}{}
+		cleaned = append(cleaned, group)
+	}
+	if len(cleaned) < constant.MinFailoverGroups || len(cleaned) > constant.MaxFailoverGroups {
+		return fmt.Errorf("故障转移分组数量必须在 %d 到 %d 之间", constant.MinFailoverGroups, constant.MaxFailoverGroups)
+	}
+
+	encoded, err := common.Marshal(cleaned)
+	if err != nil {
+		return errors.New("故障转移分组序列化失败")
+	}
+	token.FailoverGroups = string(encoded)
+	token.CrossGroupRetry = false
+	return nil
+}
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	if token == nil {
@@ -201,6 +267,10 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	if err := normalizeTokenFailover(c, &token); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -221,6 +291,10 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		FailoverEnabled:    token.FailoverEnabled,
+		FailoverGroups:     token.FailoverGroups,
+		FailoverStrategy:   token.FailoverStrategy,
+		FailoverMaxRetry:   token.FailoverMaxRetry,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -289,6 +363,10 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if err := normalizeTokenFailover(c, &token); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
@@ -299,6 +377,10 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.FailoverEnabled = token.FailoverEnabled
+		cleanToken.FailoverGroups = token.FailoverGroups
+		cleanToken.FailoverStrategy = token.FailoverStrategy
+		cleanToken.FailoverMaxRetry = token.FailoverMaxRetry
 	}
 	err = cleanToken.Update()
 	if err != nil {

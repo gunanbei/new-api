@@ -37,6 +37,7 @@ import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { API_KEY_STATUSES } from '../constants'
+import { parseFailoverGroups } from '../lib'
 import type { ApiKey } from '../types'
 import { ApiKeyTimestampCell } from './api-key-timestamp-cell'
 import {
@@ -202,6 +203,31 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         const apiKey = row.original
         const group = row.getValue('group') as string
         const ratio = group && group !== 'auto' ? groupRatios[group] : undefined
+
+        if (apiKey.failover_enabled) {
+          const failoverGroups = parseFailoverGroups(apiKey.failover_groups)
+          return (
+            <Tooltip>
+              <TooltipTrigger
+                render={<BadgeCell className='gap-1.5 text-xs' />}
+              >
+                <GroupBadge group={failoverGroups[0] ?? '-'} />
+                <StatusBadge
+                  label={t('Failover')}
+                  variant='info'
+                  copyable={false}
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <span className='text-xs'>
+                  {failoverGroups.length > 0
+                    ? failoverGroups.join(', ')
+                    : t('No group configured')}
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          )
+        }
 
         if (group === 'auto') {
           return (

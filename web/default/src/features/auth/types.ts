@@ -172,6 +172,8 @@ export interface SystemStatus {
   password_login_enabled?: boolean
   password_register_enabled?: boolean
   custom_oauth_providers?: CustomOAuthProviderInfo[]
+  /** System wide retry cap; upper bound for an API key's failover retry budget. */
+  max_retry_times?: number
   [key: string]: unknown
 }
 

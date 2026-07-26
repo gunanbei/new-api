@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -87,6 +89,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
+	if failoverGroups := GetFailoverGroups(param.Ctx); len(failoverGroups) > 0 {
+		return selectFailoverChannel(param, failoverGroups)
+	}
+
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
@@ -160,4 +166,74 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	}
 	return channel, selectGroup, nil
+}
+
+// failoverCursor walks a token's failover group sequence. Its position lives in the
+// request context so every retry resumes where the previous attempt stopped.
+type failoverCursor struct {
+	Groups     []string
+	GroupIndex int
+	StartRetry int
+}
+
+// nextTarget returns the group and the in-group priority level to use for the given
+// global retry index. Groups that have nothing left to offer are skipped without
+// consuming a retry. ok is false once the whole sequence is exhausted.
+func (cursor *failoverCursor) nextTarget(retry int, levelsOf func(group string) int) (string, int, bool) {
+	for cursor.GroupIndex < len(cursor.Groups) {
+		group := cursor.Groups[cursor.GroupIndex]
+		priorityRetry := retry - cursor.StartRetry
+		if levels := levelsOf(group); levels > 0 && priorityRetry < levels {
+			return group, priorityRetry, true
+		}
+		cursor.skip(retry)
+	}
+	return "", 0, false
+}
+
+// skip abandons the current group and restarts the priority counter on the next one.
+func (cursor *failoverCursor) skip(retry int) {
+	cursor.GroupIndex++
+	cursor.StartRetry = retry
+}
+
+// selectFailoverChannel serves a token in failover mode: it exhausts the channel
+// priority levels of the current group, then moves on to the next group in the
+// sequence. Unlike the auto cross-group path it never resets the caller's retry
+// counter, so the total number of attempts stays bounded by EffectiveRetryTimes.
+func selectFailoverChannel(param *RetryParam, groups []string) (*model.Channel, string, error) {
+	cursor := &failoverCursor{
+		Groups:     groups,
+		GroupIndex: common.GetContextKeyInt(param.Ctx, constant.ContextKeyFailoverGroupIndex),
+		StartRetry: common.GetContextKeyInt(param.Ctx, constant.ContextKeyFailoverGroupStartRetry),
+	}
+	levelsOf := func(group string) int {
+		return model.CountPriorityLevels(group, param.ModelName, param.RequestPath)
+	}
+
+	defer func() {
+		common.SetContextKey(param.Ctx, constant.ContextKeyFailoverGroupIndex, cursor.GroupIndex)
+		common.SetContextKey(param.Ctx, constant.ContextKeyFailoverGroupStartRetry, cursor.StartRetry)
+	}()
+
+	for {
+		group, priorityRetry, ok := cursor.nextTarget(param.GetRetry(), levelsOf)
+		if !ok {
+			return nil, strings.Join(groups, ","), nil
+		}
+		channel, err := model.GetRandomSatisfiedChannel(group, param.ModelName, priorityRetry, param.RequestPath)
+		if err != nil || channel == nil {
+			// The database selection path cannot pre-filter Advanced Custom channels by
+			// request path, so a level counted as available can still yield nothing.
+			// Give up on this group rather than the whole request.
+			if err != nil {
+				logger.LogWarn(param.Ctx, fmt.Sprintf("failover: group %s failed to provide a channel for model %s: %s", group, param.ModelName, err.Error()))
+			}
+			cursor.skip(param.GetRetry())
+			continue
+		}
+		logger.LogDebug(param.Ctx, "Failover selected group: %s, priorityRetry: %d", group, priorityRetry)
+		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, group)
+		return channel, group, nil
+	}
 }

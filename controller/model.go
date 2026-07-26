@@ -186,6 +186,15 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 		}
 	}
 
+	// A failover token has no single group, so list the union of everything it can reach.
+	if failoverGroups := service.GetFailoverGroups(c); len(failoverGroups) > 0 {
+		return modelListGroups{
+			userGroup:   userGroup,
+			tokenGroup:  tokenGroup,
+			ownerGroups: failoverGroups,
+		}, nil
+	}
+
 	if tokenGroup == "auto" {
 		return modelListGroups{
 			userGroup:   userGroup,

@@ -52,6 +52,14 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -68,7 +76,11 @@ import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 import { createApiKey, updateApiKey, getApiKey } from '../api'
-import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+import {
+  ERROR_MESSAGES,
+  FAILOVER_STRATEGY_OPTIONS,
+  SUCCESS_MESSAGES,
+} from '../constants'
 import {
   getApiKeyFormSchema,
   type ApiKeyFormValues,
@@ -82,6 +94,7 @@ import {
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
+import { FailoverGroupsField } from './failover-groups-field'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -129,7 +142,8 @@ export function ApiKeysMutateDrawer({
     })
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
-  const schema = getApiKeyFormSchema(t)
+  const maxRetryTimes = status?.max_retry_times ?? 0
+  const schema = getApiKeyFormSchema(t, maxRetryTimes)
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
@@ -249,6 +263,8 @@ export function ApiKeysMutateDrawer({
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const selectedGroup = form.watch('group')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const failoverEnabled = form.watch('failover_enabled')
+  const failoverStrategy = form.watch('failover_strategy')
 
   return (
     <Sheet
@@ -300,26 +316,28 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name='group'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Group')}</FormLabel>
-                    <FormControl>
-                      <ApiKeyGroupCombobox
-                        options={groups}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder={t('Select a group')}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!failoverEnabled && (
+                <FormField
+                  control={form.control}
+                  name='group'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Group')}</FormLabel>
+                      <FormControl>
+                        <ApiKeyGroupCombobox
+                          options={groups}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={t('Select a group')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              {selectedGroup === 'auto' && (
+              {!failoverEnabled && selectedGroup === 'auto' && (
                 <FormField
                   control={form.control}
                   name='cross_group_retry'
@@ -344,6 +362,144 @@ export function ApiKeysMutateDrawer({
                     </FormItem>
                   )}
                 />
+              )}
+
+              <FormField
+                control={form.control}
+                name='failover_enabled'
+                render={({ field }) => (
+                  <FormItem className={sideDrawerSwitchItemClassName()}>
+                    <div className='flex flex-col gap-0.5'>
+                      <FormLabel className='text-sm'>
+                        {t('Failover mode')}
+                      </FormLabel>
+                      <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
+                        {maxRetryTimes < 1
+                          ? t(
+                              'Retries are disabled system wide, so failover cannot take effect. Ask an administrator to raise the max retry count.'
+                            )
+                          : t(
+                              'Try a sequence of groups instead of a single one. Replaces the auto group and its cross-group retry.'
+                            )}
+                      </FormDescription>
+                      <FormMessage />
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={!!field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={maxRetryTimes < 1}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {failoverEnabled && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name='failover_groups'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Failover groups')}</FormLabel>
+                        <FormControl>
+                          <FailoverGroupsField
+                            options={groups}
+                            value={field.value}
+                            onChange={field.onChange}
+                            showOrder={failoverStrategy === 'order'}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Each request starts on the first group and moves to the next one when every channel priority in the current group has failed.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='failover_strategy'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Failover strategy')}</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={(value) =>
+                            value !== null && field.onChange(value)
+                          }
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue>
+                                {t(
+                                  FAILOVER_STRATEGY_OPTIONS.find(
+                                    (option) => option.value === field.value
+                                  )?.label ?? ''
+                                )}
+                              </SelectValue>
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent alignItemWithTrigger={false}>
+                            <SelectGroup>
+                              {FAILOVER_STRATEGY_OPTIONS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  {t(option.label)}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          {t(
+                            FAILOVER_STRATEGY_OPTIONS.find(
+                              (option) => option.value === field.value
+                            )?.description ?? ''
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='failover_max_retry'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Max retries')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={1}
+                            max={maxRetryTimes}
+                            value={field.value ?? 1}
+                            onChange={(e) =>
+                              field.onChange(
+                                Number.parseInt(e.target.value, 10) || 1
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Total extra attempts across all groups. The system limit is {{max}}.',
+                            { max: maxRetryTimes }
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
               )}
 
               <FormField

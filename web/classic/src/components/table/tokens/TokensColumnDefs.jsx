@@ -89,6 +89,26 @@ const renderStatus = (text, record, t) => {
 
 // Render group column
 const renderGroupColumn = (text, record, t, groupRatios = {}) => {
+  if (record && record.failover_enabled) {
+    let failoverGroups = [];
+    try {
+      const parsed = JSON.parse(record.failover_groups || '[]');
+      failoverGroups = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      failoverGroups = [];
+    }
+    return (
+      <Tooltip
+        content={failoverGroups.join(', ') || t('未配置分组')}
+        position='top'
+      >
+        <Tag color='white' shape='circle'>
+          {t('故障转移')}
+          {failoverGroups.length > 0 ? `(${failoverGroups.length})` : ''}
+        </Tag>
+      </Tooltip>
+    );
+  }
   if (text === 'auto') {
     return (
       <Tooltip

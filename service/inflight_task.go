@@ -62,6 +62,7 @@ type InflightTask struct {
 	Status    string              `json:"status"`
 	Kind      string              `json:"kind"`
 	ModelName string              `json:"model_name"`
+	Group     string              `json:"group,omitempty"`
 	IsStream  bool                `json:"is_stream"`
 	CreatedAt int64               `json:"created_at"`
 	UpdatedAt int64               `json:"updated_at"`
@@ -70,14 +71,15 @@ type InflightTask struct {
 }
 
 type InflightTaskDetail struct {
-	ChannelID    int                          `json:"channel_id,omitempty"`
-	ChannelName  string                       `json:"channel_name,omitempty"`
-	RetryIndex   int                          `json:"retry_index,omitempty"`
-	LatestError  string                       `json:"latest_error,omitempty"`
-	CurrentStage string                       `json:"current_stage,omitempty"`
-	ChannelChain []InflightTaskChannelAttempt `json:"channel_chain,omitempty"`
-	Attempts     []InflightTaskAttempt        `json:"attempts,omitempty"`
-	Timeline     []InflightTaskStatusStep     `json:"timeline,omitempty"`
+	ChannelID     int                          `json:"channel_id,omitempty"`
+	ChannelName   string                       `json:"channel_name,omitempty"`
+	RetryIndex    int                          `json:"retry_index,omitempty"`
+	MaxRetryIndex int                          `json:"max_retry_index,omitempty"`
+	LatestError   string                       `json:"latest_error,omitempty"`
+	CurrentStage  string                       `json:"current_stage,omitempty"`
+	ChannelChain  []InflightTaskChannelAttempt `json:"channel_chain,omitempty"`
+	Attempts      []InflightTaskAttempt        `json:"attempts,omitempty"`
+	Timeline      []InflightTaskStatusStep     `json:"timeline,omitempty"`
 }
 
 type InflightTaskChannelAttempt struct {
@@ -301,7 +303,13 @@ func shouldApplyReconciledTerminalStatus(task *InflightTask, terminalStatus stri
 	if task.Detail == nil {
 		return true
 	}
-	return task.Detail.RetryIndex >= common.RetryTimes
+	// A failover token can cap retries below the system setting, so the recorded cap
+	// wins when present; older records without one fall back to the system value.
+	maxRetryIndex := task.Detail.MaxRetryIndex
+	if maxRetryIndex <= 0 {
+		maxRetryIndex = common.RetryTimes
+	}
+	return task.Detail.RetryIndex >= maxRetryIndex
 }
 
 func inflightTaskRetentionTTL(status string) time.Duration {
@@ -433,6 +441,7 @@ func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *Infl
 		Status:    status,
 		Kind:      inflightTaskKindFromRelayMode(info.RelayMode),
 		ModelName: info.OriginModelName,
+		Group:     info.UsingGroup,
 		IsStream:  info.IsStream,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -446,8 +455,9 @@ func inflightTaskDetailFromRelayInfo(info *relaycommon.RelayInfo, status string,
 		return nil
 	}
 	detail := &InflightTaskDetail{
-		RetryIndex:   info.RetryIndex,
-		CurrentStage: status,
+		RetryIndex:    info.RetryIndex,
+		MaxRetryIndex: info.MaxRetryIndex,
+		CurrentStage:  status,
 	}
 	if info.LastError != nil {
 		detail.LatestError = info.LastError.Error()
@@ -845,6 +855,9 @@ func updateInflightTask(ctx context.Context, client *redis.Client, task *Infligh
 				var stored InflightTask
 				if err := common.UnmarshalJsonStr(existing, &stored); err == nil {
 					task.CreatedAt = stored.CreatedAt
+					if task.Group == "" {
+						task.Group = stored.Group
+					}
 					previousStatus := stored.Status
 					previousRetryIndex := -1
 					if stored.Detail != nil {

@@ -1,8 +1,8 @@
 ```bash
 # 启动后端
 # 设置环境变量
-1.source ./dev-env.sh
-2.go run main.go
+source ./dev-env.sh
+go run main.go
 # 访问http://localhost:3000
 
 

@@ -208,6 +208,50 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	return nil, errors.New("channel not found")
 }
 
+// CountPriorityLevels reports how many distinct channel priority levels can serve the
+// model in the group. GetRandomSatisfiedChannel clamps an out-of-range retry index to
+// the lowest priority instead of reporting exhaustion, so callers that need to know
+// when a group has nothing left to try (token failover) must ask for the level count.
+// Returns 0 when the group has no usable channel for the model.
+//
+// The database path (memory cache disabled) cannot apply the Advanced Custom request
+// path filter, so it may over-report by one level. Callers must treat a nil channel
+// from GetRandomSatisfiedChannel as exhaustion too.
+func CountPriorityLevels(group string, modelName string, requestPath string) int {
+	if !common.MemoryCacheEnabled {
+		var priorities []int64
+		err := DB.Model(&Ability{}).
+			Select("DISTINCT(priority)").
+			Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelName, true).
+			Pluck("priority", &priorities).Error
+		if err != nil {
+			common.SysError("failed to count channel priority levels: " + err.Error())
+			return 0
+		}
+		return len(priorities)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channels := filterChannelsByRequestPathAndModel(group2model2channels[group][modelName], requestPath, modelName)
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(modelName)
+		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, modelName)
+	}
+	if len(channels) == 0 {
+		return 0
+	}
+
+	uniquePriorities := make(map[int64]struct{}, len(channels))
+	for _, channelId := range channels {
+		if channel, ok := channelsIDM[channelId]; ok {
+			uniquePriorities[channel.GetPriority()] = struct{}{}
+		}
+	}
+	return len(uniquePriorities)
+}
+
 // filterChannelsByRequestPathAndModel restricts candidates by request path and
 // model. Only Advanced Custom (type 58) channels are path-checked: they are kept
 // only when one of their configured routes matches requestPath and model. All

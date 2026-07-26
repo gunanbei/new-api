@@ -20,6 +20,21 @@ const (
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
 	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
 
+	/* token failover keys, set by middleware/auth.go once per request */
+	// ContextKeyTokenFailoverEnabled marks that the token uses failover mode instead of a single group.
+	ContextKeyTokenFailoverEnabled ContextKey = "token_failover_enabled"
+	// ContextKeyTokenFailoverGroups holds the []string group sequence after the token's
+	// strategy has been applied. Resolved once so retries keep a stable order.
+	ContextKeyTokenFailoverGroups ContextKey = "token_failover_groups"
+	// ContextKeyTokenFailoverMaxRetry holds the token level retry cap, already clamped
+	// to the system RetryTimes.
+	ContextKeyTokenFailoverMaxRetry ContextKey = "token_failover_max_retry"
+	// ContextKeyFailoverGroupIndex tracks which group of the sequence is currently in use.
+	ContextKeyFailoverGroupIndex ContextKey = "failover_group_index"
+	// ContextKeyFailoverGroupStartRetry holds the global retry index at which the current
+	// group started, so the in-group priority level is retry - startRetry.
+	ContextKeyFailoverGroupStartRetry ContextKey = "failover_group_start_retry"
+
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
 	ContextKeyChannelName              ContextKey = "channel_name"
@@ -38,6 +53,10 @@ const (
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
 
+	// ContextKeyAutoGroup holds the group the current attempt actually landed on, which
+	// may differ from the token group when auto groups or token failover reroute the
+	// request. Billing, settlement and logging read it as the final group, so every
+	// multi-group selection path must keep it up to date.
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"

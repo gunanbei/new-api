@@ -81,8 +81,32 @@ const EditTokenModal = (props) => {
     allow_ips: '',
     group: '',
     cross_group_retry: false,
+    failover_enabled: false,
+    failover_groups: [],
+    failover_strategy: 'order',
+    failover_max_retry: 1,
     tokenCount: 1,
   });
+
+  const maxRetryTimes = statusState?.status?.max_retry_times || 0;
+
+  const FAILOVER_STRATEGY_OPTIONS = [
+    { value: 'order', label: t('按列表顺序') },
+    { value: 'lowest_ratio', label: t('倍率最低优先') },
+    { value: 'random', label: t('随机') },
+  ];
+
+  // The API stores the group sequence as a JSON string; the form works with an array.
+  const applyFailoverPayload = (payload) => {
+    if (!payload.failover_enabled) {
+      payload.failover_groups = '';
+      payload.failover_strategy = '';
+      payload.failover_max_retry = 0;
+      return;
+    }
+    payload.failover_groups = JSON.stringify(payload.failover_groups || []);
+    payload.cross_group_retry = false;
+  };
 
   const handleCancel = () => {
     props.handleClose();
@@ -172,6 +196,14 @@ const EditTokenModal = (props) => {
       data.remain_amount = Number(
         quotaToDisplayAmount(data.remain_quota || 0).toFixed(6),
       );
+      try {
+        const parsed = JSON.parse(data.failover_groups || '[]');
+        data.failover_groups = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        data.failover_groups = [];
+      }
+      data.failover_strategy = data.failover_strategy || 'order';
+      data.failover_max_retry = data.failover_max_retry || 1;
       if (formApiRef.current) {
         formApiRef.current.setValues({ ...getInitValues(), ...data });
       }
@@ -238,6 +270,7 @@ const EditTokenModal = (props) => {
       }
       localInputs.model_limits = localInputs.model_limits.join(',');
       localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
+      applyFailoverPayload(localInputs);
       let res = await API.put(`/api/token/`, {
         ...localInputs,
         id: parseInt(props.editingToken.id),
@@ -282,6 +315,7 @@ const EditTokenModal = (props) => {
         }
         localInputs.model_limits = localInputs.model_limits.join(',');
         localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
+        applyFailoverPayload(localInputs);
         let res = await API.post(`/api/token/`, localInputs);
         const { success, message } = res.data;
         if (success) {
@@ -382,7 +416,12 @@ const EditTokenModal = (props) => {
                       showClear
                     />
                   </Col>
-                  <Col span={24}>
+                  <Col
+                    span={24}
+                    style={{
+                      display: values.failover_enabled ? 'none' : 'block',
+                    }}
+                  >
                     {groups.length > 0 ? (
                       <Form.Select
                         field='group'
@@ -413,7 +452,10 @@ const EditTokenModal = (props) => {
                   <Col
                     span={24}
                     style={{
-                      display: values.group === 'auto' ? 'block' : 'none',
+                      display:
+                        !values.failover_enabled && values.group === 'auto'
+                          ? 'block'
+                          : 'none',
                     }}
                   >
                     <Form.Switch
@@ -423,6 +465,77 @@ const EditTokenModal = (props) => {
                       extraText={t(
                         '开启后，当前分组渠道失败时会按顺序尝试下一个分组的渠道',
                       )}
+                    />
+                  </Col>
+                  <Col span={24}>
+                    <Form.Switch
+                      field='failover_enabled'
+                      label={t('故障转移模式')}
+                      size='default'
+                      disabled={maxRetryTimes < 1}
+                      extraText={
+                        maxRetryTimes < 1
+                          ? t(
+                              '系统未开启重试，故障转移无法生效，请联系管理员设置最大重试次数',
+                            )
+                          : t(
+                              '开启后依次尝试多个分组，替代单一分组与 auto 分组的跨分组重试',
+                            )
+                      }
+                    />
+                  </Col>
+                  <Col
+                    span={24}
+                    style={{
+                      display: values.failover_enabled ? 'block' : 'none',
+                    }}
+                  >
+                    <Form.Select
+                      field='failover_groups'
+                      label={t('故障转移分组')}
+                      placeholder={t('请选择 2 到 10 个分组')}
+                      multiple
+                      maxTagCount={10}
+                      optionList={groups.filter(
+                        (group) => group.value !== 'auto',
+                      )}
+                      renderOptionItem={renderGroupOption}
+                      filter={selectFilter}
+                      extraText={t(
+                        '分组按选择顺序排列，请求先落在第一个分组，该分组所有渠道优先级都失败后转移到下一个',
+                      )}
+                      style={{ width: '100%' }}
+                    />
+                  </Col>
+                  <Col
+                    span={24}
+                    style={{
+                      display: values.failover_enabled ? 'block' : 'none',
+                    }}
+                  >
+                    <Form.Select
+                      field='failover_strategy'
+                      label={t('转移策略')}
+                      optionList={FAILOVER_STRATEGY_OPTIONS}
+                      style={{ width: '100%' }}
+                    />
+                  </Col>
+                  <Col
+                    span={24}
+                    style={{
+                      display: values.failover_enabled ? 'block' : 'none',
+                    }}
+                  >
+                    <Form.InputNumber
+                      field='failover_max_retry'
+                      label={t('最大重试次数')}
+                      min={1}
+                      max={maxRetryTimes || 1}
+                      extraText={t(
+                        '所有分组累计的额外尝试次数，系统上限为 {{max}}',
+                        { max: maxRetryTimes },
+                      )}
+                      style={{ width: '100%' }}
                     />
                   </Col>
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
@@ -552,7 +665,10 @@ const EditTokenModal = (props) => {
                         ? `▾ ${t('收起原生额度输入')}`
                         : `▸ ${t('使用原生额度输入')}`}
                     </div>
-                    <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                    <div
+                      style={{ display: showQuotaInput ? 'block' : 'none' }}
+                      className='mt-2'
+                    >
                       <Form.InputNumber
                         field='remain_quota'
                         label={t('额度')}

@@ -418,8 +418,22 @@ func TokenAuth() func(c *gin.Context) {
 		userCache.WriteContext(c)
 
 		userGroup := userCache.Group
-		tokenGroup := token.Group
-		if tokenGroup != "" {
+		if token.FailoverEnabled {
+			configuredGroups := token.GetFailoverGroups()
+			failoverGroups := service.ResolveFailoverGroups(userGroup, configuredGroups, token.FailoverStrategy)
+			if len(failoverGroups) == 0 {
+				abortWithOpenAiMessage(c, http.StatusForbidden, "令牌配置的故障转移分组均不可用，请重新配置")
+				return
+			}
+			if len(failoverGroups) < len(configuredGroups) {
+				logger.LogWarn(c, fmt.Sprintf("token %d failover: skipped %d unusable group(s) out of %d",
+					token.Id, len(configuredGroups)-len(failoverGroups), len(configuredGroups)))
+			}
+			common.SetContextKey(c, constant.ContextKeyTokenFailoverEnabled, true)
+			common.SetContextKey(c, constant.ContextKeyTokenFailoverGroups, failoverGroups)
+			common.SetContextKey(c, constant.ContextKeyTokenFailoverMaxRetry, token.FailoverMaxRetry)
+			userGroup = failoverGroups[0]
+		} else if tokenGroup := token.Group; tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -462,7 +476,14 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	} else {
 		c.Set("token_model_limit_enabled", false)
 	}
-	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
+	// In failover mode there is no single token group, so the sequence resolved by
+	// TokenAuth decides it: single-group consumers (rate limit bucket, relay info, logs)
+	// follow the group the request actually starts on.
+	if failoverGroups := service.GetFailoverGroups(c); token.FailoverEnabled && len(failoverGroups) > 0 {
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, failoverGroups[0])
+	} else {
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
+	}
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {

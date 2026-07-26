@@ -42,6 +42,18 @@ export const apiKeySchema = z.object({
     }, z.boolean())
     .optional()
     .default(false),
+  failover_enabled: z
+    .preprocess((v) => {
+      if (v === 1) return true
+      if (v === 0) return false
+      return v
+    }, z.boolean())
+    .optional()
+    .default(false),
+  // JSON encoded array of group names, ordered as the user configured them
+  failover_groups: z.string().nullish().default(''),
+  failover_strategy: z.string().nullish().default(''),
+  failover_max_retry: z.number().nullish().default(0),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -92,6 +104,10 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  failover_enabled: boolean
+  failover_groups: string
+  failover_strategy: string
+  failover_max_retry: number
 }
 
 // ============================================================================

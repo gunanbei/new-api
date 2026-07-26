@@ -73,6 +73,40 @@ export const API_KEY_STATUS_OPTIONS = Object.values(API_KEY_STATUSES).map(
 export const DEFAULT_GROUP = '' as const
 
 // ============================================================================
+// Failover Mode
+// label values are i18n keys; use t(option.label) in components
+// ============================================================================
+
+export const FAILOVER_STRATEGIES = ['order', 'lowest_ratio', 'random'] as const
+
+export type FailoverStrategy = (typeof FAILOVER_STRATEGIES)[number]
+
+export const FAILOVER_STRATEGY_OPTIONS: {
+  value: FailoverStrategy
+  label: string
+  description: string
+}[] = [
+  {
+    value: 'order',
+    label: 'In configured order',
+    description: 'Try the groups from top to bottom as listed below',
+  },
+  {
+    value: 'lowest_ratio',
+    label: 'Lowest ratio first',
+    description: 'Try the cheapest group available to you first',
+  },
+  {
+    value: 'random',
+    label: 'Random',
+    description: 'Shuffle the group order once per request',
+  },
+]
+
+export const MIN_FAILOVER_GROUPS = 2
+export const MAX_FAILOVER_GROUPS = 10
+
+// ============================================================================
 // Error Messages (i18n keys: use t(ERROR_MESSAGES.xxx) when displaying)
 // ============================================================================
 

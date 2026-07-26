@@ -27,8 +27,26 @@ type Token struct {
 	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
-	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	CrossGroupRetry    bool           `json:"cross_group_retry"`                         // 跨分组重试，仅auto分组有效
+	FailoverEnabled    bool           `json:"failover_enabled"`                          // 故障转移模式，与 auto 跨分组重试互斥
+	FailoverGroups     string         `json:"failover_groups" gorm:"type:text"`          // JSON 数组，故障转移的分组序列
+	FailoverStrategy   string         `json:"failover_strategy" gorm:"type:varchar(32)"` // order | lowest_ratio | random
+	FailoverMaxRetry   int            `json:"failover_max_retry"`                        // 0 表示跟随系统 RetryTimes
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+// GetFailoverGroups returns the group sequence configured on the token, in the order
+// the user saved it. Returns an empty slice when failover is off or unparsable.
+func (token *Token) GetFailoverGroups() []string {
+	if !token.FailoverEnabled || token.FailoverGroups == "" {
+		return []string{}
+	}
+	groups := make([]string, 0)
+	if err := common.UnmarshalJsonStr(token.FailoverGroups, &groups); err != nil {
+		common.SysError(fmt.Sprintf("failed to parse failover groups of token %d: %s", token.Id, err.Error()))
+		return []string{}
+	}
+	return groups
 }
 
 func (token *Token) Clean() {
@@ -302,7 +320,8 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+		"failover_enabled", "failover_groups", "failover_strategy", "failover_max_retry").Updates(token).Error
 	return err
 }
 

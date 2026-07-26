@@ -106,7 +106,23 @@ func Distribute() func(c *gin.Context) {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
 						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
-						if usingGroup == "auto" {
+						failoverGroups := service.GetFailoverGroups(c)
+						if len(failoverGroups) > 0 {
+							for i, g := range failoverGroups {
+								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
+									selectGroup = g
+									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+									// Resume failover from the group this channel belongs to, otherwise
+									// the first retry would restart at the head of the sequence and pick
+									// the same channel again.
+									common.SetContextKey(c, constant.ContextKeyFailoverGroupIndex, i)
+									channel = preferred
+									affinityUsable = true
+									service.MarkChannelAffinityUsed(c, g, preferred.Id)
+									break
+								}
+							}
+						} else if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
 							for _, g := range autoGroups {
@@ -154,7 +170,13 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						// In failover mode selectGroup lists every group that was tried, which
+						// is what an operator needs to see here rather than just the first one.
+						unavailableGroup := usingGroup
+						if len(service.GetFailoverGroups(c)) > 0 {
+							unavailableGroup = selectGroup
+						}
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": unavailableGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
 					}
 				}

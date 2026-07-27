@@ -503,6 +503,22 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Other:            other,
 	})
 	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		cacheHitTokens := int64(0)
+		inputTokens := int64(0)
+		if billingUsage != nil {
+			_, cachedTokens, promptCacheHitTokens := usageCacheSignals(billingUsage)
+			cacheHitTokens = cachedTokens
+			if cacheHitTokens == 0 {
+				cacheHitTokens = promptCacheHitTokens
+			}
+			inputTokens = int64(billingUsage.InputTokens)
+			if inputTokens == 0 {
+				inputTokens = int64(billingUsage.PromptTokens)
+				if billingUsage.UsageSemantic == dto.BillingUsageSemanticAnthropic || billingUsage.UsageSemantic == dto.BillingUsageSemanticGemini {
+					inputTokens += cacheHitTokens
+				}
+			}
+		}
+		perfmetrics.RecordRelaySampleWithCache(relayInfo, true, int64(summary.CompletionTokens), cacheHitTokens, inputTokens)
 	})
 }

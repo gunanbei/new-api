@@ -78,7 +78,7 @@ export function useSidebarData(): SidebarData {
           },
           {
             title: t('Dashboard'),
-            url: '/dashboard/models',
+            url: '/dashboard/groups',
             icon: LayoutDashboard,
           },
           {

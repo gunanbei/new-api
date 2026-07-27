@@ -101,6 +101,12 @@ const LazyPerformanceOverview = lazy(() =>
   }))
 )
 
+const LazyGroupMonitor = lazy(() =>
+  import('./components/groups/group-monitor').then((m) => ({
+    default: m.GroupMonitor,
+  }))
+)
+
 const LazyUserCharts = lazy(() =>
   import('./components/users/user-charts').then((m) => ({
     default: m.UserCharts,
@@ -179,6 +185,9 @@ function PerformanceOverviewFallback() {
 const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   overview: {
     titleKey: 'Overview',
+  },
+  groups: {
+    titleKey: 'Group Monitoring',
   },
   models: {
     titleKey: 'Model Call Analytics',
@@ -389,6 +398,13 @@ export function Dashboard() {
                 </Suspense>
               </FadeIn>
             </>
+          )}
+          {activeSection === 'groups' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyGroupMonitor />
+              </Suspense>
+            </FadeIn>
           )}
           {activeSection === 'users' && (
             <FadeIn>

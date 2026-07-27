@@ -59,3 +59,23 @@ export type PerfSummaryAllData = {
     models: PerfModelSummary[]
   }
 }
+
+export type PerfGroupMonitor = {
+  group: string
+  ratio?: number
+  status: 'available' | 'warning' | 'error' | 'unknown'
+  availability: number
+  latest_ttft_ms: number
+  latest_tps: number
+  cache_hit_rate: number
+  input_tokens: number
+  request_count: number
+  last_updated: number
+  series: PerformanceSeriesPoint[]
+}
+
+export type PerfGroupMonitorData = {
+  success: boolean
+  message?: string
+  data: PerfGroupMonitor[]
+}

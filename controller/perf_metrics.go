@@ -73,6 +73,56 @@ func GetPerfMetrics(c *gin.Context) {
 	})
 }
 
+func GetPerfMetricsGroups(c *gin.Context) {
+	hours := 24
+	if rawHours := c.Query("hours"); rawHours != "" {
+		if parsed, err := strconv.Atoi(rawHours); err == nil {
+			hours = parsed
+		}
+	}
+
+	ratios := ratio_setting.GetGroupRatioCopy()
+	activeGroups := append(lo.Keys(ratios), "auto")
+	summaries, err := perfmetrics.QueryGroupSummaryAll(hours, activeGroups)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	type groupMonitor struct {
+		perfmetrics.GroupSummary
+		Ratio *float64 `json:"ratio,omitempty"`
+	}
+	byGroup := make(map[string]perfmetrics.GroupSummary, len(summaries))
+	for _, summary := range summaries {
+		byGroup[summary.Group] = summary
+	}
+	result := make([]groupMonitor, 0, len(activeGroups))
+	for _, group := range activeGroups {
+		summary, ok := byGroup[group]
+		if !ok {
+			summary = perfmetrics.GroupSummary{
+				Group:  group,
+				Status: "unknown",
+				Series: []perfmetrics.BucketPoint{},
+			}
+		}
+		var ratio *float64
+		if value, ok := ratios[group]; ok {
+			ratio = &value
+		}
+		result = append(result, groupMonitor{GroupSummary: summary, Ratio: ratio})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
 func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupResult {
 	activeRatios := ratio_setting.GetGroupRatioCopy()
 	return lo.Filter(groups, func(g perfmetrics.GroupResult, _ int) bool {

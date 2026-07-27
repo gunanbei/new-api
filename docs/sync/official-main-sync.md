@@ -147,7 +147,32 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
+
+### 2026-07-27 - 002 - Completed
+
+- Source: origin/main; range: 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3
+- Target: codex/develop-tmp; start: 767ef3875d8581c48bbafbccf9fa8ea59a709d49; result: uncommitted
+- Baseline: previous ledger entry; its source end is an ancestor of the fetched origin/main tip.
+- Triage:
+
+  | Candidate | User-visible behavior | Upstream files/contracts | Target equivalent? | Decision |
+  |---|---|---|---|---|
+  | GitCode release synchronization | Tags or manual dispatch publish missing GitHub release assets to GitCode without duplicating existing assets | `.github/workflows/sync-release-to-gitcode.yml`; requires `GITCODE_REPOSITORY` variable and `GITCODE_TOKEN` secret | No; target has no GitCode sync workflow | Port |
+  | Types extraction and trusted-proxy relocation | None | Go import/package paths only | Yes; runtime behavior is unchanged | Excluded |
+- Ported:
+  - GitCode release synchronization, including upstream release completion waits, asset normalization/deduplication, bootstrap release creation, and matrix asset publishing - `.github/workflows/sync-release-to-gitcode.yml` - final workflow matches `origin/main`.
+- Already equivalent / excluded:
+  - Types extraction and trusted-proxy relocation - behavior-neutral refactors; no port required.
+- Deferred:
+  - None.
+- Validation:
+  - `git diff --check` - passed
+  - `git diff --no-index <(git show origin/main:.github/workflows/sync-release-to-gitcode.yml) .github/workflows/sync-release-to-gitcode.yml` - passed
+  - `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/sync-release-to-gitcode.yml')"` - passed
+  - final diff and `git status --short` - reviewed
+- Known blockers: none.
 
 ### 2026-07-27 - 001 - Completed
 

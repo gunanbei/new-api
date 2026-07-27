@@ -43,7 +43,7 @@ export function parseHttpStatusCodeRules(
     }
   }
 
-  const sanitized = raw.replace(/[，]/g, ',')
+  const sanitized = raw.replaceAll('，', ',')
   const segments = sanitized
     .split(',')
     .map((s) => s.trim())
@@ -87,14 +87,16 @@ export function parseHttpStatusCodeRules(
 }
 
 function parseToken(token: string): StatusCodeRange | null {
-  const cleaned = token.trim().replace(/\s/g, '')
+  const cleaned = token.trim().replaceAll(' ', '')
   if (!cleaned) return null
 
   const isValidCode = (code: number) =>
     Number.isFinite(code) && code >= 100 && code <= 599
 
   if (cleaned.includes('-')) {
-    const [a, b] = cleaned.split('-')
+    const parts = cleaned.split('-')
+    if (parts.length !== 2) return null
+    const [a, b] = parts
     if (!isNumber(a) || !isNumber(b)) return null
 
     const start = Number.parseInt(a, 10)
@@ -123,7 +125,7 @@ function mergeRanges(ranges: StatusCodeRange[]): StatusCodeRange[] {
   )
 
   return sorted.reduce<StatusCodeRange[]>((merged, current) => {
-    const last = merged[merged.length - 1]
+    const last = merged.at(-1)
 
     if (!last || current.start > last.end + 1) {
       merged.push({ ...current })

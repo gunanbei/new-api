@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,7 @@ func normalizeTokenFailover(c *gin.Context, token *model.Token) error {
 		token.FailoverGroups = ""
 		token.FailoverStrategy = ""
 		token.FailoverMaxRetry = 0
+		token.FailoverRules = ""
 		return nil
 	}
 	if common.RetryTimes <= 0 {
@@ -37,6 +39,37 @@ func normalizeTokenFailover(c *gin.Context, token *model.Token) error {
 	}
 	if token.FailoverMaxRetry < 1 || token.FailoverMaxRetry > common.RetryTimes {
 		return fmt.Errorf("故障转移的最大重试次数必须在 1 到 %d 之间", common.RetryTimes)
+	}
+	if token.FailoverRules != "" {
+		rules := types.DefaultTokenFailoverRules()
+		if err := common.UnmarshalJsonStr(token.FailoverRules, &rules); err != nil {
+			return errors.New("故障转移触发规则格式错误")
+		}
+		for _, timeout := range []struct {
+			name  string
+			value *int
+			max   int
+		}{
+			{name: "响应头超时", value: &rules.ResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
+			{name: "首个有效内容超时", value: &rules.FirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
+			{name: "流式响应头超时", value: rules.StreamResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
+			{name: "流式首个有效内容超时", value: rules.StreamFirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
+			{name: "非流式响应头超时", value: rules.NonStreamResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
+			{name: "非流式首个有效内容超时", value: rules.NonStreamFirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
+		} {
+			if timeout.value != nil && *timeout.value != 0 && (*timeout.value < types.MinFailoverTimeoutMS || *timeout.value > timeout.max) {
+				return fmt.Errorf("%s必须为 0 或 %d 到 %d 毫秒", timeout.name, types.MinFailoverTimeoutMS, timeout.max)
+			}
+		}
+		if _, err := operation_setting.ParseHTTPStatusCodeRanges(rules.HTTPStatusCodes); err != nil {
+			return errors.New("HTTP 状态码触发规则无效")
+		}
+		rules.HTTPStatusCodes = strings.TrimSpace(rules.HTTPStatusCodes)
+		encoded, err := common.Marshal(rules)
+		if err != nil {
+			return errors.New("故障转移触发规则序列化失败")
+		}
+		token.FailoverRules = string(encoded)
 	}
 
 	var groups []string
@@ -295,6 +328,7 @@ func AddToken(c *gin.Context) {
 		FailoverGroups:     token.FailoverGroups,
 		FailoverStrategy:   token.FailoverStrategy,
 		FailoverMaxRetry:   token.FailoverMaxRetry,
+		FailoverRules:      token.FailoverRules,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -381,6 +415,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.FailoverGroups = token.FailoverGroups
 		cleanToken.FailoverStrategy = token.FailoverStrategy
 		cleanToken.FailoverMaxRetry = token.FailoverMaxRetry
+		cleanToken.FailoverRules = token.FailoverRules
 	}
 	err = cleanToken.Update()
 	if err != nil {

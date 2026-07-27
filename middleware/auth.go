@@ -432,6 +432,15 @@ func TokenAuth() func(c *gin.Context) {
 			common.SetContextKey(c, constant.ContextKeyTokenFailoverEnabled, true)
 			common.SetContextKey(c, constant.ContextKeyTokenFailoverGroups, failoverGroups)
 			common.SetContextKey(c, constant.ContextKeyTokenFailoverMaxRetry, token.FailoverMaxRetry)
+			if token.FailoverRules != "" {
+				rules := types.DefaultTokenFailoverRules()
+				if err := common.UnmarshalJsonStr(token.FailoverRules, &rules); err == nil {
+					rules.Enabled = true
+					common.SetContextKey(c, constant.ContextKeyTokenFailoverRules, rules)
+				} else {
+					logger.LogWarn(c, fmt.Sprintf("token %d has invalid failover rules: %v", token.Id, err))
+				}
+			}
 			userGroup = failoverGroups[0]
 		} else if tokenGroup := token.Group; tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]

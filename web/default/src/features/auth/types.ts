@@ -174,6 +174,7 @@ export interface SystemStatus {
   custom_oauth_providers?: CustomOAuthProviderInfo[]
   /** System wide retry cap; upper bound for an API key's failover retry budget. */
   max_retry_times?: number
+  automatic_retry_status_codes?: string
   [key: string]: unknown
 }
 

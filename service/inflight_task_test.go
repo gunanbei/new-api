@@ -131,8 +131,8 @@ func TestInflightTaskDetailFromRelayInfoOmitsChannelWithoutMeta(t *testing.T) {
 
 func TestUpdateInflightTaskDetailBuildsAttemptTimeline(t *testing.T) {
 	detail := &InflightTaskDetail{
-		RetryIndex: 0,
-		ChannelID:  10,
+		RetryIndex:  0,
+		ChannelID:   10,
 		ChannelName: "first",
 		ChannelChain: []InflightTaskChannelAttempt{{
 			RetryIndex:  0,
@@ -194,8 +194,8 @@ func TestMergeInflightTaskDetailSplitsAttemptsByRetryIndex(t *testing.T) {
 		Status:    InflightTaskStatusRouting,
 		UpdatedAt: 120,
 		Detail: &InflightTaskDetail{
-			RetryIndex: 1,
-			ChannelID:  20,
+			RetryIndex:  1,
+			ChannelID:   20,
 			ChannelName: "second",
 			ChannelChain: []InflightTaskChannelAttempt{{
 				RetryIndex:  1,
@@ -319,8 +319,8 @@ func TestShouldPersistInflightTaskUpdateBackfillsMissingAttemptSlot(t *testing.T
 	next := &InflightTask{
 		Status: InflightTaskStatusUpstreamPending,
 		Detail: &InflightTaskDetail{
-			RetryIndex: 0,
-			ChannelID:  16,
+			RetryIndex:  0,
+			ChannelID:   16,
 			ChannelName: "first",
 			ChannelChain: []InflightTaskChannelAttempt{{
 				RetryIndex: 0, ChannelID: 16, ChannelName: "first", Status: InflightTaskStatusUpstreamPending,
@@ -583,6 +583,12 @@ func TestSanitizeInflightTasksForUserClearsChannelFields(t *testing.T) {
 					{RetryIndex: 0, ChannelID: 2, ChannelName: "Hiyo", Status: "failed"},
 					{RetryIndex: 1, ChannelID: 3, ChannelName: "Neco", Status: "completed"},
 				},
+				FailoverAudit: &relaycommon.FailoverAuditTrail{
+					State: relaycommon.FailoverStateSucceeded,
+					Events: []relaycommon.FailoverAuditEvent{
+						{Sequence: 1, Group: "default", PreviousGroup: "vip", ChannelID: 3, ChannelName: "Neco", PreviousChannelID: 2},
+					},
+				},
 			},
 		},
 	}
@@ -602,4 +608,11 @@ func TestSanitizeInflightTasksForUserClearsChannelFields(t *testing.T) {
 	require.Len(t, tasks[0].Detail.Attempts, 2)
 	assert.Equal(t, 0, tasks[0].Detail.Attempts[1].ChannelID)
 	assert.Empty(t, tasks[0].Detail.Attempts[1].ChannelName)
+	require.NotNil(t, tasks[0].Detail.FailoverAudit)
+	require.Len(t, tasks[0].Detail.FailoverAudit.Events, 1)
+	assert.Equal(t, "default", tasks[0].Detail.FailoverAudit.Events[0].Group)
+	assert.Equal(t, "vip", tasks[0].Detail.FailoverAudit.Events[0].PreviousGroup)
+	assert.Zero(t, tasks[0].Detail.FailoverAudit.Events[0].ChannelID)
+	assert.Empty(t, tasks[0].Detail.FailoverAudit.Events[0].ChannelName)
+	assert.Zero(t, tasks[0].Detail.FailoverAudit.Events[0].PreviousChannelID)
 }

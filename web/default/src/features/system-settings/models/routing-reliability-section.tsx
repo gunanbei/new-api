@@ -332,7 +332,7 @@ export function RoutingReliabilitySection({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Accepts comma-separated status codes and inclusive ranges.'
+                        'Separate status codes with commas and use a hyphen for inclusive ranges, e.g. 401,429,500-599.'
                       )}{' '}
                       {autoRetryParsed.ok &&
                         autoRetryParsed.normalized &&

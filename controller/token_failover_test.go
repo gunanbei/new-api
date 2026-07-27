@@ -98,6 +98,30 @@ func TestNormalizeTokenFailoverRejectsInvalidConfigurations(t *testing.T) {
 				FailoverMaxRetry: 2,
 			},
 		},
+		{
+			name: "malformed trigger rules",
+			token: model.Token{
+				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{`,
+			},
+		},
+		{
+			name: "header timeout below minimum",
+			token: model.Token{
+				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"response_header_timeout_ms":999}`,
+			},
+		},
+		{
+			name: "invalid status codes",
+			token: model.Token{
+				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"http_status_codes":"99,500-400"}`,
+			},
+		},
+		{
+			name: "stream content timeout above maximum",
+			token: model.Token{
+				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"stream_first_content_timeout_ms":300001}`,
+			},
+		},
 	}
 
 	for _, testCase := range cases {
@@ -135,6 +159,7 @@ func TestNormalizeTokenFailoverCanonicalizesValidConfiguration(t *testing.T) {
 		FailoverGroups:   `[" default ","vip","default"]`,
 		FailoverStrategy: "lowest_ratio",
 		FailoverMaxRetry: 3,
+		FailoverRules:    `{"http_status_codes":" 429,500-599 ","stream_response_header_timeout_ms":0,"non_stream_response_header_timeout_ms":15000}`,
 	}
 	require.NoError(t, normalizeTokenFailover(ctx, &token))
 
@@ -143,6 +168,8 @@ func TestNormalizeTokenFailoverCanonicalizesValidConfiguration(t *testing.T) {
 	// stays on the record so turning failover off restores the previous setup.
 	assert.False(t, token.CrossGroupRetry)
 	assert.Equal(t, "auto", token.Group)
+	assert.Contains(t, token.FailoverRules, `"http_status_codes":"429,500-599"`)
+	assert.Contains(t, token.FailoverRules, `"stream_response_header_timeout_ms":0`)
 }
 
 func TestNormalizeTokenFailoverClearsSettingsWhenDisabled(t *testing.T) {
@@ -154,10 +181,12 @@ func TestNormalizeTokenFailoverClearsSettingsWhenDisabled(t *testing.T) {
 		FailoverGroups:   `["default","vip"]`,
 		FailoverStrategy: "order",
 		FailoverMaxRetry: 2,
+		FailoverRules:    `{"retry_on_empty_response":true}`,
 	}
 	require.NoError(t, normalizeTokenFailover(ctx, &token))
 
 	assert.Empty(t, token.FailoverGroups)
 	assert.Empty(t, token.FailoverStrategy)
 	assert.Zero(t, token.FailoverMaxRetry)
+	assert.Empty(t, token.FailoverRules)
 }

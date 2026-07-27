@@ -29,6 +29,8 @@ const (
 	// ContextKeyTokenFailoverMaxRetry holds the token level retry cap, already clamped
 	// to the system RetryTimes.
 	ContextKeyTokenFailoverMaxRetry ContextKey = "token_failover_max_retry"
+	// ContextKeyTokenFailoverRules holds the parsed types.TokenFailoverRules.
+	ContextKeyTokenFailoverRules ContextKey = "token_failover_rules"
 	// ContextKeyFailoverGroupIndex tracks which group of the sequence is currently in use.
 	ContextKeyFailoverGroupIndex ContextKey = "failover_group_index"
 	// ContextKeyFailoverGroupStartRetry holds the global retry index at which the current

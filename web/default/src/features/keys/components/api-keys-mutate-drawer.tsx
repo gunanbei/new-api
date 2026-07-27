@@ -95,6 +95,7 @@ import {
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
 import { FailoverGroupsField } from './failover-groups-field'
+import { FailoverTriggerRules } from './failover-trigger-rules'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -143,11 +144,15 @@ export function ApiKeysMutateDrawer({
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const maxRetryTimes = status?.max_retry_times ?? 0
+  const automaticRetryStatusCodes = status?.automatic_retry_status_codes ?? ''
   const schema = getApiKeyFormSchema(t, maxRetryTimes)
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: getApiKeyFormDefaultValues(defaultUseAutoGroup),
+    defaultValues: getApiKeyFormDefaultValues(
+      defaultUseAutoGroup,
+      automaticRetryStatusCodes
+    ),
   })
 
   // Load existing data when updating
@@ -160,10 +165,21 @@ export function ApiKeysMutateDrawer({
       })
     } else if (open && !isUpdate) {
       form.reset(
-        getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
+        getApiKeyFormDefaultValues(
+          defaultUseAutoGroup && backendHasAuto,
+          automaticRetryStatusCodes
+        )
       )
     }
-  }, [open, isUpdate, currentRow, form, defaultUseAutoGroup, backendHasAuto])
+  }, [
+    open,
+    isUpdate,
+    currentRow,
+    form,
+    defaultUseAutoGroup,
+    backendHasAuto,
+    automaticRetryStatusCodes,
+  ])
 
   // Correct group after groups load: if the form value is not in available groups, fall back
   useEffect(() => {
@@ -499,6 +515,8 @@ export function ApiKeysMutateDrawer({
                       </FormItem>
                     )}
                   />
+
+                  <FailoverTriggerRules />
                 </>
               )}
 

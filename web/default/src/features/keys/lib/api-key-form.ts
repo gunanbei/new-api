@@ -20,6 +20,7 @@ import type { TFunction } from 'i18next'
 import { z } from 'zod'
 
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
+import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
 import {
   DEFAULT_GROUP,
@@ -27,7 +28,7 @@ import {
   MAX_FAILOVER_GROUPS,
   MIN_FAILOVER_GROUPS,
 } from '../constants'
-import { type ApiKeyFormData, type ApiKey } from '../types'
+import type { ApiKey, ApiKeyFormData } from '../types'
 
 // ============================================================================
 // Form Schema
@@ -52,6 +53,15 @@ export function getApiKeyFormSchema(t: TFunction, maxRetryTimes: number) {
       failover_groups: z.array(z.string()),
       failover_strategy: z.enum(FAILOVER_STRATEGIES),
       failover_max_retry: z.number().optional(),
+      failover_http_status_codes: z.string(),
+      stream_response_header_timeout_seconds: z.number(),
+      stream_first_content_timeout_seconds: z.number(),
+      non_stream_response_header_timeout_seconds: z.number(),
+      non_stream_first_content_timeout_seconds: z.number(),
+      retry_on_transport_error: z.boolean(),
+      retry_on_empty_response: z.boolean(),
+      retry_on_invalid_response: z.boolean(),
+      retry_on_stream_error: z.boolean(),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
@@ -69,6 +79,19 @@ export function getApiKeyFormSchema(t: TFunction, maxRetryTimes: number) {
 
       if (!data.failover_enabled) {
         return
+      }
+
+      const statusCodes = parseHttpStatusCodeRules(
+        data.failover_http_status_codes
+      )
+      if (!statusCodes.ok) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['failover_http_status_codes'],
+          message: t('Invalid status code rules: {{rules}}', {
+            rules: statusCodes.invalidTokens.join(', '),
+          }),
+        })
       }
 
       if (
@@ -106,6 +129,40 @@ export function getApiKeyFormSchema(t: TFunction, maxRetryTimes: number) {
           }),
         })
       }
+
+      for (const [path, value, max] of [
+        [
+          'stream_response_header_timeout_seconds',
+          data.stream_response_header_timeout_seconds,
+          120,
+        ],
+        [
+          'stream_first_content_timeout_seconds',
+          data.stream_first_content_timeout_seconds,
+          300,
+        ],
+        [
+          'non_stream_response_header_timeout_seconds',
+          data.non_stream_response_header_timeout_seconds,
+          120,
+        ],
+        [
+          'non_stream_first_content_timeout_seconds',
+          data.non_stream_first_content_timeout_seconds,
+          300,
+        ],
+      ] as const) {
+        if (value !== 0 && (value < 1 || value > max)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [path],
+            message: t(
+              'Enter 0 to disable, or a value between 1 and {{max}} seconds',
+              { max }
+            ),
+          })
+        }
+      }
     })
 }
 
@@ -128,16 +185,27 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   failover_groups: [],
   failover_strategy: 'order',
   failover_max_retry: 1,
+  failover_http_status_codes: '',
+  stream_response_header_timeout_seconds: 15,
+  stream_first_content_timeout_seconds: 45,
+  non_stream_response_header_timeout_seconds: 15,
+  non_stream_first_content_timeout_seconds: 45,
+  retry_on_transport_error: true,
+  retry_on_empty_response: true,
+  retry_on_invalid_response: true,
+  retry_on_stream_error: true,
   tokenCount: 1,
 }
 
 export function getApiKeyFormDefaultValues(
-  defaultUseAutoGroup: boolean
+  defaultUseAutoGroup: boolean,
+  automaticRetryStatusCodes = ''
 ): ApiKeyFormValues {
   return {
     ...API_KEY_FORM_DEFAULT_VALUES,
     group: defaultUseAutoGroup ? 'auto' : DEFAULT_GROUP,
     cross_group_retry: defaultUseAutoGroup,
+    failover_http_status_codes: automaticRetryStatusCodes,
   }
 }
 
@@ -175,6 +243,25 @@ export function transformFormDataToPayload(
       : '',
     failover_strategy: failoverEnabled ? data.failover_strategy : '',
     failover_max_retry: failoverEnabled ? data.failover_max_retry || 1 : 0,
+    failover_rules: failoverEnabled
+      ? JSON.stringify({
+          http_status_codes: parseHttpStatusCodeRules(
+            data.failover_http_status_codes
+          ).normalized,
+          stream_response_header_timeout_ms:
+            data.stream_response_header_timeout_seconds * 1000,
+          stream_first_content_timeout_ms:
+            data.stream_first_content_timeout_seconds * 1000,
+          non_stream_response_header_timeout_ms:
+            data.non_stream_response_header_timeout_seconds * 1000,
+          non_stream_first_content_timeout_ms:
+            data.non_stream_first_content_timeout_seconds * 1000,
+          retry_on_transport_error: data.retry_on_transport_error,
+          retry_on_empty_response: data.retry_on_empty_response,
+          retry_on_invalid_response: data.retry_on_invalid_response,
+          retry_on_stream_error: data.retry_on_stream_error,
+        })
+      : '',
   }
 }
 
@@ -184,6 +271,7 @@ export function transformFormDataToPayload(
 export function transformApiKeyToFormDefaults(
   apiKey: ApiKey
 ): ApiKeyFormValues {
+  const rules = parseFailoverRules(apiKey.failover_rules)
   return {
     name: apiKey.name,
     remain_quota_dollars: apiKey.unlimited_quota
@@ -206,7 +294,70 @@ export function transformApiKeyToFormDefaults(
       ? apiKey.failover_strategy
       : 'order',
     failover_max_retry: apiKey.failover_max_retry || 1,
+    failover_http_status_codes: rules.http_status_codes,
+    stream_response_header_timeout_seconds:
+      rules.stream_response_header_timeout_ms / 1000,
+    stream_first_content_timeout_seconds:
+      rules.stream_first_content_timeout_ms / 1000,
+    non_stream_response_header_timeout_seconds:
+      rules.non_stream_response_header_timeout_ms / 1000,
+    non_stream_first_content_timeout_seconds:
+      rules.non_stream_first_content_timeout_ms / 1000,
+    retry_on_transport_error: rules.retry_on_transport_error,
+    retry_on_empty_response: rules.retry_on_empty_response,
+    retry_on_invalid_response: rules.retry_on_invalid_response,
+    retry_on_stream_error: rules.retry_on_stream_error,
     tokenCount: 1,
+  }
+}
+
+type FailoverRules = {
+  http_status_codes: string
+  stream_response_header_timeout_ms: number
+  stream_first_content_timeout_ms: number
+  non_stream_response_header_timeout_ms: number
+  non_stream_first_content_timeout_ms: number
+  retry_on_transport_error: boolean
+  retry_on_empty_response: boolean
+  retry_on_invalid_response: boolean
+  retry_on_stream_error: boolean
+}
+
+const DEFAULT_FAILOVER_RULES: FailoverRules = {
+  http_status_codes: '',
+  stream_response_header_timeout_ms: 15000,
+  stream_first_content_timeout_ms: 45000,
+  non_stream_response_header_timeout_ms: 15000,
+  non_stream_first_content_timeout_ms: 45000,
+  retry_on_transport_error: true,
+  retry_on_empty_response: true,
+  retry_on_invalid_response: true,
+  retry_on_stream_error: true,
+}
+
+function parseFailoverRules(raw: string | null | undefined): FailoverRules {
+  if (!raw) return DEFAULT_FAILOVER_RULES
+  try {
+    const parsed = JSON.parse(raw) as Partial<FailoverRules> & {
+      response_header_timeout_ms?: number
+      first_content_timeout_ms?: number
+    }
+    const legacyHeader = parsed.response_header_timeout_ms ?? 15000
+    const legacyContent = parsed.first_content_timeout_ms ?? 45000
+    return {
+      ...DEFAULT_FAILOVER_RULES,
+      ...parsed,
+      stream_response_header_timeout_ms:
+        parsed.stream_response_header_timeout_ms ?? legacyHeader,
+      stream_first_content_timeout_ms:
+        parsed.stream_first_content_timeout_ms ?? legacyContent,
+      non_stream_response_header_timeout_ms:
+        parsed.non_stream_response_header_timeout_ms ?? legacyHeader,
+      non_stream_first_content_timeout_ms:
+        parsed.non_stream_first_content_timeout_ms ?? legacyContent,
+    }
+  } catch {
+    return DEFAULT_FAILOVER_RULES
   }
 }
 

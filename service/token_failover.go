@@ -7,9 +7,18 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
+
+func GetFailoverRules(c *gin.Context) types.TokenFailoverRules {
+	if c == nil {
+		return types.TokenFailoverRules{}
+	}
+	rules, _ := common.GetContextKeyType[types.TokenFailoverRules](c, constant.ContextKeyTokenFailoverRules)
+	return rules
+}
 
 // ResolveFailoverGroups turns a token's saved group list into the sequence the request
 // will actually walk: entries the user may no longer use, or groups that were since

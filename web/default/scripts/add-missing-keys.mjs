@@ -23,29 +23,56 @@ const localesDir = path.resolve('src/i18n/locales')
 
 const newKeys = {
   en: {
-    'Archive upload started.': 'Archive upload started.', 'Failed to start archive upload': 'Failed to start archive upload', 'Inflight CSV disk usage': 'Inflight CSV disk usage', 'Inflight CSV files': 'Inflight CSV files', 'Pending archive uploads': 'Pending archive uploads', 'Upload pending archives': 'Upload pending archives',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': 'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.',
-    'Inflight trace directory': 'Inflight trace directory', 'Leave empty to use the disk cache directory': 'Leave empty to use the disk cache directory', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.',
-    'Choose cache directory': 'Choose cache directory', 'Failed to load local cache files': 'Failed to load local cache files', 'Local cache files': 'Local cache files', 'Manage CSV archives downloaded by this browser.': 'Manage CSV archives downloaded by this browser.', 'No local cache files.': 'No local cache files.',
+    'Archive upload started.': 'Archive upload started.',
+    'Failed to start archive upload': 'Failed to start archive upload',
+    'Inflight CSV disk usage': 'Inflight CSV disk usage',
+    'Inflight CSV files': 'Inflight CSV files',
+    'Pending archive uploads': 'Pending archive uploads',
+    'Upload pending archives': 'Upload pending archives',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.',
+    'Inflight trace directory': 'Inflight trace directory',
+    'Leave empty to use the disk cache directory':
+      'Leave empty to use the disk cache directory',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      'Stores disk-mode inflight trace CSV archives separately from request-body cache files.',
+    'Choose cache directory': 'Choose cache directory',
+    'Failed to load local cache files': 'Failed to load local cache files',
+    'Local cache files': 'Local cache files',
+    'Manage CSV archives downloaded by this browser.':
+      'Manage CSV archives downloaded by this browser.',
+    'No local cache files.': 'No local cache files.',
     'Archive downloaded to local cache.': 'Archive downloaded to local cache.',
-    'Download archives automatically in this browser': 'Download archives automatically in this browser',
+    'Download archives automatically in this browser':
+      'Download archives automatically in this browser',
     'Download archive': 'Download archive',
-    'Download this archive to your selected local cache directory?': 'Download this archive to your selected local cache directory?',
+    'Download this archive to your selected local cache directory?':
+      'Download this archive to your selected local cache directory?',
     'Failed to download archive': 'Failed to download archive',
-    'Local cache is only supported in Chromium browsers.': 'Local cache is only supported in Chromium browsers.',
-    'This debug log is archived remotely. Download it locally to load request and response bodies.': 'This debug log is archived remotely. Download it locally to load request and response bodies.',
-    Years: 'Years', Months: 'Months', Days: 'Days', Hours: 'Hours',
+    'Local cache is only supported in Chromium browsers.':
+      'Local cache is only supported in Chromium browsers.',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      'This debug log is archived remotely. Download it locally to load request and response bodies.',
+    Years: 'Years',
+    Months: 'Months',
+    Days: 'Days',
+    Hours: 'Hours',
     'Archive retention': 'Archive retention',
     'Archive storage channel': 'Archive storage channel',
     'Archive upload threshold (bytes)': 'Archive upload threshold (bytes)',
     'Archive upload threshold (KB)': 'Archive upload threshold (KB)',
-    'Max inflight debug log request size (KB)': 'Max inflight debug log request size (KB)',
-    'Max inflight debug log response size (KB)': 'Max inflight debug log response size (KB)',
+    'Max inflight debug log request size (KB)':
+      'Max inflight debug log request size (KB)',
+    'Max inflight debug log response size (KB)':
+      'Max inflight debug log response size (KB)',
     'Debug log body storage': 'Debug log body storage',
     'Disk CSV': 'Disk CSV',
-    'Memory storage increases Redis usage.': 'Memory storage increases Redis usage.',
-    'Set all values to 0 to keep archives permanently.': 'Set all values to 0 to keep archives permanently.',
-    'Store request and response bodies in memory or per-user CSV files.': 'Store request and response bodies in memory or per-user CSV files.',
+    'Memory storage increases Redis usage.':
+      'Memory storage increases Redis usage.',
+    'Set all values to 0 to keep archives permanently.':
+      'Set all values to 0 to keep archives permanently.',
+    'Store request and response bodies in memory or per-user CSV files.':
+      'Store request and response bodies in memory or per-user CSV files.',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -84,18 +111,39 @@ const newKeys = {
     validated: 'validated',
   },
   zh: {
-    'Archive upload started.': '已开始上传归档。', 'Failed to start archive upload': '无法开始上传归档', 'Inflight CSV disk usage': '在途 CSV 磁盘占用', 'Inflight CSV files': '在途 CSV 文件', 'Pending archive uploads': '待上传归档', 'Upload pending archives': '上传待处理归档',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': '删除所选时间之前更新的终态在途日志和已完成的 CSV 归档。',
-    'Inflight trace directory': '在途日志目录', 'Leave empty to use the disk cache directory': '留空则使用磁盘缓存目录', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': '将磁盘模式的在途日志 CSV 归档与请求体缓存文件分开保存。',
-    'Choose cache directory': '选择缓存目录', 'Failed to load local cache files': '无法加载本地缓存文件', 'Local cache files': '本地缓存文件', 'Manage CSV archives downloaded by this browser.': '管理此浏览器下载的 CSV 归档。', 'No local cache files.': '没有本地缓存文件。',
+    'Archive upload started.': '已开始上传归档。',
+    'Failed to start archive upload': '无法开始上传归档',
+    'Inflight CSV disk usage': '在途 CSV 磁盘占用',
+    'Inflight CSV files': '在途 CSV 文件',
+    'Pending archive uploads': '待上传归档',
+    'Upload pending archives': '上传待处理归档',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      '删除所选时间之前更新的终态在途日志和已完成的 CSV 归档。',
+    'Inflight trace directory': '在途日志目录',
+    'Leave empty to use the disk cache directory': '留空则使用磁盘缓存目录',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      '将磁盘模式的在途日志 CSV 归档与请求体缓存文件分开保存。',
+    'Choose cache directory': '选择缓存目录',
+    'Failed to load local cache files': '无法加载本地缓存文件',
+    'Local cache files': '本地缓存文件',
+    'Manage CSV archives downloaded by this browser.':
+      '管理此浏览器下载的 CSV 归档。',
+    'No local cache files.': '没有本地缓存文件。',
     'Archive downloaded to local cache.': '归档已下载到本地缓存。',
-    'Download archives automatically in this browser': '在此浏览器中自动下载归档',
+    'Download archives automatically in this browser':
+      '在此浏览器中自动下载归档',
     'Download archive': '下载归档',
-    'Download this archive to your selected local cache directory?': '是否将此归档下载到已选择的本地缓存目录？',
+    'Download this archive to your selected local cache directory?':
+      '是否将此归档下载到已选择的本地缓存目录？',
     'Failed to download archive': '下载归档失败',
-    'Local cache is only supported in Chromium browsers.': '本地缓存仅支持 Chromium 浏览器。',
-    'This debug log is archived remotely. Download it locally to load request and response bodies.': '此调试日志已远端归档。下载到本地后可加载请求和响应体。',
-    Years: '年', Months: '月', Days: '天', Hours: '小时',
+    'Local cache is only supported in Chromium browsers.':
+      '本地缓存仅支持 Chromium 浏览器。',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      '此调试日志已远端归档。下载到本地后可加载请求和响应体。',
+    Years: '年',
+    Months: '月',
+    Days: '天',
+    Hours: '小时',
     'Archive retention': '归档保留期',
     'Archive storage channel': '归档存储渠道',
     'Archive upload threshold (bytes)': '归档上传阈值（字节）',
@@ -105,8 +153,10 @@ const newKeys = {
     'Debug log body storage': '调试日志请求体存储',
     'Disk CSV': '磁盘 CSV',
     'Memory storage increases Redis usage.': '内存存储会增加 Redis 占用。',
-    'Set all values to 0 to keep archives permanently.': '全部设为 0 表示永久保留归档。',
-    'Store request and response bodies in memory or per-user CSV files.': '将请求和响应体存储在内存或按用户划分的 CSV 文件中。',
+    'Set all values to 0 to keep archives permanently.':
+      '全部设为 0 表示永久保留归档。',
+    'Store request and response bodies in memory or per-user CSV files.':
+      '将请求和响应体存储在内存或按用户划分的 CSV 文件中。',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -144,23 +194,54 @@ const newKeys = {
     validated: '已验证',
   },
   'zh-TW': {
-    'Archive upload started.': '已開始上傳封存。', 'Failed to start archive upload': '無法開始上傳封存', 'Inflight CSV disk usage': '在途 CSV 磁碟使用量', 'Inflight CSV files': '在途 CSV 檔案', 'Pending archive uploads': '待上傳封存', 'Upload pending archives': '上傳待處理封存',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': '刪除所選時間之前更新的終態在途日誌和已完成的 CSV 封存。',
-    'Inflight trace directory': '在途日誌目錄', 'Leave empty to use the disk cache directory': '留空則使用磁碟快取目錄', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': '將磁碟模式的在途日誌 CSV 封存與請求內容快取檔案分開儲存。',
-    'Choose cache directory': '選擇快取目錄', 'Failed to load local cache files': '無法載入本機快取檔案', 'Local cache files': '本機快取檔案', 'Manage CSV archives downloaded by this browser.': '管理此瀏覽器下載的 CSV 封存。', 'No local cache files.': '沒有本機快取檔案。',
-    'Archive downloaded to local cache.': '封存已下載至本機快取。', 'Download archives automatically in this browser': '在此瀏覽器中自動下載封存', 'Download archive': '下載封存', 'Download this archive to your selected local cache directory?': '要將此封存下載到已選取的本機快取目錄嗎？', 'Failed to download archive': '下載封存失敗', 'Local cache is only supported in Chromium browsers.': '本機快取僅支援 Chromium 瀏覽器。', 'This debug log is archived remotely. Download it locally to load request and response bodies.': '此偵錯日誌已遠端封存。下載至本機後可載入請求和回應內容。',
-    Years: '年', Months: '月', Days: '天', Hours: '小時',
+    'Archive upload started.': '已開始上傳封存。',
+    'Failed to start archive upload': '無法開始上傳封存',
+    'Inflight CSV disk usage': '在途 CSV 磁碟使用量',
+    'Inflight CSV files': '在途 CSV 檔案',
+    'Pending archive uploads': '待上傳封存',
+    'Upload pending archives': '上傳待處理封存',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      '刪除所選時間之前更新的終態在途日誌和已完成的 CSV 封存。',
+    'Inflight trace directory': '在途日誌目錄',
+    'Leave empty to use the disk cache directory': '留空則使用磁碟快取目錄',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      '將磁碟模式的在途日誌 CSV 封存與請求內容快取檔案分開儲存。',
+    'Choose cache directory': '選擇快取目錄',
+    'Failed to load local cache files': '無法載入本機快取檔案',
+    'Local cache files': '本機快取檔案',
+    'Manage CSV archives downloaded by this browser.':
+      '管理此瀏覽器下載的 CSV 封存。',
+    'No local cache files.': '沒有本機快取檔案。',
+    'Archive downloaded to local cache.': '封存已下載至本機快取。',
+    'Download archives automatically in this browser':
+      '在此瀏覽器中自動下載封存',
+    'Download archive': '下載封存',
+    'Download this archive to your selected local cache directory?':
+      '要將此封存下載到已選取的本機快取目錄嗎？',
+    'Failed to download archive': '下載封存失敗',
+    'Local cache is only supported in Chromium browsers.':
+      '本機快取僅支援 Chromium 瀏覽器。',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      '此偵錯日誌已遠端封存。下載至本機後可載入請求和回應內容。',
+    Years: '年',
+    Months: '月',
+    Days: '天',
+    Hours: '小時',
     'Archive retention': '封存保留期',
     'Archive storage channel': '封存儲存渠道',
     'Archive upload threshold (bytes)': '封存上傳閾值（位元組）',
     'Archive upload threshold (KB)': '封存上傳閾值（KB）',
-    'Max inflight debug log request size (KB)': '在途偵錯日誌請求內容上限（KB）',
-    'Max inflight debug log response size (KB)': '在途偵錯日誌回應內容上限（KB）',
+    'Max inflight debug log request size (KB)':
+      '在途偵錯日誌請求內容上限（KB）',
+    'Max inflight debug log response size (KB)':
+      '在途偵錯日誌回應內容上限（KB）',
     'Debug log body storage': '偵錯日誌請求體儲存',
     'Disk CSV': '磁碟 CSV',
     'Memory storage increases Redis usage.': '記憶體儲存會增加 Redis 使用量。',
-    'Set all values to 0 to keep archives permanently.': '全部設為 0 代表永久保留封存。',
-    'Store request and response bodies in memory or per-user CSV files.': '將請求和回應內容儲存在記憶體或依使用者分類的 CSV 檔案中。',
+    'Set all values to 0 to keep archives permanently.':
+      '全部設為 0 代表永久保留封存。',
+    'Store request and response bodies in memory or per-user CSV files.':
+      '將請求和回應內容儲存在記憶體或依使用者分類的 CSV 檔案中。',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -198,23 +279,59 @@ const newKeys = {
     validated: '已驗證',
   },
   fr: {
-    'Archive upload started.': 'Envoi de l’archive démarré.', 'Failed to start archive upload': 'Impossible de démarrer l’envoi de l’archive', 'Inflight CSV disk usage': 'Utilisation disque CSV en cours', 'Inflight CSV files': 'Fichiers CSV en cours', 'Pending archive uploads': 'Envois d’archives en attente', 'Upload pending archives': 'Envoyer les archives en attente',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': 'Supprime les journaux en cours terminés et les archives CSV finalisées avant l’heure sélectionnée.',
-    'Inflight trace directory': 'Dossier des journaux en cours', 'Leave empty to use the disk cache directory': 'Laissez vide pour utiliser le dossier du cache disque', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': 'Stocke séparément les archives CSV des journaux en cours et les fichiers cache des requêtes.',
-    'Choose cache directory': 'Choisir le dossier de cache', 'Failed to load local cache files': 'Impossible de charger les fichiers du cache local', 'Local cache files': 'Fichiers du cache local', 'Manage CSV archives downloaded by this browser.': 'Gérez les archives CSV téléchargées par ce navigateur.', 'No local cache files.': 'Aucun fichier de cache local.',
-    'Archive downloaded to local cache.': 'Archive téléchargée dans le cache local.', 'Download archives automatically in this browser': 'Télécharger automatiquement les archives dans ce navigateur', 'Download archive': 'Télécharger l’archive', 'Download this archive to your selected local cache directory?': 'Télécharger cette archive dans le dossier de cache local sélectionné ?', 'Failed to download archive': 'Échec du téléchargement de l’archive', 'Local cache is only supported in Chromium browsers.': 'Le cache local est pris en charge uniquement par les navigateurs Chromium.', 'This debug log is archived remotely. Download it locally to load request and response bodies.': 'Ce journal est archivé à distance. Téléchargez-le localement pour charger les contenus.',
-    Years: 'Ans', Months: 'Mois', Days: 'Jours', Hours: 'Heures',
+    'Archive upload started.': 'Envoi de l’archive démarré.',
+    'Failed to start archive upload':
+      'Impossible de démarrer l’envoi de l’archive',
+    'Inflight CSV disk usage': 'Utilisation disque CSV en cours',
+    'Inflight CSV files': 'Fichiers CSV en cours',
+    'Pending archive uploads': 'Envois d’archives en attente',
+    'Upload pending archives': 'Envoyer les archives en attente',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      'Supprime les journaux en cours terminés et les archives CSV finalisées avant l’heure sélectionnée.',
+    'Inflight trace directory': 'Dossier des journaux en cours',
+    'Leave empty to use the disk cache directory':
+      'Laissez vide pour utiliser le dossier du cache disque',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      'Stocke séparément les archives CSV des journaux en cours et les fichiers cache des requêtes.',
+    'Choose cache directory': 'Choisir le dossier de cache',
+    'Failed to load local cache files':
+      'Impossible de charger les fichiers du cache local',
+    'Local cache files': 'Fichiers du cache local',
+    'Manage CSV archives downloaded by this browser.':
+      'Gérez les archives CSV téléchargées par ce navigateur.',
+    'No local cache files.': 'Aucun fichier de cache local.',
+    'Archive downloaded to local cache.':
+      'Archive téléchargée dans le cache local.',
+    'Download archives automatically in this browser':
+      'Télécharger automatiquement les archives dans ce navigateur',
+    'Download archive': 'Télécharger l’archive',
+    'Download this archive to your selected local cache directory?':
+      'Télécharger cette archive dans le dossier de cache local sélectionné ?',
+    'Failed to download archive': 'Échec du téléchargement de l’archive',
+    'Local cache is only supported in Chromium browsers.':
+      'Le cache local est pris en charge uniquement par les navigateurs Chromium.',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      'Ce journal est archivé à distance. Téléchargez-le localement pour charger les contenus.',
+    Years: 'Ans',
+    Months: 'Mois',
+    Days: 'Jours',
+    Hours: 'Heures',
     'Archive retention': 'Conservation des archives',
     'Archive storage channel': 'Canal de stockage des archives',
     'Archive upload threshold (bytes)': 'Seuil d’envoi des archives (octets)',
     'Archive upload threshold (KB)': 'Seuil d’envoi des archives (Ko)',
-    'Max inflight debug log request size (KB)': 'Taille max. de requête du journal de débogage en vol (Ko)',
-    'Max inflight debug log response size (KB)': 'Taille max. de réponse du journal de débogage en vol (Ko)',
+    'Max inflight debug log request size (KB)':
+      'Taille max. de requête du journal de débogage en vol (Ko)',
+    'Max inflight debug log response size (KB)':
+      'Taille max. de réponse du journal de débogage en vol (Ko)',
     'Debug log body storage': 'Stockage du contenu des journaux de débogage',
     'Disk CSV': 'CSV sur disque',
-    'Memory storage increases Redis usage.': 'Le stockage en mémoire augmente l’utilisation de Redis.',
-    'Set all values to 0 to keep archives permanently.': 'Définissez toutes les valeurs à 0 pour conserver les archives définitivement.',
-    'Store request and response bodies in memory or per-user CSV files.': 'Stockez les contenus des requêtes et réponses en mémoire ou dans des fichiers CSV par utilisateur.',
+    'Memory storage increases Redis usage.':
+      'Le stockage en mémoire augmente l’utilisation de Redis.',
+    'Set all values to 0 to keep archives permanently.':
+      'Définissez toutes les valeurs à 0 pour conserver les archives définitivement.',
+    'Store request and response bodies in memory or per-user CSV files.':
+      'Stockez les contenus des requêtes et réponses en mémoire ou dans des fichiers CSV par utilisateur.',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -278,23 +395,60 @@ const newKeys = {
     validated: 'validé',
   },
   ja: {
-    'Archive upload started.': 'アーカイブのアップロードを開始しました。', 'Failed to start archive upload': 'アーカイブのアップロードを開始できませんでした', 'Inflight CSV disk usage': '進行中 CSV のディスク使用量', 'Inflight CSV files': '進行中 CSV ファイル', 'Pending archive uploads': '保留中のアーカイブアップロード', 'Upload pending archives': '保留中のアーカイブをアップロード',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': '選択した時刻より前に更新された完了済みの進行中ログと CSV アーカイブを削除します。',
-    'Inflight trace directory': '進行中ログディレクトリ', 'Leave empty to use the disk cache directory': '空欄の場合はディスクキャッシュディレクトリを使用します', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': 'ディスクモードの進行中ログ CSV アーカイブをリクエスト本文キャッシュとは別に保存します。',
-    'Choose cache directory': 'キャッシュディレクトリを選択', 'Failed to load local cache files': 'ローカルキャッシュファイルを読み込めませんでした', 'Local cache files': 'ローカルキャッシュファイル', 'Manage CSV archives downloaded by this browser.': 'このブラウザーでダウンロードした CSV アーカイブを管理します。', 'No local cache files.': 'ローカルキャッシュファイルはありません。',
-    'Archive downloaded to local cache.': 'アーカイブをローカルキャッシュにダウンロードしました。', 'Download archives automatically in this browser': 'このブラウザーでアーカイブを自動的にダウンロード', 'Download archive': 'アーカイブをダウンロード', 'Download this archive to your selected local cache directory?': 'このアーカイブを選択したローカルキャッシュディレクトリにダウンロードしますか？', 'Failed to download archive': 'アーカイブのダウンロードに失敗しました', 'Local cache is only supported in Chromium browsers.': 'ローカルキャッシュは Chromium ブラウザーでのみ利用できます。', 'This debug log is archived remotely. Download it locally to load request and response bodies.': 'このデバッグログはリモートに保存されています。本文を読み込むにはローカルにダウンロードしてください。',
-    Years: '年', Months: 'か月', Days: '日', Hours: '時間',
+    'Archive upload started.': 'アーカイブのアップロードを開始しました。',
+    'Failed to start archive upload':
+      'アーカイブのアップロードを開始できませんでした',
+    'Inflight CSV disk usage': '進行中 CSV のディスク使用量',
+    'Inflight CSV files': '進行中 CSV ファイル',
+    'Pending archive uploads': '保留中のアーカイブアップロード',
+    'Upload pending archives': '保留中のアーカイブをアップロード',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      '選択した時刻より前に更新された完了済みの進行中ログと CSV アーカイブを削除します。',
+    'Inflight trace directory': '進行中ログディレクトリ',
+    'Leave empty to use the disk cache directory':
+      '空欄の場合はディスクキャッシュディレクトリを使用します',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      'ディスクモードの進行中ログ CSV アーカイブをリクエスト本文キャッシュとは別に保存します。',
+    'Choose cache directory': 'キャッシュディレクトリを選択',
+    'Failed to load local cache files':
+      'ローカルキャッシュファイルを読み込めませんでした',
+    'Local cache files': 'ローカルキャッシュファイル',
+    'Manage CSV archives downloaded by this browser.':
+      'このブラウザーでダウンロードした CSV アーカイブを管理します。',
+    'No local cache files.': 'ローカルキャッシュファイルはありません。',
+    'Archive downloaded to local cache.':
+      'アーカイブをローカルキャッシュにダウンロードしました。',
+    'Download archives automatically in this browser':
+      'このブラウザーでアーカイブを自動的にダウンロード',
+    'Download archive': 'アーカイブをダウンロード',
+    'Download this archive to your selected local cache directory?':
+      'このアーカイブを選択したローカルキャッシュディレクトリにダウンロードしますか？',
+    'Failed to download archive': 'アーカイブのダウンロードに失敗しました',
+    'Local cache is only supported in Chromium browsers.':
+      'ローカルキャッシュは Chromium ブラウザーでのみ利用できます。',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      'このデバッグログはリモートに保存されています。本文を読み込むにはローカルにダウンロードしてください。',
+    Years: '年',
+    Months: 'か月',
+    Days: '日',
+    Hours: '時間',
     'Archive retention': 'アーカイブ保持期間',
     'Archive storage channel': 'アーカイブ保存チャネル',
-    'Archive upload threshold (bytes)': 'アーカイブアップロードしきい値（バイト）',
+    'Archive upload threshold (bytes)':
+      'アーカイブアップロードしきい値（バイト）',
     'Archive upload threshold (KB)': 'アーカイブアップロードしきい値（KB）',
-    'Max inflight debug log request size (KB)': '進行中デバッグログのリクエスト上限（KB）',
-    'Max inflight debug log response size (KB)': '進行中デバッグログのレスポンス上限（KB）',
+    'Max inflight debug log request size (KB)':
+      '進行中デバッグログのリクエスト上限（KB）',
+    'Max inflight debug log response size (KB)':
+      '進行中デバッグログのレスポンス上限（KB）',
     'Debug log body storage': 'デバッグログ本文の保存先',
     'Disk CSV': 'ディスク CSV',
-    'Memory storage increases Redis usage.': 'メモリ保存は Redis の使用量を増やします。',
-    'Set all values to 0 to keep archives permanently.': 'すべて 0 にするとアーカイブを無期限に保持します。',
-    'Store request and response bodies in memory or per-user CSV files.': 'リクエストとレスポンスの本文をメモリまたはユーザー別 CSV ファイルに保存します。',
+    'Memory storage increases Redis usage.':
+      'メモリ保存は Redis の使用量を増やします。',
+    'Set all values to 0 to keep archives permanently.':
+      'すべて 0 にするとアーカイブを無期限に保持します。',
+    'Store request and response bodies in memory or per-user CSV files.':
+      'リクエストとレスポンスの本文をメモリまたはユーザー別 CSV ファイルに保存します。',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -358,23 +512,57 @@ const newKeys = {
     validated: '検証済み',
   },
   ru: {
-    'Archive upload started.': 'Загрузка архива начата.', 'Failed to start archive upload': 'Не удалось начать загрузку архива', 'Inflight CSV disk usage': 'Использование диска CSV в процессе', 'Inflight CSV files': 'CSV-файлы в процессе', 'Pending archive uploads': 'Ожидающие загрузки архивов', 'Upload pending archives': 'Загрузить ожидающие архивы',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': 'Удаляет завершённые журналы в процессе и готовые CSV-архивы, обновлённые до выбранного времени.',
-    'Inflight trace directory': 'Каталог журналов в процессе', 'Leave empty to use the disk cache directory': 'Оставьте пустым, чтобы использовать каталог дискового кэша', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': 'Хранит CSV-архивы журналов в процессе отдельно от файлов кэша тел запросов.',
-    'Choose cache directory': 'Выбрать каталог кэша', 'Failed to load local cache files': 'Не удалось загрузить файлы локального кэша', 'Local cache files': 'Файлы локального кэша', 'Manage CSV archives downloaded by this browser.': 'Управляйте CSV-архивами, загруженными этим браузером.', 'No local cache files.': 'Нет файлов локального кэша.',
-    'Archive downloaded to local cache.': 'Архив загружен в локальный кэш.', 'Download archives automatically in this browser': 'Автоматически скачивать архивы в этом браузере', 'Download archive': 'Скачать архив', 'Download this archive to your selected local cache directory?': 'Скачать этот архив в выбранный каталог локального кэша?', 'Failed to download archive': 'Не удалось скачать архив', 'Local cache is only supported in Chromium browsers.': 'Локальный кэш поддерживается только браузерами Chromium.', 'This debug log is archived remotely. Download it locally to load request and response bodies.': 'Этот журнал архивирован удалённо. Загрузите его локально, чтобы просмотреть содержимое запроса и ответа.',
-    Years: 'Годы', Months: 'Месяцы', Days: 'Дни', Hours: 'Часы',
+    'Archive upload started.': 'Загрузка архива начата.',
+    'Failed to start archive upload': 'Не удалось начать загрузку архива',
+    'Inflight CSV disk usage': 'Использование диска CSV в процессе',
+    'Inflight CSV files': 'CSV-файлы в процессе',
+    'Pending archive uploads': 'Ожидающие загрузки архивов',
+    'Upload pending archives': 'Загрузить ожидающие архивы',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      'Удаляет завершённые журналы в процессе и готовые CSV-архивы, обновлённые до выбранного времени.',
+    'Inflight trace directory': 'Каталог журналов в процессе',
+    'Leave empty to use the disk cache directory':
+      'Оставьте пустым, чтобы использовать каталог дискового кэша',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      'Хранит CSV-архивы журналов в процессе отдельно от файлов кэша тел запросов.',
+    'Choose cache directory': 'Выбрать каталог кэша',
+    'Failed to load local cache files':
+      'Не удалось загрузить файлы локального кэша',
+    'Local cache files': 'Файлы локального кэша',
+    'Manage CSV archives downloaded by this browser.':
+      'Управляйте CSV-архивами, загруженными этим браузером.',
+    'No local cache files.': 'Нет файлов локального кэша.',
+    'Archive downloaded to local cache.': 'Архив загружен в локальный кэш.',
+    'Download archives automatically in this browser':
+      'Автоматически скачивать архивы в этом браузере',
+    'Download archive': 'Скачать архив',
+    'Download this archive to your selected local cache directory?':
+      'Скачать этот архив в выбранный каталог локального кэша?',
+    'Failed to download archive': 'Не удалось скачать архив',
+    'Local cache is only supported in Chromium browsers.':
+      'Локальный кэш поддерживается только браузерами Chromium.',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      'Этот журнал архивирован удалённо. Загрузите его локально, чтобы просмотреть содержимое запроса и ответа.',
+    Years: 'Годы',
+    Months: 'Месяцы',
+    Days: 'Дни',
+    Hours: 'Часы',
     'Archive retention': 'Срок хранения архива',
     'Archive storage channel': 'Канал хранения архива',
     'Archive upload threshold (bytes)': 'Порог загрузки архива (байты)',
     'Archive upload threshold (KB)': 'Порог загрузки архива (КБ)',
-    'Max inflight debug log request size (KB)': 'Макс. размер запроса отладочного журнала in-flight (КБ)',
-    'Max inflight debug log response size (KB)': 'Макс. размер ответа отладочного журнала in-flight (КБ)',
+    'Max inflight debug log request size (KB)':
+      'Макс. размер запроса отладочного журнала in-flight (КБ)',
+    'Max inflight debug log response size (KB)':
+      'Макс. размер ответа отладочного журнала in-flight (КБ)',
     'Debug log body storage': 'Хранение содержимого отладочного журнала',
     'Disk CSV': 'CSV на диске',
-    'Memory storage increases Redis usage.': 'Хранение в памяти увеличивает использование Redis.',
-    'Set all values to 0 to keep archives permanently.': 'Установите все значения в 0 для бессрочного хранения архивов.',
-    'Store request and response bodies in memory or per-user CSV files.': 'Сохраняйте содержимое запросов и ответов в памяти или в CSV-файлах пользователей.',
+    'Memory storage increases Redis usage.':
+      'Хранение в памяти увеличивает использование Redis.',
+    'Set all values to 0 to keep archives permanently.':
+      'Установите все значения в 0 для бессрочного хранения архивов.',
+    'Store request and response bodies in memory or per-user CSV files.':
+      'Сохраняйте содержимое запросов и ответов в памяти или в CSV-файлах пользователей.',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -438,23 +626,57 @@ const newKeys = {
     validated: 'проверено',
   },
   vi: {
-    'Archive upload started.': 'Đã bắt đầu tải lên kho lưu trữ.', 'Failed to start archive upload': 'Không thể bắt đầu tải lên kho lưu trữ', 'Inflight CSV disk usage': 'Dung lượng đĩa CSV đang xử lý', 'Inflight CSV files': 'Tệp CSV đang xử lý', 'Pending archive uploads': 'Tải lên kho lưu trữ đang chờ', 'Upload pending archives': 'Tải lên kho lưu trữ đang chờ',
-    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.': 'Xóa nhật ký đang xử lý đã hoàn tất và kho lưu trữ CSV hoàn tất được cập nhật trước thời điểm đã chọn.',
-    'Inflight trace directory': 'Thư mục nhật ký đang xử lý', 'Leave empty to use the disk cache directory': 'Để trống để dùng thư mục bộ nhớ đệm đĩa', 'Stores disk-mode inflight trace CSV archives separately from request-body cache files.': 'Lưu kho lưu trữ CSV nhật ký đang xử lý riêng với tệp bộ nhớ đệm nội dung yêu cầu.',
-    'Choose cache directory': 'Chọn thư mục bộ nhớ đệm', 'Failed to load local cache files': 'Không thể tải tệp bộ nhớ đệm cục bộ', 'Local cache files': 'Tệp bộ nhớ đệm cục bộ', 'Manage CSV archives downloaded by this browser.': 'Quản lý các kho lưu trữ CSV được tải xuống bởi trình duyệt này.', 'No local cache files.': 'Không có tệp bộ nhớ đệm cục bộ.',
-    'Archive downloaded to local cache.': 'Đã tải kho lưu trữ vào bộ nhớ đệm cục bộ.', 'Download archives automatically in this browser': 'Tự động tải kho lưu trữ trong trình duyệt này', 'Download archive': 'Tải kho lưu trữ', 'Download this archive to your selected local cache directory?': 'Tải kho lưu trữ này vào thư mục bộ nhớ đệm cục bộ đã chọn?', 'Failed to download archive': 'Không thể tải kho lưu trữ', 'Local cache is only supported in Chromium browsers.': 'Bộ nhớ đệm cục bộ chỉ được hỗ trợ trên trình duyệt Chromium.', 'This debug log is archived remotely. Download it locally to load request and response bodies.': 'Nhật ký này được lưu trữ từ xa. Hãy tải cục bộ để xem nội dung yêu cầu và phản hồi.',
-    Years: 'Năm', Months: 'Tháng', Days: 'Ngày', Hours: 'Giờ',
+    'Archive upload started.': 'Đã bắt đầu tải lên kho lưu trữ.',
+    'Failed to start archive upload': 'Không thể bắt đầu tải lên kho lưu trữ',
+    'Inflight CSV disk usage': 'Dung lượng đĩa CSV đang xử lý',
+    'Inflight CSV files': 'Tệp CSV đang xử lý',
+    'Pending archive uploads': 'Tải lên kho lưu trữ đang chờ',
+    'Upload pending archives': 'Tải lên kho lưu trữ đang chờ',
+    'Remove terminal inflight logs and completed CSV archives updated before the selected timestamp.':
+      'Xóa nhật ký đang xử lý đã hoàn tất và kho lưu trữ CSV hoàn tất được cập nhật trước thời điểm đã chọn.',
+    'Inflight trace directory': 'Thư mục nhật ký đang xử lý',
+    'Leave empty to use the disk cache directory':
+      'Để trống để dùng thư mục bộ nhớ đệm đĩa',
+    'Stores disk-mode inflight trace CSV archives separately from request-body cache files.':
+      'Lưu kho lưu trữ CSV nhật ký đang xử lý riêng với tệp bộ nhớ đệm nội dung yêu cầu.',
+    'Choose cache directory': 'Chọn thư mục bộ nhớ đệm',
+    'Failed to load local cache files': 'Không thể tải tệp bộ nhớ đệm cục bộ',
+    'Local cache files': 'Tệp bộ nhớ đệm cục bộ',
+    'Manage CSV archives downloaded by this browser.':
+      'Quản lý các kho lưu trữ CSV được tải xuống bởi trình duyệt này.',
+    'No local cache files.': 'Không có tệp bộ nhớ đệm cục bộ.',
+    'Archive downloaded to local cache.':
+      'Đã tải kho lưu trữ vào bộ nhớ đệm cục bộ.',
+    'Download archives automatically in this browser':
+      'Tự động tải kho lưu trữ trong trình duyệt này',
+    'Download archive': 'Tải kho lưu trữ',
+    'Download this archive to your selected local cache directory?':
+      'Tải kho lưu trữ này vào thư mục bộ nhớ đệm cục bộ đã chọn?',
+    'Failed to download archive': 'Không thể tải kho lưu trữ',
+    'Local cache is only supported in Chromium browsers.':
+      'Bộ nhớ đệm cục bộ chỉ được hỗ trợ trên trình duyệt Chromium.',
+    'This debug log is archived remotely. Download it locally to load request and response bodies.':
+      'Nhật ký này được lưu trữ từ xa. Hãy tải cục bộ để xem nội dung yêu cầu và phản hồi.',
+    Years: 'Năm',
+    Months: 'Tháng',
+    Days: 'Ngày',
+    Hours: 'Giờ',
     'Archive retention': 'Thời gian lưu trữ',
     'Archive storage channel': 'Kênh lưu trữ kho lưu trữ',
     'Archive upload threshold (bytes)': 'Ngưỡng tải lên kho lưu trữ (byte)',
     'Archive upload threshold (KB)': 'Ngưỡng tải lên kho lưu trữ (KB)',
-    'Max inflight debug log request size (KB)': 'Giới hạn kích thước yêu cầu nhật ký gỡ lỗi in-flight (KB)',
-    'Max inflight debug log response size (KB)': 'Giới hạn kích thước phản hồi nhật ký gỡ lỗi in-flight (KB)',
+    'Max inflight debug log request size (KB)':
+      'Giới hạn kích thước yêu cầu nhật ký gỡ lỗi in-flight (KB)',
+    'Max inflight debug log response size (KB)':
+      'Giới hạn kích thước phản hồi nhật ký gỡ lỗi in-flight (KB)',
     'Debug log body storage': 'Lưu nội dung nhật ký gỡ lỗi',
     'Disk CSV': 'CSV trên đĩa',
-    'Memory storage increases Redis usage.': 'Lưu trong bộ nhớ làm tăng mức sử dụng Redis.',
-    'Set all values to 0 to keep archives permanently.': 'Đặt tất cả giá trị thành 0 để lưu kho lưu trữ vĩnh viễn.',
-    'Store request and response bodies in memory or per-user CSV files.': 'Lưu nội dung yêu cầu và phản hồi trong bộ nhớ hoặc tệp CSV theo người dùng.',
+    'Memory storage increases Redis usage.':
+      'Lưu trong bộ nhớ làm tăng mức sử dụng Redis.',
+    'Set all values to 0 to keep archives permanently.':
+      'Đặt tất cả giá trị thành 0 để lưu kho lưu trữ vĩnh viễn.',
+    'Store request and response bodies in memory or per-user CSV files.':
+      'Lưu nội dung yêu cầu và phản hồi trong bộ nhớ hoặc tệp CSV theo người dùng.',
     PNG: 'PNG',
     JPEG: 'JPEG',
     WebP: 'WebP',
@@ -1125,6 +1347,191 @@ const cascadeDeleteMessages = {
   },
 }
 
+const failoverAuditUi = {
+  en: {
+    Attempting: 'Attempting',
+    Canceled: 'Canceled',
+    'Channel Error': 'Channel Error',
+    'Client Canceled': 'Client Canceled',
+    'Empty Response': 'Empty Response',
+    'Failover Detail': 'Failover Detail',
+    'Fixed Channel': 'Fixed Channel',
+    'HTTP Status Rule': 'HTTP Status Rule',
+    'Invalid HTTP Status': 'Invalid HTTP Status',
+    'Invalid Response': 'Invalid Response',
+    'Ready to Retry': 'Ready to Retry',
+    'Response Committed': 'Response Committed',
+    'Retry Budget Exhausted': 'Retry Budget Exhausted',
+    'Rollback Result': 'Rollback Result',
+    'Rolled Back': 'Rolled Back',
+    'Rolling Back': 'Rolling Back',
+    Selecting: 'Selecting',
+    'Stream Interruption': 'Stream Interruption',
+    'System Retry Rule': 'System Retry Rule',
+    Timeout: 'Timeout',
+    'Transition Chain': 'Transition Chain',
+    'Transport Error': 'Transport Error',
+    Trigger: 'Trigger',
+    'Unknown Group': 'Unknown Group',
+  },
+  zh: {
+    Attempting: '尝试中',
+    Canceled: '已取消',
+    'Channel Error': '渠道错误',
+    'Client Canceled': '客户端已取消',
+    'Empty Response': '空响应',
+    'Failover Detail': '故障转移明细',
+    'Fixed Channel': '固定渠道',
+    'HTTP Status Rule': 'HTTP 状态码规则',
+    'Invalid HTTP Status': '无效 HTTP 状态码',
+    'Invalid Response': '无效响应',
+    'Ready to Retry': '等待重试',
+    'Response Committed': '响应已提交',
+    'Retry Budget Exhausted': '重试次数已用尽',
+    'Rollback Result': '回落结果',
+    'Rolled Back': '已回落',
+    'Rolling Back': '正在回落',
+    Selecting: '选择中',
+    'Stream Interruption': '流中断',
+    'System Retry Rule': '系统重试规则',
+    Timeout: '超时',
+    'Transition Chain': '转换链',
+    'Transport Error': '传输错误',
+    Trigger: '触发规则',
+    'Unknown Group': '未知分组',
+  },
+  'zh-TW': {
+    Attempting: '嘗試中',
+    Canceled: '已取消',
+    'Channel Error': '渠道錯誤',
+    'Client Canceled': '用戶端已取消',
+    'Empty Response': '空回應',
+    'Failover Detail': '故障轉移明細',
+    'Fixed Channel': '固定渠道',
+    'HTTP Status Rule': 'HTTP 狀態碼規則',
+    'Invalid HTTP Status': '無效 HTTP 狀態碼',
+    'Invalid Response': '無效回應',
+    'Ready to Retry': '等待重試',
+    'Response Committed': '回應已提交',
+    'Retry Budget Exhausted': '重試次數已用盡',
+    'Rollback Result': '回落結果',
+    'Rolled Back': '已回落',
+    'Rolling Back': '正在回落',
+    Selecting: '選擇中',
+    'Stream Interruption': '串流中斷',
+    'System Retry Rule': '系統重試規則',
+    Timeout: '逾時',
+    'Transition Chain': '轉換鏈',
+    'Transport Error': '傳輸錯誤',
+    Trigger: '觸發規則',
+    'Unknown Group': '未知群組',
+  },
+  fr: {
+    Attempting: 'Tentative en cours',
+    Canceled: 'Annulé',
+    'Channel Error': 'Erreur de canal',
+    'Client Canceled': 'Annulation par le client',
+    'Empty Response': 'Réponse vide',
+    'Failover Detail': 'Détail du basculement',
+    'Fixed Channel': 'Canal fixe',
+    'HTTP Status Rule': 'Règle de statut HTTP',
+    'Invalid HTTP Status': 'Statut HTTP non valide',
+    'Invalid Response': 'Réponse non valide',
+    'Ready to Retry': 'Prêt à réessayer',
+    'Response Committed': 'Réponse transmise',
+    'Retry Budget Exhausted': 'Limite de tentatives atteinte',
+    'Rollback Result': 'Résultat de la restauration',
+    'Rolled Back': 'État restauré',
+    'Rolling Back': 'Restauration en cours',
+    Selecting: 'Sélection en cours',
+    'Stream Interruption': 'Interruption du flux',
+    'System Retry Rule': 'Règle système de nouvelle tentative',
+    Timeout: 'Délai dépassé',
+    'Transition Chain': 'Chaîne de transitions',
+    'Transport Error': 'Erreur de transport',
+    Trigger: 'Déclencheur',
+    'Unknown Group': 'Groupe inconnu',
+  },
+  ja: {
+    Attempting: '試行中',
+    Canceled: 'キャンセル済み',
+    'Channel Error': 'チャネルエラー',
+    'Client Canceled': 'クライアントによるキャンセル',
+    'Empty Response': '空の応答',
+    'Failover Detail': 'フェイルオーバー詳細',
+    'Fixed Channel': '固定チャネル',
+    'HTTP Status Rule': 'HTTP ステータスルール',
+    'Invalid HTTP Status': '無効な HTTP ステータス',
+    'Invalid Response': '無効な応答',
+    'Ready to Retry': '再試行待ち',
+    'Response Committed': '応答送信済み',
+    'Retry Budget Exhausted': '再試行回数を使い切りました',
+    'Rollback Result': '復元結果',
+    'Rolled Back': '復元済み',
+    'Rolling Back': '復元中',
+    Selecting: '選択中',
+    'Stream Interruption': 'ストリーム中断',
+    'System Retry Rule': 'システム再試行ルール',
+    Timeout: 'タイムアウト',
+    'Transition Chain': '状態遷移',
+    'Transport Error': '転送エラー',
+    Trigger: 'トリガー',
+    'Unknown Group': '不明なグループ',
+  },
+  ru: {
+    Attempting: 'Выполняется попытка',
+    Canceled: 'Отменено',
+    'Channel Error': 'Ошибка канала',
+    'Client Canceled': 'Отменено клиентом',
+    'Empty Response': 'Пустой ответ',
+    'Failover Detail': 'Сведения о переключении',
+    'Fixed Channel': 'Фиксированный канал',
+    'HTTP Status Rule': 'Правило HTTP-статуса',
+    'Invalid HTTP Status': 'Недопустимый HTTP-статус',
+    'Invalid Response': 'Недопустимый ответ',
+    'Ready to Retry': 'Готово к повтору',
+    'Response Committed': 'Ответ уже отправлен',
+    'Retry Budget Exhausted': 'Лимит повторов исчерпан',
+    'Rollback Result': 'Результат восстановления',
+    'Rolled Back': 'Состояние восстановлено',
+    'Rolling Back': 'Восстановление',
+    Selecting: 'Выбор',
+    'Stream Interruption': 'Прерывание потока',
+    'System Retry Rule': 'Системное правило повтора',
+    Timeout: 'Тайм-аут',
+    'Transition Chain': 'Цепочка переходов',
+    'Transport Error': 'Ошибка транспорта',
+    Trigger: 'Условие',
+    'Unknown Group': 'Неизвестная группа',
+  },
+  vi: {
+    Attempting: 'Đang thử',
+    Canceled: 'Đã hủy',
+    'Channel Error': 'Lỗi kênh',
+    'Client Canceled': 'Máy khách đã hủy',
+    'Empty Response': 'Phản hồi trống',
+    'Failover Detail': 'Chi tiết chuyển đổi dự phòng',
+    'Fixed Channel': 'Kênh cố định',
+    'HTTP Status Rule': 'Quy tắc trạng thái HTTP',
+    'Invalid HTTP Status': 'Trạng thái HTTP không hợp lệ',
+    'Invalid Response': 'Phản hồi không hợp lệ',
+    'Ready to Retry': 'Sẵn sàng thử lại',
+    'Response Committed': 'Đã gửi phản hồi',
+    'Retry Budget Exhausted': 'Đã hết số lần thử lại',
+    'Rollback Result': 'Kết quả khôi phục',
+    'Rolled Back': 'Đã khôi phục',
+    'Rolling Back': 'Đang khôi phục',
+    Selecting: 'Đang chọn',
+    'Stream Interruption': 'Luồng bị gián đoạn',
+    'System Retry Rule': 'Quy tắc thử lại hệ thống',
+    Timeout: 'Hết thời gian',
+    'Transition Chain': 'Chuỗi chuyển trạng thái',
+    'Transport Error': 'Lỗi truyền tải',
+    Trigger: 'Điều kiện kích hoạt',
+    'Unknown Group': 'Nhóm không xác định',
+  },
+}
+
 for (const [locale, translations] of Object.entries(creativeStudioUi)) {
   Object.assign(newKeys[locale], translations)
 }
@@ -1134,6 +1541,10 @@ for (const [locale, translations] of Object.entries(validationMessages)) {
 }
 
 for (const [locale, translations] of Object.entries(cascadeDeleteMessages)) {
+  Object.assign(newKeys[locale], translations)
+}
+
+for (const [locale, translations] of Object.entries(failoverAuditUi)) {
   Object.assign(newKeys[locale], translations)
 }
 

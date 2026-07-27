@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
@@ -516,6 +517,25 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		client = service.GetHttpClient()
 	}
 
+	req = req.WithContext(c.Request.Context())
+	headerTimeoutMS := info.FailoverRules.ResponseHeaderTimeout(info.IsStream)
+	contentTimeoutMS := info.FailoverRules.FirstContentTimeout(info.IsStream)
+	var requestCancel context.CancelFunc
+	var headerTimer *time.Timer
+	var headerState atomic.Int32 // 0 waiting, 1 headers received, 2 timed out
+	if info.FailoverRules.Enabled && (headerTimeoutMS > 0 || contentTimeoutMS > 0) {
+		requestCtx, cancel := context.WithCancel(c.Request.Context())
+		requestCancel = cancel
+		req = req.WithContext(requestCtx)
+	}
+	if info.FailoverRules.Enabled && headerTimeoutMS > 0 {
+		headerTimer = time.AfterFunc(time.Duration(headerTimeoutMS)*time.Millisecond, func() {
+			if headerState.CompareAndSwap(0, 2) {
+				requestCancel()
+			}
+		})
+	}
+
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
 	if info.IsStream {
@@ -537,12 +557,46 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	resp, err := client.Do(req)
+	if headerTimer != nil {
+		headerTimer.Stop()
+		headerState.CompareAndSwap(0, 1)
+	}
 	if err != nil {
+		if requestCancel != nil {
+			requestCancel()
+		}
 		logger.LogError(c, "do request failed: "+err.Error())
+		if headerState.Load() == 2 {
+			return nil, types.NewError(errors.New("upstream response header timeout"), types.ErrorCodeUpstreamResponseHeaderTimeout, types.ErrOptionWithStatusCode(http.StatusGatewayTimeout))
+		}
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
+	if headerState.Load() == 2 {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if requestCancel != nil {
+			requestCancel()
+		}
+		return nil, types.NewError(errors.New("upstream response header timeout"), types.ErrorCodeUpstreamResponseHeaderTimeout, types.ErrOptionWithStatusCode(http.StatusGatewayTimeout))
+	}
 	if resp == nil {
+		if requestCancel != nil {
+			requestCancel()
+		}
 		return nil, errors.New("resp is nil")
+	}
+	if requestCancel != nil {
+		if info.AttemptResponse != nil && !info.IsStream && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") && contentTimeoutMS > 0 {
+			body := &contentTimeoutReadCloser{ReadCloser: resp.Body, cancel: requestCancel}
+			body.timer = time.AfterFunc(time.Duration(contentTimeoutMS)*time.Millisecond, func() {
+				body.timedOut.Store(true)
+				requestCancel()
+			})
+			resp.Body = body
+		} else {
+			resp.Body = &cancelOnCloseReadCloser{ReadCloser: resp.Body, cancel: requestCancel}
+		}
 	}
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
@@ -552,6 +606,41 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
 	return resp, nil
+}
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.cancel()
+	return err
+}
+
+type contentTimeoutReadCloser struct {
+	io.ReadCloser
+	cancel   context.CancelFunc
+	timer    *time.Timer
+	timedOut atomic.Bool
+}
+
+func (r *contentTimeoutReadCloser) Read(data []byte) (int, error) {
+	n, err := r.ReadCloser.Read(data)
+	if err != nil && r.timedOut.Load() {
+		return n, common.ErrFirstContentTimeout
+	}
+	return n, err
+}
+
+func (r *contentTimeoutReadCloser) Close() error {
+	if r.timer != nil {
+		r.timer.Stop()
+	}
+	err := r.ReadCloser.Close()
+	r.cancel()
+	return err
 }
 
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {

@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,6 +98,40 @@ func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	})
 
 	assert.False(t, called.Load(), "handler should not be called for empty body")
+}
+
+func TestStreamScannerHandler_FirstContentTimeoutIgnoresRoleOnlyChunk(t *testing.T) {
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+
+	c, resp, info := setupStreamTest(t, reader)
+	resp.Body = reader
+	gate := relaycommon.NewAttemptResponseWriter(c.Writer)
+	c.Writer = gate
+	info.AttemptResponse = gate
+	info.FailoverRules = types.TokenFailoverRules{Enabled: true, FirstContentTimeoutMS: 25}
+
+	done := make(chan struct{})
+	go func() {
+		StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+			_ = StringData(c, data)
+		})
+		close(done)
+	}()
+	_, err := fmt.Fprintln(writer, `data: {"choices":[{"delta":{"role":"assistant"}}]}`)
+	require.NoError(t, err)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("first-content timeout did not stop the stream")
+	}
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonFirstContentTimeout, info.StreamStatus.EndReason)
+	assert.False(t, gate.Committed())
 }
 
 func TestStreamScannerHandler_1000Chunks(t *testing.T) {
@@ -486,6 +521,42 @@ func TestStreamScannerHandler_StreamStatus_Timeout(t *testing.T) {
 	require.NotNil(t, info.StreamStatus)
 	assert.Equal(t, relaycommon.StreamEndReasonTimeout, info.StreamStatus.EndReason)
 	assert.False(t, info.StreamStatus.IsNormalEnd())
+}
+
+func TestStreamScannerHandler_GlobalTimeoutStillAppliesWhenTokenTimeoutIsDisabled(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 1
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	c, resp, info := setupStreamTest(t, reader)
+	resp.Body = reader
+	gate := relaycommon.NewAttemptResponseWriter(c.Writer)
+	c.Writer = gate
+	zero := 0
+	info.AttemptResponse = gate
+	info.FailoverRules = types.TokenFailoverRules{
+		Enabled:                     true,
+		StreamFirstContentTimeoutMS: &zero,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("global streaming timeout was bypassed")
+	}
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonTimeout, info.StreamStatus.EndReason)
 }
 
 func TestStreamScannerHandler_StreamStatus_SoftErrors(t *testing.T) {

@@ -222,6 +222,10 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		return newAPIError
 	}
 
+	if newAPIError = info.FinalizeFailoverAttempt(); newAPIError != nil {
+		return newAPIError
+	}
+
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
 }

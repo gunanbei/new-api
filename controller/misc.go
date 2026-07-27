@@ -94,7 +94,8 @@ func GetStatus(c *gin.Context) {
 		"password_register_enabled":     common.PasswordRegisterEnabled,
 		"default_use_auto_group":        setting.DefaultUseAutoGroup,
 		// Upper bound the API key failover form may offer for its retry budget.
-		"max_retry_times": common.RetryTimes,
+		"max_retry_times":              common.RetryTimes,
+		"automatic_retry_status_codes": operation_setting.AutomaticRetryStatusCodesToString(),
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,

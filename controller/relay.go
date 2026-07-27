@@ -92,18 +92,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
-			switch relayFormat {
-			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
-			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
+			committed := c.Writer.Written() || relayInfo != nil && relayInfo.AttemptResponse != nil && relayInfo.AttemptResponse.Committed()
+			if !committed {
+				switch relayFormat {
+				case types.RelayFormatOpenAIRealtime:
+					helper.WssError(c, ws, newAPIError.ToOpenAIError())
+				case types.RelayFormatClaude:
+					c.JSON(newAPIError.StatusCode, gin.H{
+						"type":  "error",
+						"error": newAPIError.ToClaudeError(),
+					})
+				default:
+					c.JSON(newAPIError.StatusCode, gin.H{
+						"error": newAPIError.ToOpenAIError(),
+					})
+				}
 			}
 		}
 		if traceCapture != nil && relayInfo != nil {
@@ -128,6 +131,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	relayInfo.FailoverRules = service.GetFailoverRules(c)
 	traceCapture = service.StartInflightTraceCapture(c, relayInfo, relayFormat)
 	service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusAccepted)
 	if relayInfo.IsStream {
@@ -202,13 +206,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 	maxRetryTimes := service.EffectiveRetryTimes(c)
 	relayInfo.MaxRetryIndex = maxRetryTimes
+	relayInfo.FailoverState = relaycommon.NewFailoverStateMachine(relayInfo.FailoverRules)
 
 	for ; retryParam.GetRetry() <= maxRetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		if err := relayInfo.FailoverState.BeginSelection(relayInfo); err != nil {
+			newAPIError = failoverStateError(err)
+			break
+		}
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
+			if err := relayInfo.FailoverState.FailSelection(relayInfo, channelErr, channelErr.Error()); err != nil {
+				newAPIError = failoverStateError(err)
+			}
 			break
 		}
 
@@ -223,10 +235,28 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			} else {
 				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
+			if err := relayInfo.FailoverState.FailSelection(relayInfo, newAPIError, newAPIError.Error()); err != nil {
+				newAPIError = failoverStateError(err)
+			}
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusUpstreamPending)
+		originalWriter := c.Writer
+		var attemptWriter *relaycommon.AttemptResponseWriter
+		if relayInfo.FailoverRules.Enabled && isTextFailoverRequest(relayFormat, relayInfo.RelayMode) {
+			attemptWriter = relaycommon.NewAttemptResponseWriter(originalWriter)
+			c.Writer = attemptWriter
+			c.Set("event_stream_headers_set", false)
+		}
+		if err := relayInfo.FailoverState.StartAttempt(relayInfo, attemptWriter); err != nil {
+			c.Writer = originalWriter
+			newAPIError = failoverStateError(err)
+			break
+		}
+		if relayInfo.RetryIndex > 0 {
+			logger.LogInfo(c, fmt.Sprintf("failover attempt started: retry=%d channel=%d group=%s", relayInfo.RetryIndex, channel.Id, relayInfo.UsingGroup))
+		}
 
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
@@ -238,8 +268,24 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			newAPIError = relayHandler(c, relayInfo)
 		}
+		c.Writer = originalWriter
+		if newAPIError != nil && errors.Is(newAPIError, relaycommon.ErrFirstContentTimeout) {
+			newAPIError = types.NewError(relaycommon.ErrFirstContentTimeout, types.ErrorCodeUpstreamFirstContentTimeout, types.ErrOptionWithStatusCode(http.StatusGatewayTimeout))
+		}
 
 		if newAPIError == nil {
+			if attemptWriter != nil && attemptWriter.Committed() && relayInfo.FailoverState.State() == relaycommon.FailoverStateAttempting {
+				if err := relayInfo.FailoverState.MarkResponseCommitted(relayInfo); err != nil {
+					newAPIError = failoverStateError(err)
+					break
+				}
+			}
+			if relayInfo.FailoverState.State() != relaycommon.FailoverStateSucceeded {
+				if err := relayInfo.FailoverState.CompleteAttempt(relayInfo); err != nil {
+					newAPIError = failoverStateError(err)
+					break
+				}
+			}
 			relayInfo.LastError = nil
 			service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.FinalInflightTaskStatus(relayInfo))
 			return
@@ -248,11 +294,39 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
-		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
-
-		if !shouldRetry(c, newAPIError, maxRetryTimes-retryParam.GetRetry()) {
+		responseCommitted := attemptWriter != nil && attemptWriter.Committed()
+		if attemptWriter == nil {
+			responseCommitted = originalWriter.Written()
+		}
+		if responseCommitted {
+			if err := relayInfo.FailoverState.MarkResponseCommitted(relayInfo); err != nil {
+				newAPIError = failoverStateError(err)
+			} else if err = relayInfo.FailoverState.RejectRetry(relayInfo, newAPIError, "response_committed", "downstream response was already committed", c.Request.Context().Err() != nil); err != nil {
+				newAPIError = failoverStateError(err)
+			}
+			processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 			break
 		}
+		decision := shouldRetry(c, newAPIError, maxRetryTimes-retryParam.GetRetry())
+		if err := relayInfo.FailoverState.RollbackAttempt(relayInfo, attemptWriter, newAPIError, decision.Trigger); err != nil {
+			newAPIError = failoverStateError(err)
+			processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			break
+		}
+		if !decision.Retry {
+			if err := relayInfo.FailoverState.RejectRetry(relayInfo, newAPIError, decision.Trigger, decision.Reason, decision.Canceled); err != nil {
+				newAPIError = failoverStateError(err)
+			}
+			processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			break
+		}
+		if err := relayInfo.FailoverState.SelectRetry(relayInfo, decision.Trigger, decision.Reason); err != nil {
+			newAPIError = failoverStateError(err)
+			processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			break
+		}
+		logger.LogInfo(c, fmt.Sprintf("failover retry selected: retry=%d channel=%d group=%s trigger=%s", relayInfo.RetryIndex, channel.Id, relayInfo.UsingGroup, decision.Trigger))
+		processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusFailed)
 	}
 
@@ -359,39 +433,95 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
-func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+type retryDecision struct {
+	Retry    bool
+	Canceled bool
+	Trigger  string
+	Reason   string
+}
+
+func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) retryDecision {
 	if openaiErr == nil {
-		return false
+		return retryDecision{Trigger: "no_error", Reason: "no upstream error"}
+	}
+	if c.Request.Context().Err() != nil {
+		return retryDecision{Canceled: true, Trigger: "client_canceled", Reason: c.Request.Context().Err().Error()}
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
-	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
-	if types.IsSkipRetryError(openaiErr) {
-		return false
+		return retryDecision{Trigger: "channel_affinity", Reason: "channel affinity policy rejected retry"}
 	}
 	if retryTimes <= 0 {
-		return false
+		return retryDecision{Trigger: "retry_budget_exhausted", Reason: "no retry budget remains"}
 	}
 	if _, ok := c.Get("specific_channel_id"); ok {
-		return false
+		return retryDecision{Trigger: "fixed_channel", Reason: "request is pinned to a specific channel"}
+	}
+	if types.IsChannelError(openaiErr) {
+		return retryDecision{Retry: true, Trigger: "channel_error", Reason: "channel error is retryable"}
+	}
+	if types.IsSkipRetryError(openaiErr) {
+		return retryDecision{Trigger: "skip_retry", Reason: "error explicitly disables retry"}
+	}
+	rules := service.GetFailoverRules(c)
+	if rules.Enabled {
+		switch openaiErr.GetErrorCode() {
+		case types.ErrorCodeUpstreamResponseHeaderTimeout, types.ErrorCodeUpstreamFirstContentTimeout:
+			return retryDecision{Retry: true, Trigger: "timeout", Reason: string(openaiErr.GetErrorCode())}
+		case types.ErrorCodeDoRequestFailed:
+			return ruleRetryDecision(rules.RetryOnTransportError, "transport_error", "transport error rule")
+		case types.ErrorCodeEmptyResponse:
+			return ruleRetryDecision(rules.RetryOnEmptyResponse, "empty_response", "empty response rule")
+		case types.ErrorCodeBadResponse, types.ErrorCodeBadResponseBody, types.ErrorCodeReadResponseBodyFailed:
+			return ruleRetryDecision(rules.RetryOnInvalidResponse, "invalid_response", "invalid response rule")
+		case types.ErrorCodeUpstreamStreamError:
+			return ruleRetryDecision(rules.RetryOnStreamError, "stream_error", "stream interruption rule")
+		}
 	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
-		return false
+		return retryDecision{Trigger: "http_status", Reason: "successful HTTP status is not retryable"}
 	}
 	if code < 100 || code > 599 {
-		return true
+		return retryDecision{Retry: true, Trigger: "invalid_http_status", Reason: fmt.Sprintf("HTTP status %d is invalid", code)}
+	}
+	if rules.Enabled && rules.HTTPStatusCodes != "" {
+		ranges, err := operation_setting.ParseHTTPStatusCodeRanges(rules.HTTPStatusCodes)
+		if err != nil {
+			return retryDecision{Trigger: "http_status_rule", Reason: "configured HTTP status rule is invalid"}
+		}
+		for _, statusRange := range ranges {
+			if code >= statusRange.Start && code <= statusRange.End {
+				return retryDecision{Retry: true, Trigger: "http_status_rule", Reason: fmt.Sprintf("HTTP status %d matched token rule", code)}
+			}
+		}
+		return retryDecision{Trigger: "http_status_rule", Reason: fmt.Sprintf("HTTP status %d did not match token rule", code)}
 	}
 	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
+		return retryDecision{Trigger: "system_skip_rule", Reason: string(openaiErr.GetErrorCode())}
 	}
-	return operation_setting.ShouldRetryByStatusCode(code)
+	return ruleRetryDecision(operation_setting.ShouldRetryByStatusCode(code), "system_http_status_rule", fmt.Sprintf("HTTP status %d evaluated by system rule", code))
 }
 
-func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
+func ruleRetryDecision(retry bool, trigger, reason string) retryDecision {
+	return retryDecision{Retry: retry, Trigger: trigger, Reason: reason}
+}
+
+func failoverStateError(err error) *types.NewAPIError {
+	return types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithSkipRetry())
+}
+
+func isTextFailoverRequest(format types.RelayFormat, mode int) bool {
+	switch format {
+	case types.RelayFormatClaude, types.RelayFormatGemini, types.RelayFormatOpenAIResponses, types.RelayFormatOpenAIResponsesCompaction:
+		return true
+	case types.RelayFormatOpenAI:
+		return mode == relayconstant.RelayModeChatCompletions || mode == relayconstant.RelayModeCompletions
+	default:
+		return false
+	}
+}
+
+func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
@@ -427,6 +557,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		service.AppendFailoverAuditAdminInfo(relayInfo, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
@@ -593,7 +724,7 @@ func RelayTask(c *gin.Context) {
 		}
 
 		if !taskErr.LocalError {
-			processChannelError(c,
+			processChannelError(c, relayInfo,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))

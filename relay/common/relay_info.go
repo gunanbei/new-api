@@ -154,6 +154,9 @@ type RelayInfo struct {
 	// system RetryTimes unless a failover token lowered the cap.
 	MaxRetryIndex             int
 	LastError                 *types.NewAPIError
+	FailoverRules             types.TokenFailoverRules
+	AttemptResponse           *AttemptResponseWriter
+	FailoverState             *FailoverStateMachine
 	RuntimeHeadersOverride    map[string]interface{}
 	UseRuntimeHeadersOverride bool
 	ParamOverrideAudit        []string

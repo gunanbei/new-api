@@ -149,6 +149,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		return newAPIError
 	}
 
+	if newAPIError = info.FinalizeFailoverAttempt(); newAPIError != nil {
+		return newAPIError
+	}
+
 	usageDto := usage.(*dto.Usage)
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		originModelName := info.OriginModelName

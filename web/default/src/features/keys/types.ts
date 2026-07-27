@@ -54,6 +54,7 @@ export const apiKeySchema = z.object({
   failover_groups: z.string().nullish().default(''),
   failover_strategy: z.string().nullish().default(''),
   failover_max_retry: z.number().nullish().default(0),
+  failover_rules: z.string().nullish().default(''),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
@@ -108,6 +109,7 @@ export interface ApiKeyFormData {
   failover_groups: string
   failover_strategy: string
   failover_max_retry: number
+  failover_rules: string
 }
 
 // ============================================================================

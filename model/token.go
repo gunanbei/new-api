@@ -32,6 +32,7 @@ type Token struct {
 	FailoverGroups     string         `json:"failover_groups" gorm:"type:text"`          // JSON 数组，故障转移的分组序列
 	FailoverStrategy   string         `json:"failover_strategy" gorm:"type:varchar(32)"` // order | lowest_ratio | random
 	FailoverMaxRetry   int            `json:"failover_max_retry"`                        // 0 表示跟随系统 RetryTimes
+	FailoverRules      string         `json:"failover_rules" gorm:"type:text"`           // JSON encoded custom trigger rules
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
@@ -321,7 +322,7 @@ func (token *Token) Update() (err error) {
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
 		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
-		"failover_enabled", "failover_groups", "failover_strategy", "failover_max_retry").Updates(token).Error
+		"failover_enabled", "failover_groups", "failover_strategy", "failover_max_retry", "failover_rules").Updates(token).Error
 	return err
 }
 

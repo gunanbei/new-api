@@ -21,6 +21,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef, Row } from '@tanstack/react-table'
 import {
   ArrowRight,
+  Check,
   Eye,
   FolderOpen,
   GitBranch,
@@ -115,7 +116,8 @@ import {
 import { useLogsViewScope } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const inflightListLiveRefreshMs = 5000
+const autoRefreshIntervalSeconds = [30, 60, 120] as const
+const defaultAutoRefreshIntervalSeconds = 60
 
 function getInflightColumnVisibilityStorageKey(isAdmin: boolean) {
   return `usage-logs:inflight:${isAdmin ? 'admin' : 'user'}:column-visibility`
@@ -2025,7 +2027,12 @@ function InflightFilterBar<TData>(props: {
   table: ReturnType<typeof useDataTable<TData>>['table']
   isFetching: boolean
   liveRefresh: boolean
+  refreshIntervalSeconds: (typeof autoRefreshIntervalSeconds)[number]
+  remainingRefreshSeconds: number
   onToggleLiveRefresh: () => void
+  onRefreshIntervalChange: (
+    seconds: (typeof autoRefreshIntervalSeconds)[number]
+  ) => void
   onOpenLocalCache: () => void
   isAdmin: boolean
 }) {
@@ -2331,33 +2338,54 @@ function InflightFilterBar<TData>(props: {
             <FolderOpen />
             {t('Browser debug cache files')}
           </Button>
-          <Tooltip>
-            <TooltipTrigger
+          <Popover>
+            <PopoverTrigger
               render={
                 <Button
                   type='button'
                   variant={props.liveRefresh ? 'secondary' : 'outline'}
-                  size='icon'
-                  onClick={props.onToggleLiveRefresh}
+                  size='sm'
                   aria-pressed={props.liveRefresh}
-                  aria-label={
-                    props.liveRefresh
-                      ? t('Stop live refresh')
-                      : t('Start live refresh')
-                  }
-                />
+                >
+                  <RefreshCw
+                    className={cn(
+                      'size-4',
+                      props.liveRefresh && 'animate-spin'
+                    )}
+                  />
+                  {props.liveRefresh
+                    ? t('Next refresh in {{seconds}}s', {
+                        seconds: props.remainingRefreshSeconds,
+                      })
+                    : t('Auto refresh')}
+                </Button>
               }
-            >
-              <RefreshCw
-                className={cn('size-4', props.liveRefresh && 'animate-spin')}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              {props.liveRefresh
-                ? t('Stop live refresh')
-                : t('Start live refresh')}
-            </TooltipContent>
-          </Tooltip>
+            />
+            <PopoverContent align='end' className='w-52 p-1'>
+              <button
+                type='button'
+                className='hover:bg-accent flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-sm'
+                onClick={props.onToggleLiveRefresh}
+              >
+                {t('Auto refresh')}
+                {props.liveRefresh && <Check className='text-primary size-4' />}
+              </button>
+              <div className='bg-border my-1 h-px' />
+              {autoRefreshIntervalSeconds.map((seconds) => (
+                <button
+                  key={seconds}
+                  type='button'
+                  className='hover:bg-accent flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-sm'
+                  onClick={() => props.onRefreshIntervalChange(seconds)}
+                >
+                  {`${seconds} ${t('seconds')}`}
+                  {props.refreshIntervalSeconds === seconds && (
+                    <Check className='text-primary size-4' />
+                  )}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
         </div>
       }
     />
@@ -2371,7 +2399,13 @@ export function InflightTasksTab() {
   const searchParams = route.useSearch()
   const [detailsTask, setDetailsTask] = useState<InflightTask | null>(null)
   const [traceTask, setTraceTask] = useState<InflightTask | null>(null)
-  const [liveRefresh, setLiveRefresh] = useState(false)
+  const [liveRefresh, setLiveRefresh] = useState(true)
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState<
+    (typeof autoRefreshIntervalSeconds)[number]
+  >(defaultAutoRefreshIntervalSeconds)
+  const [remainingRefreshSeconds, setRemainingRefreshSeconds] = useState(
+    defaultAutoRefreshIntervalSeconds
+  )
   const [localCacheOpen, setLocalCacheOpen] = useState(false)
   const [localCacheFiles, setLocalCacheFiles] = useState<
     InflightTraceLocalCacheFile[]
@@ -2491,7 +2525,7 @@ export function InflightTasksTab() {
     placeholderData: (previousData) => previousData,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
-    refetchInterval: liveRefresh ? inflightListLiveRefreshMs : false,
+    refetchInterval: liveRefresh ? refreshIntervalSeconds * 1000 : false,
     refetchIntervalInBackground: false,
   })
 
@@ -2499,11 +2533,32 @@ export function InflightTasksTab() {
     setLiveRefresh((enabled) => {
       const next = !enabled
       if (next) {
+        setRemainingRefreshSeconds(refreshIntervalSeconds)
         void refetch()
       }
       return next
     })
-  }, [refetch])
+  }, [refetch, refreshIntervalSeconds])
+
+  const handleRefreshIntervalChange = useCallback(
+    (seconds: (typeof autoRefreshIntervalSeconds)[number]) => {
+      setRefreshIntervalSeconds(seconds)
+      setRemainingRefreshSeconds(seconds)
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (!liveRefresh) return
+
+    const timer = window.setInterval(() => {
+      setRemainingRefreshSeconds((seconds) =>
+        seconds <= 1 ? refreshIntervalSeconds : seconds - 1
+      )
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [liveRefresh, refreshIntervalSeconds])
 
   const columns = useInflightTaskColumns({
     onOpenDetails,
@@ -2547,7 +2602,10 @@ export function InflightTasksTab() {
             table={table}
             isFetching={isFetching}
             liveRefresh={liveRefresh}
+            refreshIntervalSeconds={refreshIntervalSeconds}
+            remainingRefreshSeconds={remainingRefreshSeconds}
             onToggleLiveRefresh={handleToggleLiveRefresh}
+            onRefreshIntervalChange={handleRefreshIntervalChange}
             isAdmin={isAdmin}
             onOpenLocalCache={openLocalCache}
           />

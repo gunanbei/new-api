@@ -556,6 +556,7 @@
     "Auto-discovers endpoints from the provider": "Автоматически обнаруживает конечные точки от провайдера",
     "Auto-fill when one field exists and another is missing": "Автозаполнение, когда одно поле есть, а другое отсутствует",
     "Auto-refreshing every {{seconds}}s": "Автообновление каждые {{seconds}} с",
+    "Next refresh in {{seconds}}s": "Следующее обновление через {{seconds}} с",
     "Auto-retry status codes": "Коды авто-повтора",
     "Automatic inflight log cleanup is disabled": "Автоматическая очистка журналов в процессе отключена",
     "Automatically disable channel on repeated failures": "Автоматически отключать канал при повторных неудачах",

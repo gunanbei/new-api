@@ -556,6 +556,7 @@
     "Auto-discovers endpoints from the provider": "自動從供應商發現端點",
     "Auto-fill when one field exists and another is missing": "在一個欄位有值、另一個缺失時自動補齊",
     "Auto-refreshing every {{seconds}}s": "每 {{seconds}} 秒自動重新整理",
+    "Next refresh in {{seconds}}s": "距下次重新整理 {{seconds}} 秒",
     "Auto-retry status codes": "自動重試狀態碼",
     "Automatic inflight log cleanup is disabled": "Automatic inflight log cleanup is disabled",
     "Automatically disable channel on repeated failures": "重複失敗時自動停用渠道",

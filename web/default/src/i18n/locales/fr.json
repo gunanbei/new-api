@@ -556,6 +556,7 @@
     "Auto-discovers endpoints from the provider": "Découvre automatiquement les points de terminaison du fournisseur",
     "Auto-fill when one field exists and another is missing": "Remplissage automatique si un champ existe et l'autre est manquant",
     "Auto-refreshing every {{seconds}}s": "Actualisation automatique toutes les {{seconds}} s",
+    "Next refresh in {{seconds}}s": "Prochaine actualisation dans {{seconds}} s",
     "Auto-retry status codes": "Codes de statut de nouvelle tentative auto",
     "Automatic inflight log cleanup is disabled": "Le nettoyage automatique des journaux en cours est desactive",
     "Automatically disable channel on repeated failures": "Désactiver automatiquement le canal en cas d'échecs répétés",

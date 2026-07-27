@@ -556,6 +556,7 @@
     "Auto-discovers endpoints from the provider": "プロバイダーからエンドポイントを自動検出します",
     "Auto-fill when one field exists and another is missing": "一方のフィールドがあり他方が欠けている場合に自動補完",
     "Auto-refreshing every {{seconds}}s": "{{seconds}} 秒ごとに自動更新",
+    "Next refresh in {{seconds}}s": "次の更新まで {{seconds}} 秒",
     "Auto-retry status codes": "自動リトライするステータスコード",
     "Automatic inflight log cleanup is disabled": "進行中ログの自動クリーンアップは無効です",
     "Automatically disable channel on repeated failures": "繰り返しの失敗でチャネルを自動的に無効にする",

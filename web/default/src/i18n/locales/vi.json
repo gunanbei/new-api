@@ -556,6 +556,7 @@
     "Auto-discovers endpoints from the provider": "Tự động khám phá các điểm cuối từ nhà cung cấp",
     "Auto-fill when one field exists and another is missing": "Tự động điền khi một trường có giá trị và trường khác thiếu",
     "Auto-refreshing every {{seconds}}s": "Tự động làm mới mỗi {{seconds}} giây",
+    "Next refresh in {{seconds}}s": "Làm mới sau {{seconds}} giây",
     "Auto-retry status codes": "Mã trạng thái tự thử lại",
     "Automatic inflight log cleanup is disabled": "Tat don dep tu dong nhat ky dang xu ly",
     "Automatically disable channel on repeated failures": "Tự động vô hiệu hóa kênh khi xảy ra lỗi lặp lại",

@@ -156,8 +156,8 @@ function StatusBadge(props: { group: PerfGroupMonitor; hours: number }) {
     unknown: 'Unknown',
   }[props.group.status]
   const reasonTexts = (props.group.status_reasons ?? []).map((reason) => {
-    if (reason.code === 'latest_bucket_success_rate') {
-      return t('Current {{hours}}h success rate is {{rate}}%.', {
+    if (reason.code === 'selected_period_success_rate') {
+      return t('Success rate in the selected {{hours}}h period is {{rate}}%.', {
         hours: props.hours,
         rate: reason.success_rate.toFixed(2),
       })

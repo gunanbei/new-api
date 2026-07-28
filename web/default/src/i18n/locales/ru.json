@@ -4761,6 +4761,7 @@
     "Success rate": "Доля успешных запросов",
     "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.": "Успешность последних 20 вызовов составляет {{rate}}%. Работа канала нестабильна.",
     "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.": "Успешность последних 20 вызовов составляет лишь {{rate}}%. Рассмотрите переход в другую группу.",
+    "Success rate in the selected {{hours}}h period is {{rate}}%.": "Успешность за выбранный период {{hours}} ч. составляет {{rate}}%.",
     "Successfully created {{count}} API Key(s)": "Успешно создано {{count}} API-ключ(а/ей)",
     "Successfully created {{count}} redemption codes": "Успешно создано {{count}} кодов активации",
     "Successfully deleted {{count}} API key(s)": "Успешно удалено {{count}} API-ключ(а/ей)",

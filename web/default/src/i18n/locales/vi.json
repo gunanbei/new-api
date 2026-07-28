@@ -4761,6 +4761,7 @@
     "Success rate": "Tỷ lệ thành công",
     "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.": "Tỷ lệ thành công của 20 lần gọi gần nhất là {{rate}}%. Hiệu năng kênh không ổn định.",
     "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.": "Tỷ lệ thành công của 20 lần gọi gần nhất chỉ là {{rate}}%. Hãy cân nhắc chuyển sang nhóm khác.",
+    "Success rate in the selected {{hours}}h period is {{rate}}%.": "Tỷ lệ thành công trong khoảng thời gian {{hours}} giờ đã chọn là {{rate}}%.",
     "Successfully created {{count}} API Key(s)": "Đã tạo thành công {{count}} khóa API",
     "Successfully created {{count}} redemption codes": "Đã tạo thành công {{count}} mã đổi thưởng",
     "Successfully deleted {{count}} API key(s)": "Đã xóa thành công {{count}} khóa API",

@@ -4761,6 +4761,7 @@
     "Success rate": "成功率",
     "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.": "最近 20 次呼叫成功率為 {{rate}}%，渠道波動較大。",
     "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.": "最近 20 次呼叫成功率僅有 {{rate}}%，建議暫時切換其他分組使用。",
+    "Success rate in the selected {{hours}}h period is {{rate}}%.": "所選 {{hours}} 小時範圍內的成功率為 {{rate}}%。",
     "Successfully created {{count}} API Key(s)": "成功建立了 {{count}} 個 API 金鑰",
     "Successfully created {{count}} redemption codes": "成功建立了 {{count}} 個兌換碼",
     "Successfully deleted {{count}} API key(s)": "成功刪除了 {{count}} 個 API 金鑰",

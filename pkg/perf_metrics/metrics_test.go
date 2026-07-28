@@ -40,26 +40,22 @@ func TestApplyGroupStatus(t *testing.T) {
 	groupMonitorStates = sync.Map{}
 	now := time.Now()
 	available := GroupSummary{
-		Group: "available",
-		Series: []BucketPoint{{
-			Ts:          bucketStart(now.Unix()),
-			SuccessRate: 90,
-		}},
+		Group:        "available",
+		RequestCount: 1,
+		Availability: 90,
 	}
 	ApplyGroupStatus(&available, 1, 0)
 	require.Equal(t, "available", available.Status)
 
 	warning := GroupSummary{
-		Group: "warning",
-		Series: []BucketPoint{{
-			Ts:          bucketStart(now.Unix()),
-			SuccessRate: 89.9,
-		}},
+		Group:        "warning",
+		RequestCount: 1,
+		Availability: 89.9,
 	}
 	ApplyGroupStatus(&warning, 1, 0)
 	require.Equal(t, "warning", warning.Status)
 	require.Contains(t, warning.StatusReasons, StatusReason{
-		Code:        "latest_bucket_success_rate",
+		Code:        "selected_period_success_rate",
 		SuccessRate: 89.9,
 	})
 
@@ -70,33 +66,27 @@ func TestApplyGroupStatus(t *testing.T) {
 		recordGroupMonitorSample("error", false, 0, 0, now)
 	}
 	errorSummary := GroupSummary{
-		Group: "error",
-		Series: []BucketPoint{{
-			Ts:          bucketStart(now.Unix()),
-			SuccessRate: 100,
-		}},
+		Group:        "error",
+		RequestCount: 1,
+		Availability: 100,
 	}
 	ApplyGroupStatus(&errorSummary, 1, 0)
 	require.Equal(t, "error", errorSummary.Status)
 	require.Contains(t, errorSummary.StatusReasons, StatusReason{Code: "recent_success_rate_error", SuccessRate: 65})
 }
 
-func TestApplyGroupStatusRequiresCurrentBucketCall(t *testing.T) {
+func TestApplyGroupStatusRequiresRequestsInSelectedPeriod(t *testing.T) {
 	groupMonitorStates = sync.Map{}
-	now := time.Now()
 
 	historicalSuccess := GroupSummary{
-		Group: "historical-success",
-		Series: []BucketPoint{{
-			Ts:          bucketStart(now.Unix()) - perf_metrics_setting.GetBucketSeconds(),
-			SuccessRate: 100,
-		}},
+		Group:        "historical-success",
+		RequestCount: 1,
+		Availability: 100,
 	}
 	ApplyGroupStatus(&historicalSuccess, 1, 0)
-	require.Equal(t, "unknown", historicalSuccess.Status)
-	require.Contains(t, historicalSuccess.StatusReasons, StatusReason{Code: "insufficient_sampling"})
+	require.Equal(t, "available", historicalSuccess.Status)
 
-	unknown := GroupSummary{Group: "unknown", RequestCount: 1}
+	unknown := GroupSummary{Group: "unknown"}
 	ApplyGroupStatus(&unknown, 1, 0)
 	require.Equal(t, "unknown", unknown.Status)
 	require.Contains(t, unknown.StatusReasons, StatusReason{Code: "insufficient_sampling"})

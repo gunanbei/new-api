@@ -437,17 +437,7 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		return
 	}
 
-	currentBucketTs := bucketStart(time.Now().Unix())
-	currentBucketCalled := false
-	currentBucketSuccessRate := 0.0
-	for _, bucket := range summary.Series {
-		if bucket.Ts == currentBucketTs {
-			currentBucketCalled = true
-			currentBucketSuccessRate = bucket.SuccessRate
-			break
-		}
-	}
-	if !currentBucketCalled {
+	if summary.RequestCount == 0 {
 		summary.Status = "unknown"
 		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "insufficient_sampling"})
 		return
@@ -469,10 +459,10 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		return
 	}
 
-	if currentBucketSuccessRate < 90 {
+	if summary.Availability < 90 {
 		summary.StatusReasons = append(summary.StatusReasons, StatusReason{
-			Code:        "latest_bucket_success_rate",
-			SuccessRate: currentBucketSuccessRate,
+			Code:        "selected_period_success_rate",
+			SuccessRate: summary.Availability,
 		})
 	}
 	if status.cacheFluctuations > 20 {

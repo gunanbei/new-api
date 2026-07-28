@@ -4761,6 +4761,7 @@
     "Success rate": "成功率",
     "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.": "直近 20 回の呼び出し成功率は {{rate}}% です。チャネルの性能が不安定です。",
     "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.": "直近 20 回の呼び出し成功率は {{rate}}% にとどまります。別のグループへの切り替えを検討してください。",
+    "Success rate in the selected {{hours}}h period is {{rate}}%.": "選択した {{hours}} 時間の成功率は {{rate}}% です。",
     "Successfully created {{count}} API Key(s)": "{{count}}個のAPIキーが正常に作成されました",
     "Successfully created {{count}} redemption codes": "{{count}}件の引き換えコードが正常に作成されました",
     "Successfully deleted {{count}} API key(s)": "{{count}}個のAPIキーが正常に削除されました",

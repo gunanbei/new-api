@@ -4761,6 +4761,7 @@
     "Success rate": "Success rate",
     "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.": "Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.",
     "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.": "Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.",
+    "Success rate in the selected {{hours}}h period is {{rate}}%.": "Success rate in the selected {{hours}}h period is {{rate}}%.",
     "Successfully created {{count}} API Key(s)": "Successfully created {{count}} API Key(s)",
     "Successfully created {{count}} redemption codes": "Successfully created {{count}} redemption codes",
     "Successfully deleted {{count}} API key(s)": "Successfully deleted {{count}} API key(s)",

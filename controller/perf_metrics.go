@@ -2,8 +2,10 @@ package controller
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 
+	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -19,7 +21,7 @@ func GetPerfMetricsSummary(c *gin.Context) {
 		}
 	}
 
-	activeGroups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
+	activeGroups := activePerfMetricGroups(ratio_setting.GetGroupRatioCopy())
 	result, err := perfmetrics.QuerySummaryAll(hours, activeGroups)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -82,8 +84,16 @@ func GetPerfMetricsGroups(c *gin.Context) {
 	}
 
 	ratios := ratio_setting.GetGroupRatioCopy()
-	activeGroups := append(lo.Keys(ratios), "auto")
+	activeGroups := activePerfMetricGroups(ratios)
 	summaries, err := perfmetrics.QueryGroupSummaryAll(hours, activeGroups)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	channelStatuses, err := model.GetGroupChannelStatuses(activeGroups)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -110,6 +120,8 @@ func GetPerfMetricsGroups(c *gin.Context) {
 				Series: []perfmetrics.BucketPoint{},
 			}
 		}
+		channelStatus := channelStatuses[group]
+		perfmetrics.ApplyGroupStatus(&summary, channelStatus.ChannelCount, channelStatus.DisabledChannelCount)
 		var ratio *float64
 		if value, ok := ratios[group]; ok {
 			ratio = &value
@@ -121,6 +133,13 @@ func GetPerfMetricsGroups(c *gin.Context) {
 		"success": true,
 		"data":    result,
 	})
+}
+
+func activePerfMetricGroups(ratios map[string]float64) []string {
+	delete(ratios, "auto")
+	groups := append(lo.Keys(ratios), "auto")
+	sort.Strings(groups)
+	return groups
 }
 
 func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupResult {

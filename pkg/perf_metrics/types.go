@@ -64,21 +64,28 @@ type SummaryAllResult struct {
 }
 
 type GroupSummary struct {
-	Group          string        `json:"group"`
-	Status         string        `json:"status"`
-	AvgTtftMs      int64         `json:"avg_ttft_ms"`
-	AvgLatencyMs   int64         `json:"avg_latency_ms"`
-	SuccessRate    float64       `json:"success_rate"`
-	Availability   float64       `json:"availability"`
-	AvgTps         float64       `json:"avg_tps"`
-	RequestCount   int64         `json:"request_count"`
-	LastUpdated    int64         `json:"last_updated"`
-	LatestTtftMs   int64         `json:"latest_ttft_ms"`
-	LatestTps      float64       `json:"latest_tps"`
-	CacheHitRate   float64       `json:"cache_hit_rate"`
-	CacheHitTokens int64         `json:"cache_hit_tokens"`
-	InputTokens    int64         `json:"input_tokens"`
-	Series         []BucketPoint `json:"series"`
+	Group          string         `json:"group"`
+	Status         string         `json:"status"`
+	AvgTtftMs      int64          `json:"avg_ttft_ms"`
+	AvgLatencyMs   int64          `json:"avg_latency_ms"`
+	SuccessRate    float64        `json:"success_rate"`
+	Availability   float64        `json:"availability"`
+	AvgTps         float64        `json:"avg_tps"`
+	RequestCount   int64          `json:"request_count"`
+	LastUpdated    int64          `json:"last_updated"`
+	LatestTtftMs   int64          `json:"latest_ttft_ms"`
+	LatestTps      float64        `json:"latest_tps"`
+	CacheHitRate   float64        `json:"cache_hit_rate"`
+	CacheHitTokens int64          `json:"cache_hit_tokens"`
+	InputTokens    int64          `json:"input_tokens"`
+	Series         []BucketPoint  `json:"series"`
+	StatusReasons  []StatusReason `json:"status_reasons,omitempty"`
+}
+
+type StatusReason struct {
+	Code             string  `json:"code"`
+	SuccessRate      float64 `json:"success_rate"`
+	FluctuationCount int     `json:"fluctuation_count"`
 }
 
 type bucketKey struct {

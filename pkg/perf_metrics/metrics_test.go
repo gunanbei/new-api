@@ -1,7 +1,9 @@
 package perfmetrics
 
 import (
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -31,4 +33,39 @@ func TestBuildGroupSummaries(t *testing.T) {
 	require.EqualValues(t, 500, summaries[0].InputTokens)
 	require.Equal(t, 20.0, summaries[0].Series[1].CacheHitRate)
 	require.Equal(t, []int64{1, 2}, []int64{summaries[0].Series[0].Ts, summaries[0].Series[1].Ts})
+}
+
+func TestApplyGroupStatus(t *testing.T) {
+	groupMonitorStates = sync.Map{}
+	now := time.Now()
+	for range 20 {
+		recordGroupMonitorSample("available", true, 0, 0, now)
+	}
+	available := GroupSummary{Group: "available"}
+	ApplyGroupStatus(&available, 1, 0)
+	require.Equal(t, "available", available.Status)
+
+	for range 13 {
+		recordGroupMonitorSample("error", true, 0, 0, now)
+	}
+	for range 7 {
+		recordGroupMonitorSample("error", false, 0, 0, now)
+	}
+	errorSummary := GroupSummary{Group: "error"}
+	ApplyGroupStatus(&errorSummary, 1, 0)
+	require.Equal(t, "error", errorSummary.Status)
+	require.Contains(t, errorSummary.StatusReasons, StatusReason{Code: "recent_success_rate_error", SuccessRate: 65})
+}
+
+func TestApplyGroupStatusWithInsufficientSamples(t *testing.T) {
+	groupMonitorStates = sync.Map{}
+
+	historicalSuccess := GroupSummary{Group: "historical-success", RequestCount: 1, Availability: 100}
+	ApplyGroupStatus(&historicalSuccess, 1, 0)
+	require.Equal(t, "available", historicalSuccess.Status)
+
+	unknown := GroupSummary{Group: "unknown", RequestCount: 1}
+	ApplyGroupStatus(&unknown, 1, 0)
+	require.Equal(t, "unknown", unknown.Status)
+	require.Contains(t, unknown.StatusReasons, StatusReason{Code: "insufficient_sampling"})
 }

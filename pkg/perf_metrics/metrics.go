@@ -15,6 +15,7 @@ import (
 )
 
 var hotBuckets sync.Map
+var groupMonitorStates sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -77,11 +78,13 @@ func Record(sample Sample) {
 	if sample.InputTokens < sample.CacheHitTokens {
 		sample.InputTokens = sample.CacheHitTokens
 	}
+	now := time.Now()
+	recordGroupMonitorSample(sample.Group, sample.Success, sample.CacheHitTokens, sample.InputTokens, now)
 
 	key := bucketKey{
 		model:    sample.Model,
 		group:    sample.Group,
-		bucketTs: bucketStart(time.Now().Unix()),
+		bucketTs: bucketStart(now.Unix()),
 	}
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
@@ -311,10 +314,10 @@ func buildGroupSummaries(groupBuckets map[string]map[int64]counters) []GroupSumm
 			total.inputTokens += value.inputTokens
 			series = append(series, bucketPoint(ts, value))
 		}
-		status := "unknown"
 		lastUpdated := int64(0)
 		latestTtftMs := int64(0)
 		latestTps := 0.0
+		status := "unknown"
 		if len(series) > 0 {
 			last := series[len(series)-1]
 			lastUpdated = last.Ts
@@ -348,6 +351,160 @@ func buildGroupSummaries(groupBuckets map[string]map[int64]counters) []GroupSumm
 		})
 	}
 	return summaries
+}
+
+func recordGroupMonitorSample(group string, success bool, cacheHitTokens int64, inputTokens int64, now time.Time) {
+	stateValue, _ := groupMonitorStates.LoadOrStore(group, &groupMonitorState{})
+	state := stateValue.(*groupMonitorState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	state.recentCalls = append(state.recentCalls, success)
+	if len(state.recentCalls) > 20 {
+		state.recentCalls = state.recentCalls[len(state.recentCalls)-20:]
+	}
+	state.hasLastCall = true
+	state.lastCallSuccess = success
+	if inputTokens <= 0 {
+		return
+	}
+
+	cacheHitRate := float64(cacheHitTokens) / float64(inputTokens) * 100
+	if state.hasLastCacheHitRate && math.Abs(state.lastCacheHitRate-cacheHitRate) > 20 {
+		state.cacheFluctuationEvents = append(state.cacheFluctuationEvents, now)
+	}
+	state.hasLastCacheHitRate = true
+	state.lastCacheHitRate = cacheHitRate
+	state.cacheFluctuationEvents = filterCacheFluctuationEvents(state.cacheFluctuationEvents, now.Add(-6*time.Hour))
+}
+
+type groupMonitorState struct {
+	mu                     sync.Mutex
+	recentCalls            []bool
+	hasLastCall            bool
+	lastCallSuccess        bool
+	hasLastCacheHitRate    bool
+	lastCacheHitRate       float64
+	cacheFluctuationEvents []time.Time
+}
+
+type groupMonitorSnapshot struct {
+	recentCalls       []bool
+	hasLastCall       bool
+	lastCallSuccess   bool
+	cacheFluctuations int
+}
+
+func groupMonitorStatus(group string) groupMonitorSnapshot {
+	stateValue, ok := groupMonitorStates.Load(group)
+	if !ok {
+		return groupMonitorSnapshot{}
+	}
+	state := stateValue.(*groupMonitorState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.cacheFluctuationEvents = filterCacheFluctuationEvents(state.cacheFluctuationEvents, time.Now().Add(-6*time.Hour))
+	return groupMonitorSnapshot{
+		recentCalls:       append([]bool(nil), state.recentCalls...),
+		hasLastCall:       state.hasLastCall,
+		lastCallSuccess:   state.lastCallSuccess,
+		cacheFluctuations: len(state.cacheFluctuationEvents),
+	}
+}
+
+func filterCacheFluctuationEvents(events []time.Time, cutoff time.Time) []time.Time {
+	first := 0
+	for first < len(events) && events[first].Before(cutoff) {
+		first++
+	}
+	return events[first:]
+}
+
+func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannelCount int64) {
+	if summary == nil {
+		return
+	}
+
+	status := groupMonitorStatus(summary.Group)
+	if channelCount > 0 && disabledChannelCount >= channelCount {
+		summary.Status = "error"
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "all_channels_disabled"})
+		return
+	}
+	if len(status.recentCalls) < 20 && summary.RequestCount < 20 {
+		if (len(status.recentCalls) > 0 && recentSuccessRate(status.recentCalls) > 0) || summary.Availability > 0 {
+			summary.Status = "available"
+			return
+		}
+		summary.Status = "unknown"
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "insufficient_sampling"})
+		return
+	}
+	if len(status.recentCalls) > 0 {
+		recentSuccessRate := recentSuccessRate(status.recentCalls)
+		if recentSuccessRate < 70 {
+			summary.StatusReasons = append(summary.StatusReasons, StatusReason{
+				Code:        "recent_success_rate_error",
+				SuccessRate: recentSuccessRate,
+			})
+		}
+	}
+	if status.hasLastCall && !status.lastCallSuccess {
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "last_call_failed"})
+	}
+	if len(summary.StatusReasons) > 0 {
+		summary.Status = "error"
+		return
+	}
+
+	if len(summary.Series) > 0 {
+		latestSuccessRate := summary.Series[len(summary.Series)-1].SuccessRate
+		if latestSuccessRate < 99.9 {
+			summary.StatusReasons = append(summary.StatusReasons, StatusReason{
+				Code:        "latest_bucket_success_rate",
+				SuccessRate: latestSuccessRate,
+			})
+		}
+	}
+	if status.cacheFluctuations > 20 {
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{
+			Code:             "cache_hit_rate_volatility",
+			FluctuationCount: status.cacheFluctuations,
+		})
+	}
+	if len(status.recentCalls) > 0 {
+		recentSuccessRate := recentSuccessRate(status.recentCalls)
+		if recentSuccessRate >= 70 && recentSuccessRate < 98 {
+			summary.StatusReasons = append(summary.StatusReasons, StatusReason{
+				Code:        "recent_success_rate_warning",
+				SuccessRate: recentSuccessRate,
+			})
+		}
+	}
+	if channelCount > 0 && disabledChannelCount > 0 {
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "channels_disabled"})
+	}
+	if len(summary.StatusReasons) > 0 {
+		summary.Status = "warning"
+		return
+	}
+
+	if len(status.recentCalls) >= 20 && recentSuccessRate(status.recentCalls) >= 98 {
+		summary.Status = "available"
+		return
+	}
+	summary.Status = "unknown"
+	summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "insufficient_sampling"})
+}
+
+func recentSuccessRate(calls []bool) float64 {
+	successCount := 0
+	for _, success := range calls {
+		if success {
+			successCount++
+		}
+	}
+	return float64(successCount) / float64(len(calls)) * 100
 }
 
 func mergeModelTotals(totals map[string]counters, modelName string, value counters) {

@@ -72,6 +72,11 @@ export type PerfGroupMonitor = {
   request_count: number
   last_updated: number
   series: PerformanceSeriesPoint[]
+  status_reasons?: Array<{
+    code: string
+    success_rate: number
+    fluctuation_count: number
+  }>
 }
 
 export type PerfGroupMonitorData = {

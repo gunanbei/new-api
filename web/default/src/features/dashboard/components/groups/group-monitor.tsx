@@ -17,13 +17,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ChevronsUpDown, RefreshCw } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
+  CircleAlert,
+  CircleX,
+  RefreshCw,
+} from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { getPerfMetricsGroups } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -109,24 +126,101 @@ function SortableHeader(props: {
   )
 }
 
-function StatusBadge(props: { status: PerfGroupMonitor['status'] }) {
+function StatusBadge(props: { group: PerfGroupMonitor; hours: number }) {
   const { t } = useTranslation()
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const labelKey = {
     available: 'Available',
     warning: 'Warning',
     error: 'Error',
     unknown: 'Unknown',
-  }[props.status]
+  }[props.group.status]
+  const reasonTexts = (props.group.status_reasons ?? []).map((reason) => {
+    if (reason.code === 'latest_bucket_success_rate') {
+      return t('Current {{hours}}h success rate is {{rate}}%.', {
+        hours: props.hours,
+        rate: reason.success_rate.toFixed(2),
+      })
+    }
+    if (reason.code === 'cache_hit_rate_volatility') {
+      return t(
+        'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.',
+        { count: reason.fluctuation_count }
+      )
+    }
+    if (reason.code === 'recent_success_rate_warning') {
+      return t(
+        'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.',
+        { rate: reason.success_rate.toFixed(2) }
+      )
+    }
+    if (reason.code === 'channels_disabled') {
+      return t(
+        'Some channels in this group are disabled. Group availability may fluctuate.'
+      )
+    }
+    if (reason.code === 'recent_success_rate_error') {
+      return t(
+        'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.',
+        { rate: reason.success_rate.toFixed(2) }
+      )
+    }
+    if (reason.code === 'all_channels_disabled') {
+      return t(
+        'This group is currently unavailable because all of its channels are disabled.'
+      )
+    }
+    if (reason.code === 'insufficient_sampling') {
+      return t('Insufficient sampling data.')
+    }
+    return t(
+      'The latest call failed. Check the upstream channel error details.'
+    )
+  })
+
+  const reasonDetails = reasonTexts.map((reasonText) => (
+    <div key={reasonText}>{reasonText}</div>
+  ))
 
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium',
-        STATUS_STYLES[props.status]
+        STATUS_STYLES[props.group.status]
       )}
     >
       <span className='size-1.5 rounded-full bg-current' aria-hidden='true' />
       {t(labelKey)}
+      {reasonTexts.length > 0 && (
+        <Tooltip open={isPopoverOpen ? false : undefined}>
+          <TooltipTrigger render={<span className='inline-flex' />}>
+            <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    className='size-4 text-current hover:bg-transparent hover:text-current'
+                    aria-label={reasonTexts.join(' ')}
+                  />
+                }
+              >
+                {props.group.status === 'error' ? (
+                  <CircleX className='size-3.5' />
+                ) : (
+                  <CircleAlert className='size-3.5' />
+                )}
+              </PopoverTrigger>
+              <PopoverContent className='max-w-xs whitespace-normal'>
+                <div className='space-y-1'>{reasonDetails}</div>
+              </PopoverContent>
+            </Popover>
+          </TooltipTrigger>
+          <TooltipContent className='max-w-xs whitespace-normal'>
+            <div className='space-y-1'>{reasonDetails}</div>
+          </TooltipContent>
+        </Tooltip>
+      )}
     </span>
   )
 }
@@ -234,7 +328,7 @@ export function GroupMonitor() {
           {group.ratio?.toFixed(2) ?? '—'}
         </td>
         <td className='px-4 py-3.5'>
-          <StatusBadge status={group.status} />
+          <StatusBadge group={group} hours={hours} />
         </td>
         <td className='px-4 py-3.5 font-mono tabular-nums'>
           {formatLatency(group.latest_ttft_ms)}

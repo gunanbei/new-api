@@ -109,6 +109,21 @@ const newKeys = {
     'not validated': 'not validated',
     'validation in progress': 'validation in progress',
     validated: 'validated',
+    'Current {{hours}}h success rate is {{rate}}%.':
+      'Current {{hours}}h success rate is {{rate}}%.',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      'Some channels in this group are disabled. Group availability may fluctuate.',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.',
+    'This group is currently unavailable because all of its channels are disabled.':
+      'This group is currently unavailable because all of its channels are disabled.',
+    'Insufficient sampling data.': 'Insufficient sampling data.',
+    'The latest call failed. Check the upstream channel error details.':
+      'The latest call failed. Check the upstream channel error details.',
   },
   zh: {
     'Archive upload started.': '已开始上传归档。',
@@ -192,8 +207,38 @@ const newKeys = {
     'not validated': '尚未校验',
     'validation in progress': '正在校验',
     validated: '已验证',
+    'Current {{hours}}h success rate is {{rate}}%.':
+      '当前 {{hours}} 小时内成功率为 {{rate}}%。',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      '最近 6 小时内缓存命中率波动超过 20%，当前波动次数：{{count}} 次。上游渠道可能频繁切换，请注意查看缓存率。',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      '最近 20 次调用成功率为 {{rate}}%，渠道波动较大。',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      '分组中部分渠道已禁用，分组可用性存在一定波动。',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      '最近 20 次调用成功率仅有 {{rate}}%，建议暂时切换其它分组使用。',
+    'This group is currently unavailable because all of its channels are disabled.':
+      '分组暂不可用，所有渠道均已禁用。',
+    'Insufficient sampling data.': '采样数据不足。',
+    'The latest call failed. Check the upstream channel error details.':
+      '上一次调用失败，请查看上游渠道错误详情。',
   },
   'zh-TW': {
+    'Current {{hours}}h success rate is {{rate}}%.':
+      '目前 {{hours}} 小時內成功率為 {{rate}}%。',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      '最近 6 小時內快取命中率波動超過 20%，目前波動次數：{{count}} 次。上游渠道可能頻繁切換，請注意查看快取率。',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      '最近 20 次呼叫成功率為 {{rate}}%，渠道波動較大。',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      '分組中部分渠道已停用，分組可用性存在一定波動。',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      '最近 20 次呼叫成功率僅有 {{rate}}%，建議暫時切換其他分組使用。',
+    'This group is currently unavailable because all of its channels are disabled.':
+      '分組暫不可用，所有渠道均已停用。',
+    'Insufficient sampling data.': '採樣資料不足。',
+    'The latest call failed. Check the upstream channel error details.':
+      '上一次呼叫失敗，請查看上游渠道錯誤詳情。',
     'Archive upload started.': '已開始上傳封存。',
     'Failed to start archive upload': '無法開始上傳封存',
     'Inflight CSV disk usage': '在途 CSV 磁碟使用量',
@@ -279,6 +324,21 @@ const newKeys = {
     validated: '已驗證',
   },
   fr: {
+    'Current {{hours}}h success rate is {{rate}}%.':
+      'Le taux de réussite sur {{hours}} h est de {{rate}} %.',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      'Le taux de cache a varié de plus de 20 % {{count}} fois au cours des 6 dernières heures. Les canaux amont changent peut-être fréquemment.',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      'Le taux de réussite des 20 derniers appels est de {{rate}} %. Les performances du canal sont instables.',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      'Certains canaux de ce groupe sont désactivés. La disponibilité du groupe peut fluctuer.',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      'Le taux de réussite des 20 derniers appels n’est que de {{rate}} %. Envisagez un autre groupe.',
+    'This group is currently unavailable because all of its channels are disabled.':
+      'Ce groupe est actuellement indisponible, car tous ses canaux sont désactivés.',
+    'Insufficient sampling data.': 'Données d’échantillonnage insuffisantes.',
+    'The latest call failed. Check the upstream channel error details.':
+      'Le dernier appel a échoué. Consultez les détails de l’erreur du canal amont.',
     'Archive upload started.': 'Envoi de l’archive démarré.',
     'Failed to start archive upload':
       'Impossible de démarrer l’envoi de l’archive',
@@ -395,6 +455,21 @@ const newKeys = {
     validated: 'validé',
   },
   ja: {
+    'Current {{hours}}h success rate is {{rate}}%.':
+      '現在の {{hours}} 時間の成功率は {{rate}}% です。',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      '過去 6 時間にキャッシュヒット率が 20% 超変動した回数は {{count}} 回です。上流チャネルが頻繁に切り替わっている可能性があります。',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      '直近 20 回の呼び出し成功率は {{rate}}% です。チャネルの性能が不安定です。',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      'このグループの一部チャネルは無効です。グループの可用性が変動する可能性があります。',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      '直近 20 回の呼び出し成功率は {{rate}}% にとどまります。別のグループへの切り替えを検討してください。',
+    'This group is currently unavailable because all of its channels are disabled.':
+      'すべてのチャネルが無効なため、このグループは現在利用できません。',
+    'Insufficient sampling data.': 'サンプリングデータが不足しています。',
+    'The latest call failed. Check the upstream channel error details.':
+      '直近の呼び出しに失敗しました。上流チャネルのエラー詳細を確認してください。',
     'Archive upload started.': 'アーカイブのアップロードを開始しました。',
     'Failed to start archive upload':
       'アーカイブのアップロードを開始できませんでした',
@@ -512,6 +587,21 @@ const newKeys = {
     validated: '検証済み',
   },
   ru: {
+    'Current {{hours}}h success rate is {{rate}}%.':
+      'Успешность за {{hours}} ч. составляет {{rate}}%.',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      'За последние 6 часов процент попаданий в кеш менялся более чем на 20% {{count}} раз. Возможно, upstream-каналы часто переключаются.',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      'Успешность последних 20 вызовов составляет {{rate}}%. Работа канала нестабильна.',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      'Некоторые каналы этой группы отключены. Доступность группы может колебаться.',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      'Успешность последних 20 вызовов составляет лишь {{rate}}%. Рассмотрите переход в другую группу.',
+    'This group is currently unavailable because all of its channels are disabled.':
+      'Эта группа сейчас недоступна, так как все ее каналы отключены.',
+    'Insufficient sampling data.': 'Недостаточно данных выборки.',
+    'The latest call failed. Check the upstream channel error details.':
+      'Последний вызов завершился ошибкой. Проверьте детали ошибки upstream-канала.',
     'Archive upload started.': 'Загрузка архива начата.',
     'Failed to start archive upload': 'Не удалось начать загрузку архива',
     'Inflight CSV disk usage': 'Использование диска CSV в процессе',
@@ -626,6 +716,21 @@ const newKeys = {
     validated: 'проверено',
   },
   vi: {
+    'Current {{hours}}h success rate is {{rate}}%.':
+      'Tỷ lệ thành công trong {{hours}} giờ hiện là {{rate}}%.',
+    'Cache hit rate fluctuated by over 20% {{count}} times in the last 6 hours. Upstream channels may be switching frequently.':
+      'Tỷ lệ trúng bộ nhớ đệm đã dao động trên 20% {{count}} lần trong 6 giờ qua. Các kênh upstream có thể đang chuyển đổi thường xuyên.',
+    'Success rate across the latest 20 calls is {{rate}}%. Channel performance is unstable.':
+      'Tỷ lệ thành công của 20 lần gọi gần nhất là {{rate}}%. Hiệu năng kênh không ổn định.',
+    'Some channels in this group are disabled. Group availability may fluctuate.':
+      'Một số kênh trong nhóm này đã bị tắt. Khả dụng của nhóm có thể dao động.',
+    'Success rate across the latest 20 calls is only {{rate}}%. Consider switching to another group.':
+      'Tỷ lệ thành công của 20 lần gọi gần nhất chỉ là {{rate}}%. Hãy cân nhắc chuyển sang nhóm khác.',
+    'This group is currently unavailable because all of its channels are disabled.':
+      'Nhóm này hiện không khả dụng vì mọi kênh đều đã bị tắt.',
+    'Insufficient sampling data.': 'Không đủ dữ liệu lấy mẫu.',
+    'The latest call failed. Check the upstream channel error details.':
+      'Lần gọi gần nhất đã thất bại. Hãy kiểm tra chi tiết lỗi kênh upstream.',
     'Archive upload started.': 'Đã bắt đầu tải lên kho lưu trữ.',
     'Failed to start archive upload': 'Không thể bắt đầu tải lên kho lưu trữ',
     'Inflight CSV disk usage': 'Dung lượng đĩa CSV đang xử lý',

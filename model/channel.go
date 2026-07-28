@@ -161,6 +161,29 @@ func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
 	return query.Where(channelGroupFilterCondition(), channelGroupFilterPattern(group))
 }
 
+type GroupChannelStatus struct {
+	ChannelCount         int64
+	DisabledChannelCount int64
+}
+
+func GetGroupChannelStatuses(groups []string) (map[string]GroupChannelStatus, error) {
+	statuses := make(map[string]GroupChannelStatus, len(groups))
+	for _, group := range groups {
+		query := ApplyChannelGroupFilter(DB.Model(&Channel{}), group)
+		var status GroupChannelStatus
+		if err := query.Count(&status.ChannelCount).Error; err != nil {
+			return nil, err
+		}
+		if status.ChannelCount > 0 {
+			if err := query.Where("status != ?", common.ChannelStatusEnabled).Count(&status.DisabledChannelCount).Error; err != nil {
+				return nil, err
+			}
+		}
+		statuses[group] = status
+	}
+	return statuses, nil
+}
+
 // Value implements driver.Valuer interface
 func (c ChannelInfo) Value() (driver.Value, error) {
 	return common.Marshal(&c)

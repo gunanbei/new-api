@@ -323,13 +323,10 @@ func buildGroupSummaries(groupBuckets map[string]map[int64]counters) []GroupSumm
 			lastUpdated = last.Ts
 			latestTtftMs = last.AvgTtftMs
 			latestTps = last.AvgTps
-			switch {
-			case last.SuccessRate >= 99.9:
+			if last.SuccessRate >= 90 {
 				status = "available"
-			case last.SuccessRate >= 90:
+			} else {
 				status = "warning"
-			default:
-				status = "error"
 			}
 		}
 		summaries = append(summaries, GroupSummary{
@@ -431,11 +428,18 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "all_channels_disabled"})
 		return
 	}
-	if len(status.recentCalls) < 20 && summary.RequestCount < 20 {
-		if (len(status.recentCalls) > 0 && recentSuccessRate(status.recentCalls) > 0) || summary.Availability > 0 {
-			summary.Status = "available"
-			return
+
+	currentBucketTs := bucketStart(time.Now().Unix())
+	currentBucketCalled := false
+	currentBucketSuccessRate := 0.0
+	for _, bucket := range summary.Series {
+		if bucket.Ts == currentBucketTs {
+			currentBucketCalled = true
+			currentBucketSuccessRate = bucket.SuccessRate
+			break
 		}
+	}
+	if !currentBucketCalled {
 		summary.Status = "unknown"
 		summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "insufficient_sampling"})
 		return
@@ -457,14 +461,11 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		return
 	}
 
-	if len(summary.Series) > 0 {
-		latestSuccessRate := summary.Series[len(summary.Series)-1].SuccessRate
-		if latestSuccessRate < 99.9 {
-			summary.StatusReasons = append(summary.StatusReasons, StatusReason{
-				Code:        "latest_bucket_success_rate",
-				SuccessRate: latestSuccessRate,
-			})
-		}
+	if currentBucketSuccessRate < 90 {
+		summary.StatusReasons = append(summary.StatusReasons, StatusReason{
+			Code:        "latest_bucket_success_rate",
+			SuccessRate: currentBucketSuccessRate,
+		})
 	}
 	if status.cacheFluctuations > 20 {
 		summary.StatusReasons = append(summary.StatusReasons, StatusReason{
@@ -489,20 +490,7 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		return
 	}
 
-	// Recent call samples are process-local and are empty after a restart. When
-	// persisted metrics already provide enough requests, retain the status that
-	// buildGroupSummaries derived from the latest metrics bucket instead of
-	// reporting an otherwise healthy group as unknown.
-	if summary.RequestCount >= 20 && len(summary.Series) > 0 {
-		return
-	}
-
-	if len(status.recentCalls) >= 20 && recentSuccessRate(status.recentCalls) >= 98 {
-		summary.Status = "available"
-		return
-	}
-	summary.Status = "unknown"
-	summary.StatusReasons = append(summary.StatusReasons, StatusReason{Code: "insufficient_sampling"})
+	summary.Status = "available"
 }
 
 func recentSuccessRate(calls []bool) float64 {

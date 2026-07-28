@@ -455,6 +455,47 @@ func TestEnsureInflightAttemptCoverageBackfillsMissingInitialAttempt(t *testing.
 	assert.Equal(t, "API key is disabled", detail.Attempts[2].Error)
 }
 
+func TestEnsureInflightAttemptCoverageRestoresMissingAttemptFromFailoverAudit(t *testing.T) {
+	detail := &InflightTaskDetail{
+		RetryIndex: 1,
+		Attempts: []InflightTaskAttempt{{
+			RetryIndex:  1,
+			ChannelID:   19,
+			ChannelName: "second",
+			Status:      InflightTaskStatusFailed,
+			StartedAt:   120,
+			UpdatedAt:   130,
+		}},
+		FailoverAudit: &relaycommon.FailoverAuditTrail{Events: []relaycommon.FailoverAuditEvent{
+			{
+				RetryIndex:  0,
+				TimestampMS: 100_000,
+				Event:       "attempt_started",
+				ChannelID:   16,
+				ChannelName: "first",
+			},
+			{
+				RetryIndex:  0,
+				TimestampMS: 110_000,
+				Event:       "rollback_started",
+				Error:       "upstream timeout",
+			},
+		}},
+	}
+
+	ensureInflightAttemptCoverage(detail, InflightTaskStatusFailed, 130)
+
+	require.Len(t, detail.Attempts, 2)
+	first := detail.Attempts[0]
+	assert.Equal(t, 0, first.RetryIndex)
+	assert.Equal(t, InflightTaskStatusFailed, first.Status)
+	assert.Equal(t, 16, first.ChannelID)
+	assert.Equal(t, "first", first.ChannelName)
+	assert.Equal(t, "upstream timeout", first.Error)
+	assert.Equal(t, int64(100), first.StartedAt)
+	assert.Equal(t, int64(110), first.UpdatedAt)
+}
+
 func TestUpdateInflightTaskDetailCreatesMissingRetryAttempt(t *testing.T) {
 	detail := &InflightTaskDetail{
 		RetryIndex:  6,

@@ -826,6 +826,37 @@ function attemptFromChannel(
   }
 }
 
+function attemptFromFailoverAudit(
+  task: InflightTask,
+  retryIndex: number
+): InflightTaskAttempt | undefined {
+  const events = (task.detail?.failover_audit?.events ?? []).filter(
+    (event) => event.retry_index === retryIndex
+  )
+  if (events.length === 0) {
+    return undefined
+  }
+
+  const firstEvent = events[0]
+  const lastEvent = events.at(-1)
+  const channelEvent = events.find(
+    (event) => event.channel_id || event.channel_name
+  )
+  const errorEvent = events.find((event) => event.error || event.reason)
+  const isCurrentAttempt = retryIndex === getRetryIndex(task)
+  return {
+    retry_index: retryIndex,
+    channel_id: channelEvent?.channel_id,
+    channel_name: channelEvent?.channel_name,
+    status: isCurrentAttempt ? task.status : 'failed',
+    error: errorEvent?.error || errorEvent?.reason,
+    started_at: Math.floor(firstEvent.timestamp_ms / 1000),
+    updated_at: Math.floor(
+      (lastEvent?.timestamp_ms ?? firstEvent.timestamp_ms) / 1000
+    ),
+  }
+}
+
 function fillMissingInflightAttempts(
   task: InflightTask,
   resolved: InflightTaskAttempt[]
@@ -852,6 +883,11 @@ function fillMissingInflightAttempts(
       byRetry.set(index, attemptFromChannel(chain, task))
       continue
     }
+    const auditAttempt = attemptFromFailoverAudit(task, index)
+    if (auditAttempt) {
+      byRetry.set(index, auditAttempt)
+      continue
+    }
     if (
       index === retryIndex &&
       (task.detail?.channel_id || task.detail?.channel_name)
@@ -866,7 +902,14 @@ function fillMissingInflightAttempts(
         updated_at: task.updated_at,
         timeline: task.detail.timeline,
       })
+      continue
     }
+    byRetry.set(index, {
+      retry_index: index,
+      status: index === retryIndex ? task.status : 'failed',
+      started_at: task.created_at,
+      updated_at: task.updated_at,
+    })
   }
 
   return dedupeAndSortAttempts([...byRetry.values()])
@@ -1204,7 +1247,7 @@ function FailoverTransitionDetail(props: {
     props.transition.target?.event === 'selection_failed'
 
   return (
-    <div className='space-y-3 border-y border-amber-400/40 bg-amber-50/40 py-3 dark:bg-amber-950/10'>
+    <div className='max-w-full min-w-0 space-y-3 overflow-hidden rounded-md border border-amber-400/40 bg-amber-50/40 p-3 dark:bg-amber-950/10'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <div className='flex items-center gap-2 text-amber-700 dark:text-amber-300'>
           <GitBranch className='size-4 shrink-0' aria-hidden='true' />
@@ -1676,7 +1719,7 @@ function InflightTaskDetailsDialog(props: {
       }
     >
       {task ? (
-        <div className='max-h-[calc(100dvh-8.5rem)] space-y-3 overflow-y-auto py-2 pr-1 sm:max-h-[72vh] sm:space-y-4'>
+        <div className='space-y-3 py-2 pr-1 sm:space-y-4'>
           <InflightTaskDetails task={task} isAdmin={props.isAdmin} />
         </div>
       ) : null}
@@ -1878,7 +1921,7 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
               }
               return (
                 <Fragment
-                  key={`${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
+                  key={`${attempts.length}-${attempt.retry_index}-${attempt.channel_id ?? 'none'}-${attempt.started_at ?? 0}`}
                 >
                   <Collapsible
                     defaultOpen={defaultOpen}

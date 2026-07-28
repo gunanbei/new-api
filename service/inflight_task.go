@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -44,6 +45,19 @@ const (
 var errInflightTaskUnavailable = errors.New("功能暂不可用，请联系管理员")
 
 const inflightTaskFinalizeTimeout = 5 * time.Second
+
+type inflightTaskAsyncUpdate struct {
+	parent context.Context
+	task   *InflightTask
+}
+
+type inflightTaskAsyncQueue struct {
+	updates []inflightTaskAsyncUpdate
+	running bool
+}
+
+var inflightTaskAsyncQueues = make(map[string]*inflightTaskAsyncQueue)
+var inflightTaskAsyncQueuesMutex sync.Mutex
 
 func IsInflightTaskUnavailable(err error) bool {
 	return errors.Is(err, errInflightTaskUnavailable)
@@ -614,9 +628,15 @@ func ensureInflightAttemptCoverage(detail *InflightTaskDetail, status string, no
 			})
 			continue
 		}
-		if retryIndex == detail.RetryIndex && (detail.ChannelID != 0 || detail.ChannelName != "") {
-			appendInflightAttempt(detail, retryIndex, status, now)
+		if attempt, ok := inflightAttemptFromFailoverAudit(detail, retryIndex, status, now); ok {
+			upsertInflightAttempt(detail, attempt)
+			continue
 		}
+		attemptStatus := status
+		if retryIndex < detail.RetryIndex {
+			attemptStatus = InflightTaskStatusFailed
+		}
+		appendInflightAttempt(detail, retryIndex, attemptStatus, now)
 	}
 	for i := range detail.Attempts {
 		attempt := detail.Attempts[i]
@@ -633,6 +653,59 @@ func ensureInflightAttemptCoverage(detail *InflightTaskDetail, status string, no
 			UpdatedAt:   attempt.UpdatedAt,
 		})
 	}
+}
+
+// inflightAttemptFromFailoverAudit recovers a slot when earlier asynchronous
+// status writes lost their race with a later retry. The audit trail is recorded
+// synchronously by the relay and still identifies the attempted channel.
+func inflightAttemptFromFailoverAudit(detail *InflightTaskDetail, retryIndex int, status string, now int64) (InflightTaskAttempt, bool) {
+	if detail == nil || detail.FailoverAudit == nil {
+		return InflightTaskAttempt{}, false
+	}
+
+	attempt := InflightTaskAttempt{RetryIndex: retryIndex}
+	found := false
+	for _, event := range detail.FailoverAudit.Events {
+		if event.RetryIndex != retryIndex {
+			continue
+		}
+		found = true
+		timestamp := event.TimestampMS / 1000
+		if timestamp > 0 && (attempt.StartedAt == 0 || timestamp < attempt.StartedAt) {
+			attempt.StartedAt = timestamp
+		}
+		if timestamp > attempt.UpdatedAt {
+			attempt.UpdatedAt = timestamp
+		}
+		if event.ChannelID != 0 {
+			attempt.ChannelID = event.ChannelID
+		}
+		if event.ChannelName != "" {
+			attempt.ChannelName = event.ChannelName
+		}
+		if attempt.Error == "" {
+			if event.Error != "" {
+				attempt.Error = event.Error
+			} else if event.Reason != "" {
+				attempt.Error = event.Reason
+			}
+		}
+	}
+	if !found {
+		return InflightTaskAttempt{}, false
+	}
+
+	attempt.Status = status
+	if retryIndex < detail.RetryIndex {
+		attempt.Status = InflightTaskStatusFailed
+	}
+	if attempt.StartedAt == 0 {
+		attempt.StartedAt = now
+	}
+	if attempt.UpdatedAt == 0 {
+		attempt.UpdatedAt = now
+	}
+	return attempt, true
 }
 
 // upsertInflightChannelAttempt merges an incoming channel attempt into the
@@ -929,21 +1002,48 @@ func UpdateInflightTaskStatusAsync(parent context.Context, info *relaycommon.Rel
 		return
 	}
 	task := inflightTaskFromRelayInfo(info, status)
-	gopool.Go(func() {
-		ctx, cancel := NewInflightTaskFinalizeContext(parent)
-		defer cancel()
+	inflightTaskAsyncQueuesMutex.Lock()
+	queue := inflightTaskAsyncQueues[task.RequestID]
+	if queue == nil {
+		queue = &inflightTaskAsyncQueue{}
+		inflightTaskAsyncQueues[task.RequestID] = queue
+	}
+	queue.updates = append(queue.updates, inflightTaskAsyncUpdate{parent: parent, task: task})
+	if queue.running {
+		inflightTaskAsyncQueuesMutex.Unlock()
+		return
+	}
+	queue.running = true
+	inflightTaskAsyncQueuesMutex.Unlock()
 
-		client, err := inflightTaskRedis()
-		if err != nil {
-			if !errors.Is(err, errInflightTaskUnavailable) {
-				common.SysError(fmt.Sprintf("update inflight log failed: %v", err))
-			}
+	gopool.Go(func() {
+		drainInflightTaskAsyncUpdates(task.RequestID)
+	})
+}
+
+func drainInflightTaskAsyncUpdates(requestID string) {
+	for {
+		inflightTaskAsyncQueuesMutex.Lock()
+		queue := inflightTaskAsyncQueues[requestID]
+		if queue == nil || len(queue.updates) == 0 {
+			delete(inflightTaskAsyncQueues, requestID)
+			inflightTaskAsyncQueuesMutex.Unlock()
 			return
 		}
-		if err = updateInflightTask(ctx, client, task); err != nil && !errors.Is(err, errInflightTaskUnavailable) {
+		update := queue.updates[0]
+		queue.updates = queue.updates[1:]
+		inflightTaskAsyncQueuesMutex.Unlock()
+
+		ctx, cancel := NewInflightTaskFinalizeContext(update.parent)
+		client, err := inflightTaskRedis()
+		if err == nil {
+			err = updateInflightTask(ctx, client, update.task)
+		}
+		cancel()
+		if err != nil && !errors.Is(err, errInflightTaskUnavailable) {
 			common.SysError(fmt.Sprintf("update inflight log failed: %v", err))
 		}
-	})
+	}
 }
 
 func MarkInflightTaskStreamStarted(c context.Context, info *relaycommon.RelayInfo) {

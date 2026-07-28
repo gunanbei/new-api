@@ -1653,6 +1653,62 @@ for (const [locale, translations] of Object.entries(failoverAuditUi)) {
   Object.assign(newKeys[locale], translations)
 }
 
+const groupMonitoringTrendUi = {
+  en: {
+    'Bar chart': 'Bar chart',
+    'Line chart': 'Line chart',
+    'No monitoring trend data': 'No monitoring trend data',
+    'Open monitoring trend': 'Open monitoring trend',
+    'First token latency': 'First token latency',
+  },
+  zh: {
+    'Bar chart': '柱状图',
+    'Line chart': '折线图',
+    'No monitoring trend data': '暂无监控趋势数据',
+    'Open monitoring trend': '打开监控趋势',
+    'First token latency': '首 Token 延迟',
+  },
+  'zh-TW': {
+    'Bar chart': '柱狀圖',
+    'Line chart': '折線圖',
+    'No monitoring trend data': '暫無監控趨勢資料',
+    'Open monitoring trend': '開啟監控趨勢',
+    'First token latency': '首 Token 延遲',
+  },
+  fr: {
+    'Bar chart': 'Graphique en barres',
+    'Line chart': 'Graphique en courbes',
+    'No monitoring trend data': 'Aucune donnee de tendance disponible',
+    'Open monitoring trend': 'Ouvrir la tendance de surveillance',
+    'First token latency': 'Latence du premier jeton',
+  },
+  ja: {
+    'Bar chart': '棒グラフ',
+    'Line chart': '折れ線グラフ',
+    'No monitoring trend data': '監視傾向データはありません',
+    'Open monitoring trend': '監視傾向を開く',
+    'First token latency': '最初のトークンの遅延',
+  },
+  ru: {
+    'Bar chart': 'Столбчатая диаграмма',
+    'Line chart': 'Линейный график',
+    'No monitoring trend data': 'Нет данных о тенденции мониторинга',
+    'Open monitoring trend': 'Открыть тенденцию мониторинга',
+    'First token latency': 'Задержка первого токена',
+  },
+  vi: {
+    'Bar chart': 'Bieu do cot',
+    'Line chart': 'Bieu do duong',
+    'No monitoring trend data': 'Khong co du lieu xu huong giam sat',
+    'Open monitoring trend': 'Mo xu huong giam sat',
+    'First token latency': 'Do tre token dau tien',
+  },
+}
+
+for (const [locale, translations] of Object.entries(groupMonitoringTrendUi)) {
+  Object.assign(newKeys[locale], translations)
+}
+
 async function main() {
   for (const [locale, translations] of Object.entries(newKeys)) {
     const filePath = path.join(localesDir, `${locale}.json`)

@@ -34,6 +34,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -48,8 +56,14 @@ import {
   formatUptimePct,
 } from '@/features/performance-metrics/lib/format'
 import type { PerfGroupMonitor } from '@/features/performance-metrics/types'
-import { UptimeSparkline } from '@/features/pricing/components/model-details-uptime-sparkline'
 import { cn } from '@/lib/utils'
+
+import { GroupTrendDialog } from './group-trend-dialog'
+import {
+  GROUP_TREND_METRIC_OPTIONS,
+  getRelativeTrendColor,
+  type GroupTrendMetric,
+} from './group-trend-metric'
 
 const TIME_RANGES = [
   { hours: 6, label: '6h' },
@@ -77,6 +91,12 @@ type SortDirection = 'asc' | 'desc'
 type SortState = {
   key: SortKey
   direction: SortDirection
+}
+
+function getAvailabilityTrendColor(successRate: number): string {
+  if (successRate >= 90) return '#10b981'
+  if (successRate >= 70) return '#f59e0b'
+  return '#ef4444'
 }
 
 function getSortableGroupValue(group: PerfGroupMonitor, key: SortKey): number {
@@ -225,19 +245,132 @@ function StatusBadge(props: { group: PerfGroupMonitor; hours: number }) {
   )
 }
 
-function GroupTrend(props: { group: PerfGroupMonitor }) {
+function GroupTrend(props: {
+  group: PerfGroupMonitor
+  metric: GroupTrendMetric
+  averageTtft: number
+  averageTps: number
+  onOpen: (group: PerfGroupMonitor) => void
+}) {
+  const { t } = useTranslation()
   const points = useMemo(
     () =>
-      props.group.series.slice(-30).map((point) => ({
-        date: new Date(point.ts * 1000).toLocaleString(),
-        uptime_pct: point.success_rate,
-        outage_minutes: 0,
-        incidents: 0,
-      })),
-    [props.group.series]
+      [...props.group.series]
+        .sort((left, right) => left.ts - right.ts)
+        .map((point) => {
+          if (props.metric === 'availability') {
+            return {
+              ts: point.ts,
+              value: point.success_rate,
+              label: formatUptimePct(point.success_rate),
+              color: getAvailabilityTrendColor(point.success_rate),
+            }
+          }
+          if (props.metric === 'tps') {
+            return {
+              ts: point.ts,
+              value: point.avg_tps,
+              label: formatThroughput(point.avg_tps),
+              color: getRelativeTrendColor(point.avg_tps, props.averageTps),
+            }
+          }
+          return {
+            ts: point.ts,
+            value: point.avg_ttft_ms,
+            label: formatLatency(point.avg_ttft_ms),
+            color: getRelativeTrendColor(point.avg_ttft_ms, props.averageTtft),
+          }
+        })
+        .filter((point) => Number.isFinite(point.value)),
+    [props.averageTps, props.averageTtft, props.group.series, props.metric]
+  )
+  const maxValue = Math.max(...points.map((point) => point.value), 1)
+  const metricLabel = t(
+    GROUP_TREND_METRIC_OPTIONS.find((option) => option.value === props.metric)
+      ?.labelKey ?? 'Monitoring trend'
+  )
+  const chartPoints = points.map((point, index) => {
+    let x = 56
+    if (props.metric === 'availability') {
+      x = ((index + 0.5) / points.length) * 112
+    } else if (points.length > 1) {
+      x = 3 + (index / (points.length - 1)) * 106
+    }
+    const y =
+      props.metric === 'availability'
+        ? 22 - Math.max(0, Math.min(100, point.value)) * 0.2
+        : 22 - Math.max(2, (point.value / maxValue) * 20)
+    return { ...point, x, y }
+  })
+  const availabilityBarWidth = Math.min(
+    24,
+    Math.max(2, 112 / Math.max(chartPoints.length, 1) - 2)
   )
 
-  return <UptimeSparkline series={points} size='sm' showOverall={false} />
+  return (
+    <button
+      type='button'
+      className='focus-visible:ring-ring hover:bg-muted/50 flex min-h-[52px] w-full items-center px-4 py-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none'
+      onClick={(event) => {
+        event.currentTarget.blur()
+        props.onOpen(props.group)
+      }}
+      aria-label={`${t('Open monitoring trend')}: ${metricLabel}`}
+    >
+      {points.length === 0 ? (
+        <span className='text-muted-foreground text-xs'>—</span>
+      ) : (
+        <span
+          className='flex h-6 w-28 shrink-0 items-center overflow-hidden'
+          aria-hidden='true'
+        >
+          <svg
+            viewBox='0 0 112 24'
+            className='block h-6 w-full'
+            preserveAspectRatio='none'
+          >
+            {props.metric === 'availability' ? (
+              chartPoints.map((point) => (
+                <rect
+                  key={point.ts}
+                  x={point.x - availabilityBarWidth / 2}
+                  y={Math.min(point.y, 20)}
+                  width={availabilityBarWidth}
+                  height={Math.max(2, 22 - point.y)}
+                  fill={point.color}
+                  rx='1'
+                />
+              ))
+            ) : (
+              <>
+                <polyline
+                  fill='none'
+                  stroke='#10b981'
+                  strokeWidth='1.75'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  points={chartPoints
+                    .map((point) => `${point.x},${point.y}`)
+                    .join(' ')}
+                />
+                {chartPoints.map((point) => (
+                  <circle
+                    key={point.ts}
+                    cx={point.x}
+                    cy={point.y}
+                    fill={point.color}
+                    r='2'
+                    stroke='#ffffff'
+                    strokeWidth='0.75'
+                  />
+                ))}
+              </>
+            )}
+          </svg>
+        </span>
+      )}
+    </button>
+  )
 }
 
 function GroupMonitorSkeleton() {
@@ -272,6 +405,9 @@ export function GroupMonitor() {
     key: 'availability',
     direction: 'desc',
   })
+  const [selectedTrendGroup, setSelectedTrendGroup] =
+    useState<PerfGroupMonitor | null>(null)
+  const [trendMetric, setTrendMetric] = useState<GroupTrendMetric>('ttft')
   const groupsQuery = useQuery({
     queryKey: ['perf-metrics-groups', hours],
     queryFn: () => getPerfMetricsGroups(hours),
@@ -289,6 +425,24 @@ export function GroupMonitor() {
       }),
     [groupsQuery.data, sort]
   )
+  const averageTtft = useMemo(() => {
+    const ttftValues = groups.flatMap((group) =>
+      group.series
+        .map((point) => point.avg_ttft_ms)
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+    if (ttftValues.length === 0) return 0
+    return ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length
+  }, [groups])
+  const averageTps = useMemo(() => {
+    const tpsValues = groups.flatMap((group) =>
+      group.series
+        .map((point) => point.avg_tps)
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+    if (tpsValues.length === 0) return 0
+    return tpsValues.reduce((sum, value) => sum + value, 0) / tpsValues.length
+  }, [groups])
   const handleSort = (key: SortKey) => {
     setSort((current) => {
       if (current.key !== key) return { key, direction: 'desc' }
@@ -345,8 +499,14 @@ export function GroupMonitor() {
         <td className='px-4 py-3.5 font-mono tabular-nums'>
           {group.request_count.toLocaleString()}
         </td>
-        <td className='px-4 py-3.5'>
-          <GroupTrend group={group} />
+        <td className='p-0'>
+          <GroupTrend
+            group={group}
+            metric={trendMetric}
+            averageTtft={averageTtft}
+            averageTps={averageTps}
+            onOpen={setSelectedTrendGroup}
+          />
         </td>
         <td className='text-muted-foreground px-4 py-3.5 font-mono text-xs tabular-nums'>
           {group.last_updated > 0
@@ -372,18 +532,20 @@ export function GroupMonitor() {
             ))}
           </TabsList>
         </Tabs>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='size-8'
-          onClick={() => void groupsQuery.refetch()}
-          disabled={groupsQuery.isFetching}
-          aria-label={t('Refresh')}
-        >
-          <RefreshCw
-            className={cn('size-4', groupsQuery.isFetching && 'animate-spin')}
-          />
-        </Button>
+        <div className='ml-auto flex items-center gap-2'>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='size-8'
+            onClick={() => void groupsQuery.refetch()}
+            disabled={groupsQuery.isFetching}
+            aria-label={t('Refresh')}
+          >
+            <RefreshCw
+              className={cn('size-4', groupsQuery.isFetching && 'animate-spin')}
+            />
+          </Button>
+        </div>
       </div>
 
       <div className='max-h-[34rem] overflow-auto'>
@@ -430,7 +592,41 @@ export function GroupMonitor() {
                 direction={sort.direction}
                 onSort={handleSort}
               />
-              <th className='px-4 py-3 font-medium'>{t('Monitoring trend')}</th>
+              <th className='px-4 py-2 font-medium'>
+                <Select
+                  items={GROUP_TREND_METRIC_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(option.labelKey),
+                  }))}
+                  value={trendMetric}
+                  onValueChange={(value) =>
+                    setTrendMetric(value as GroupTrendMetric)
+                  }
+                >
+                  <SelectTrigger
+                    size='sm'
+                    className='-ml-2 font-medium'
+                    aria-label={t('Monitoring trend')}
+                  >
+                    <SelectValue>
+                      {t(
+                        GROUP_TREND_METRIC_OPTIONS.find(
+                          (option) => option.value === trendMetric
+                        )?.labelKey ?? 'Monitoring trend'
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {GROUP_TREND_METRIC_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {t(option.labelKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </th>
               <th className='px-4 py-3 font-medium'>
                 {t('Latest monitoring')}
               </th>
@@ -439,6 +635,17 @@ export function GroupMonitor() {
           <tbody className='divide-y'>{rows}</tbody>
         </table>
       </div>
+      <GroupTrendDialog
+        group={selectedTrendGroup}
+        metric={trendMetric}
+        averageTtft={averageTtft}
+        averageTps={averageTps}
+        open={selectedTrendGroup !== null}
+        onMetricChange={setTrendMetric}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTrendGroup(null)
+        }}
+      />
     </div>
   )
 }

@@ -4832,6 +4832,7 @@
     "System Prompt Concatenation": "System Prompt Concatenation",
     "System Prompt Override": "System Prompt Override",
     "System Retry Rule": "System Retry Rule",
+    "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.": "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.",
     "System settings": "System settings",
     "System Settings": "System Settings",
     "System setup wizard": "System setup wizard",

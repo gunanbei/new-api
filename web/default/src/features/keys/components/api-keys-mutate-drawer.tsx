@@ -150,10 +150,7 @@ export function ApiKeysMutateDrawer({
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: getApiKeyFormDefaultValues(
-      defaultUseAutoGroup,
-      automaticRetryStatusCodes
-    ),
+    defaultValues: getApiKeyFormDefaultValues(defaultUseAutoGroup),
   })
 
   // Load existing data when updating
@@ -166,10 +163,7 @@ export function ApiKeysMutateDrawer({
       })
     } else if (open && !isUpdate) {
       form.reset(
-        getApiKeyFormDefaultValues(
-          defaultUseAutoGroup && backendHasAuto,
-          automaticRetryStatusCodes
-        )
+        getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
       )
     }
   }, [
@@ -179,7 +173,6 @@ export function ApiKeysMutateDrawer({
     form,
     defaultUseAutoGroup,
     backendHasAuto,
-    automaticRetryStatusCodes,
   ])
 
   // Correct group after groups load: if the form value is not in available groups, fall back
@@ -517,7 +510,10 @@ export function ApiKeysMutateDrawer({
                     )}
                   />
 
-                  <FailoverTriggerRules relayTimeout={relayTimeout} />
+                  <FailoverTriggerRules
+                    relayTimeout={relayTimeout}
+                    automaticRetryStatusCodes={automaticRetryStatusCodes}
+                  />
                 </>
               )}
 

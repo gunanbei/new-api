@@ -4832,6 +4832,7 @@
     "System Prompt Concatenation": "システムプロンプトの連結",
     "System Prompt Override": "システムプロンプト上書き",
     "System Retry Rule": "システム再試行ルール",
+    "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.": "システムの再試行 HTTP ステータスコード規則[{{rules}}]は常に適用されます。追加のステータスコードは指定できますが、システム規則を上書きすることはできません。",
     "System settings": "システム設定",
     "System Settings": "システム設定",
     "System setup wizard": "システムセットアップウィザード",

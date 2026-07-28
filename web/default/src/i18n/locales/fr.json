@@ -4832,6 +4832,7 @@
     "System Prompt Concatenation": "Concaténation des invites système",
     "System Prompt Override": "Remplacement du prompt système",
     "System Retry Rule": "Règle système de nouvelle tentative",
+    "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.": "Les règles système de codes HTTP à réessayer [{{rules}}] s’appliquent toujours. Ajoutez des codes supplémentaires, mais ils ne peuvent pas remplacer les règles système.",
     "System settings": "Paramètres système",
     "System Settings": "Paramètres du système",
     "System setup wizard": "Assistant de configuration du système",

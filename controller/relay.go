@@ -462,6 +462,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) r
 	if types.IsSkipRetryError(openaiErr) {
 		return retryDecision{Trigger: "skip_retry", Reason: "error explicitly disables retry"}
 	}
+	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
+		return retryDecision{Trigger: "system_skip_rule", Reason: string(openaiErr.GetErrorCode())}
+	}
 	rules := service.GetFailoverRules(c)
 	if rules.Enabled {
 		switch openaiErr.GetErrorCode() {
@@ -484,6 +487,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) r
 	if code < 100 || code > 599 {
 		return retryDecision{Retry: true, Trigger: "invalid_http_status", Reason: fmt.Sprintf("HTTP status %d is invalid", code)}
 	}
+	if operation_setting.IsAlwaysSkipRetryStatusCode(code) {
+		return retryDecision{Trigger: "system_skip_rule", Reason: fmt.Sprintf("HTTP status %d is always excluded by system rule", code)}
+	}
+	if operation_setting.ShouldRetryByStatusCode(code) {
+		return retryDecision{Retry: true, Trigger: "system_http_status_rule", Reason: fmt.Sprintf("HTTP status %d matched system rule", code)}
+	}
 	if rules.Enabled && rules.HTTPStatusCodes != "" {
 		ranges, err := operation_setting.ParseHTTPStatusCodeRanges(rules.HTTPStatusCodes)
 		if err != nil {
@@ -496,10 +505,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) r
 		}
 		return retryDecision{Trigger: "http_status_rule", Reason: fmt.Sprintf("HTTP status %d did not match token rule", code)}
 	}
-	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return retryDecision{Trigger: "system_skip_rule", Reason: string(openaiErr.GetErrorCode())}
-	}
-	return ruleRetryDecision(operation_setting.ShouldRetryByStatusCode(code), "system_http_status_rule", fmt.Sprintf("HTTP status %d evaluated by system rule", code))
+	return retryDecision{Trigger: "system_http_status_rule", Reason: fmt.Sprintf("HTTP status %d did not match system rule", code)}
 }
 
 func ruleRetryDecision(retry bool, trigger, reason string) retryDecision {

@@ -4832,6 +4832,7 @@
     "System Prompt Concatenation": "系統提示詞連接",
     "System Prompt Override": "系統提示覆蓋",
     "System Retry Rule": "系統重試規則",
+    "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.": "系統重試 HTTP 狀態碼規則[{{rules}}]會永久生效。可新增額外狀態碼，但無法覆寫系統規則。",
     "System settings": "系統設定",
     "System Settings": "系統設定",
     "System setup wizard": "系統設定精靈",

@@ -4832,6 +4832,7 @@
     "System Prompt Concatenation": "Ghép nối Lời nhắc Hệ thống",
     "System Prompt Override": "Ghi đè prompt hệ thống",
     "System Retry Rule": "Quy tắc thử lại hệ thống",
+    "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.": "Quy tắc mã trạng thái HTTP thử lại của hệ thống [{{rules}}] luôn có hiệu lực. Bạn có thể thêm mã trạng thái, nhưng không thể ghi đè quy tắc hệ thống.",
     "System settings": "Cài đặt hệ thống",
     "System Settings": "Cài đặt hệ thống",
     "System setup wizard": "Trình hướng dẫn thiết lập hệ thống",

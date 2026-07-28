@@ -131,9 +131,13 @@ function RetryRuleHelp({
 
 type FailoverTriggerRulesProps = {
   relayTimeout: number;
+  automaticRetryStatusCodes: string;
 };
 
-export function FailoverTriggerRules({ relayTimeout }: FailoverTriggerRulesProps) {
+export function FailoverTriggerRules({
+  relayTimeout,
+  automaticRetryStatusCodes,
+}: FailoverTriggerRulesProps) {
   const { t } = useTranslation();
   const form = useFormContext<ApiKeyFormValues>();
 
@@ -241,6 +245,12 @@ export function FailoverTriggerRules({ relayTimeout }: FailoverTriggerRulesProps
             <FormDescription>
               {t(
                 "Separate status codes with commas and use a hyphen for inclusive ranges, e.g. 401,429,500-599.",
+              )}
+            </FormDescription>
+            <FormDescription>
+              {t(
+                "System retry status code rules [{{rules}}] always apply. Add extra status codes, but they cannot override system rules.",
+                { rules: automaticRetryStatusCodes || '-' },
               )}
             </FormDescription>
             <FormMessage />

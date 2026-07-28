@@ -116,8 +116,8 @@ import {
 import { useLogsViewScope } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const autoRefreshIntervalSeconds = [30, 60, 120] as const
-const defaultAutoRefreshIntervalSeconds = 60
+const autoRefreshIntervalSeconds = [5, 10, 15, 30, 60, 120] as const
+const defaultAutoRefreshIntervalSeconds = 15
 
 function getInflightColumnVisibilityStorageKey(isAdmin: boolean) {
   return `usage-logs:inflight:${isAdmin ? 'admin' : 'user'}:column-visibility`

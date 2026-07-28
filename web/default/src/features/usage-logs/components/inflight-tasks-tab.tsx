@@ -205,7 +205,7 @@ type FailoverTransition = {
   stateChain: string[]
   failureContent: string
   source: FailoverAuditEvent
-  target: FailoverAuditEvent
+  target?: FailoverAuditEvent
 }
 
 type InflightTaskAttempt = {
@@ -414,7 +414,8 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
             channel_name: 'Azure Fallback',
             error_code: 'upstream_first_content_timeout',
             status_code: 504,
-            error: 'upstream did not return the first content chunk within 10000ms',
+            error:
+              'upstream did not return the first content chunk within 10000ms',
             rollback: 'started',
           },
           {
@@ -897,18 +898,25 @@ function getFailoverTransitions(task: InflightTask): FailoverTransition[] {
 
   for (const retrySelected of events) {
     if (retrySelected.event !== 'retry_selected') continue
-    const source = events.findLast(
-      (event) =>
-        event.event === 'attempt_started' &&
-        event.retry_index === retrySelected.retry_index &&
-        event.sequence < retrySelected.sequence
-    )
-    const target = events.find(
+    const source =
+      events.findLast(
+        (event) =>
+          event.event === 'attempt_started' &&
+          event.retry_index === retrySelected.retry_index &&
+          event.sequence < retrySelected.sequence
+      ) ?? retrySelected
+    const targetAttempt = events.find(
       (event) =>
         event.event === 'attempt_started' &&
         event.sequence > retrySelected.sequence
     )
-    if (!source || !target) continue
+    const selectionFailure = events.find(
+      (event) =>
+        event.event === 'selection_failed' &&
+        event.retry_index === retrySelected.retry_index + 1 &&
+        event.sequence > retrySelected.sequence
+    )
+    const target = targetAttempt ?? selectionFailure
 
     const rollbackStart = events.findLast(
       (event) =>
@@ -919,7 +927,8 @@ function getFailoverTransitions(task: InflightTask): FailoverTransition[] {
     const chainStart = rollbackStart?.sequence ?? retrySelected.sequence
     const chainEvents = events.filter(
       (event) =>
-        event.sequence >= chainStart && event.sequence <= target.sequence
+        event.sequence >= chainStart &&
+        event.sequence <= (target?.sequence ?? retrySelected.sequence)
     )
     const stateChain = chainEvents.reduce<string[]>((chain, event) => {
       if (chain.length === 0) chain.push(event.from)
@@ -932,7 +941,7 @@ function getFailoverTransitions(task: InflightTask): FailoverTransition[] {
 
     transitions.push({
       fromRetryIndex: source.retry_index,
-      toRetryIndex: target.retry_index,
+      toRetryIndex: target?.retry_index ?? retrySelected.retry_index + 1,
       trigger: retrySelected.trigger ?? '',
       reason: retrySelected.reason ?? rollbackStart?.reason ?? '',
       errorCode: rollbackStart?.error_code ?? retrySelected.error_code ?? '',
@@ -943,6 +952,7 @@ function getFailoverTransitions(task: InflightTask): FailoverTransition[] {
       failureContent:
         rollbackStart?.error ??
         retrySelected.error ??
+        selectionFailure?.error ??
         rollbackStart?.reason ??
         retrySelected.reason ??
         '',
@@ -1108,7 +1118,10 @@ function FailoverTriggerDetailsDialog(props: {
         }
       >
         <InflightDetailSection label={t('Failure Reason')} variant='danger'>
-          <InflightDetailRow label={t('Trigger')} value={triggerSummary || '-'} />
+          <InflightDetailRow
+            label={t('Trigger')}
+            value={triggerSummary || '-'}
+          />
           <InflightDetailRow
             label={t('Failure Reason')}
             value={props.transition.reason || '-'}
@@ -1183,7 +1196,11 @@ function FailoverTransitionDetail(props: {
     t(failoverStateLabel[state] || state)
   )
   const source = getEndpoint(props.transition.source)
-  const target = getEndpoint(props.transition.target)
+  const target = props.transition.target
+    ? getEndpoint(props.transition.target)
+    : { group: t('Retry pending'), channel: t('Retry pending') }
+  const targetSelectionFailed =
+    props.transition.target?.event === 'selection_failed'
 
   return (
     <div className='relative mx-2 border-l-2 border-dashed border-amber-400/60 py-2 pl-5'>
@@ -1218,14 +1235,27 @@ function FailoverTransitionDetail(props: {
             aria-hidden='true'
           />
           <div className='min-w-0 space-y-0.5 text-right'>
-            <div className='font-medium break-all'>
-              {t('Group')}: {target.group}
-            </div>
-            {props.isAdmin ? (
-              <div className='text-muted-foreground break-all'>
-                {t('Channel')}: {target.channel}
-              </div>
-            ) : null}
+            {targetSelectionFailed ? (
+              <>
+                <div className='font-medium break-all text-red-600 dark:text-red-400'>
+                  {t('Channel selection failed')}
+                </div>
+                <div className='text-muted-foreground break-all'>
+                  {t('Group')}: {target.group}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className='font-medium break-all'>
+                  {t('Group')}: {target.group}
+                </div>
+                {props.isAdmin ? (
+                  <div className='text-muted-foreground break-all'>
+                    {t('Channel')}: {target.channel}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
         <div className='grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs'>
@@ -1240,7 +1270,9 @@ function FailoverTransitionDetail(props: {
               </div>
             ) : null}
           </div>
-          <span className='text-muted-foreground'>{t('Trigger Rule Details')}</span>
+          <span className='text-muted-foreground'>
+            {t('Trigger Rule Details')}
+          </span>
           <div className='flex justify-end'>
             <FailoverTriggerDetailsDialog
               transition={props.transition}
@@ -2020,7 +2052,9 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                       transition={transition}
                       isAdmin={props.isAdmin}
                       rules={props.task.detail?.failover_audit?.rules}
-                      rulesEnabled={props.task.detail?.failover_audit?.rules_enabled}
+                      rulesEnabled={
+                        props.task.detail?.failover_audit?.rules_enabled
+                      }
                     />
                   ) : null}
                 </Fragment>

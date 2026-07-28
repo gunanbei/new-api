@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func TestBuildGroupSummaries(t *testing.T) {
 	require.EqualValues(t, 150, summaries[0].AvgLatencyMs)
 	require.EqualValues(t, 30, summaries[0].AvgTtftMs)
 	require.Equal(t, 200.0, summaries[0].AvgTps)
-	require.Equal(t, "error", summaries[0].Status)
+	require.Equal(t, "warning", summaries[0].Status)
 	require.EqualValues(t, 2, summaries[0].LastUpdated)
 	require.EqualValues(t, 40, summaries[0].LatestTtftMs)
 	require.Equal(t, 200.0, summaries[0].LatestTps)
@@ -38,12 +39,29 @@ func TestBuildGroupSummaries(t *testing.T) {
 func TestApplyGroupStatus(t *testing.T) {
 	groupMonitorStates = sync.Map{}
 	now := time.Now()
-	for range 20 {
-		recordGroupMonitorSample("available", true, 0, 0, now)
+	available := GroupSummary{
+		Group: "available",
+		Series: []BucketPoint{{
+			Ts:          bucketStart(now.Unix()),
+			SuccessRate: 90,
+		}},
 	}
-	available := GroupSummary{Group: "available"}
 	ApplyGroupStatus(&available, 1, 0)
 	require.Equal(t, "available", available.Status)
+
+	warning := GroupSummary{
+		Group: "warning",
+		Series: []BucketPoint{{
+			Ts:          bucketStart(now.Unix()),
+			SuccessRate: 89.9,
+		}},
+	}
+	ApplyGroupStatus(&warning, 1, 0)
+	require.Equal(t, "warning", warning.Status)
+	require.Contains(t, warning.StatusReasons, StatusReason{
+		Code:        "latest_bucket_success_rate",
+		SuccessRate: 89.9,
+	})
 
 	for range 13 {
 		recordGroupMonitorSample("error", true, 0, 0, now)
@@ -51,18 +69,32 @@ func TestApplyGroupStatus(t *testing.T) {
 	for range 7 {
 		recordGroupMonitorSample("error", false, 0, 0, now)
 	}
-	errorSummary := GroupSummary{Group: "error"}
+	errorSummary := GroupSummary{
+		Group: "error",
+		Series: []BucketPoint{{
+			Ts:          bucketStart(now.Unix()),
+			SuccessRate: 100,
+		}},
+	}
 	ApplyGroupStatus(&errorSummary, 1, 0)
 	require.Equal(t, "error", errorSummary.Status)
 	require.Contains(t, errorSummary.StatusReasons, StatusReason{Code: "recent_success_rate_error", SuccessRate: 65})
 }
 
-func TestApplyGroupStatusWithInsufficientSamples(t *testing.T) {
+func TestApplyGroupStatusRequiresCurrentBucketCall(t *testing.T) {
 	groupMonitorStates = sync.Map{}
+	now := time.Now()
 
-	historicalSuccess := GroupSummary{Group: "historical-success", RequestCount: 1, Availability: 100}
+	historicalSuccess := GroupSummary{
+		Group: "historical-success",
+		Series: []BucketPoint{{
+			Ts:          bucketStart(now.Unix()) - perf_metrics_setting.GetBucketSeconds(),
+			SuccessRate: 100,
+		}},
+	}
 	ApplyGroupStatus(&historicalSuccess, 1, 0)
-	require.Equal(t, "available", historicalSuccess.Status)
+	require.Equal(t, "unknown", historicalSuccess.Status)
+	require.Contains(t, historicalSuccess.StatusReasons, StatusReason{Code: "insufficient_sampling"})
 
 	unknown := GroupSummary{Group: "unknown", RequestCount: 1}
 	ApplyGroupStatus(&unknown, 1, 0)
@@ -72,11 +104,12 @@ func TestApplyGroupStatusWithInsufficientSamples(t *testing.T) {
 
 func TestApplyGroupStatusUsesPersistedMetricsAfterRestart(t *testing.T) {
 	groupMonitorStates = sync.Map{}
+	currentBucketTs := bucketStart(time.Now().Unix())
 
 	summary := buildGroupSummaries(map[string]map[int64]counters{
 		"historical-success": {
-			1: {requestCount: 522, successCount: 505},
-			2: {requestCount: 20, successCount: 20},
+			currentBucketTs - perf_metrics_setting.GetBucketSeconds(): {requestCount: 522, successCount: 505},
+			currentBucketTs: {requestCount: 20, successCount: 20},
 		},
 	})[0]
 	ApplyGroupStatus(&summary, 1, 0)

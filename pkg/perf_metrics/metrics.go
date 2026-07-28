@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -246,6 +247,10 @@ func QueryGroupSummaryAll(hours int, groups []string) ([]GroupSummary, error) {
 		})
 	}
 
+	// Redis retains the active bucket across process restarts. Prefer it over the
+	// local bucket snapshot so current metrics are not counted twice.
+	redisCurrentGroups := mergeRedisActiveGroupBuckets(groupBuckets, allowedGroups, startTs, endTs)
+	currentBucketTs := bucketStart(endTs)
 	hotBuckets.Range(func(key, value any) bool {
 		k := key.(bucketKey)
 		if k.bucketTs < startTs || k.bucketTs > endTs {
@@ -255,6 +260,9 @@ func QueryGroupSummaryAll(hours int, groups []string) ([]GroupSummary, error) {
 			if _, ok := allowedGroups[k.group]; !ok {
 				return true
 			}
+		}
+		if k.bucketTs == currentBucketTs && redisCurrentGroups[k.group] {
+			return true
 		}
 		mergeGroupBucket(groupBuckets, k.group, k.bucketTs, value.(*atomicBucket).snapshot())
 		return true
@@ -706,6 +714,8 @@ func recordRedis(key bucketKey, sample Sample) {
 	defer cancel()
 
 	redisKey := redisBucketKey(key)
+	groupRedisKey := redisGroupBucketKey(key.group, key.bucketTs)
+	groupsRedisKey := redisActiveGroupsKey(key.bucketTs)
 	pipe := common.RDB.TxPipeline()
 	pipe.HIncrBy(ctx, redisKey, "req", 1)
 	if sample.Success {
@@ -729,7 +739,158 @@ func recordRedis(key bucketKey, sample Sample) {
 		pipe.HIncrBy(ctx, redisKey, "in", sample.InputTokens)
 	}
 	pipe.Expire(ctx, redisKey, time.Hour)
+
+	pipe.HIncrBy(ctx, groupRedisKey, "req", 1)
+	if sample.Success {
+		pipe.HIncrBy(ctx, groupRedisKey, "ok", 1)
+	}
+	if sample.LatencyMs > 0 {
+		pipe.HIncrBy(ctx, groupRedisKey, "lat", sample.LatencyMs)
+	}
+	if sample.HasTtft && sample.TtftMs >= 0 {
+		pipe.HIncrBy(ctx, groupRedisKey, "ttft", sample.TtftMs)
+		pipe.HIncrBy(ctx, groupRedisKey, "ttft_n", 1)
+	}
+	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
+		pipe.HIncrBy(ctx, groupRedisKey, "out", sample.OutputTokens)
+		pipe.HIncrBy(ctx, groupRedisKey, "gen_ms", sample.GenerationMs)
+	}
+	if sample.CacheHitTokens > 0 {
+		pipe.HIncrBy(ctx, groupRedisKey, "cache", sample.CacheHitTokens)
+	}
+	if sample.InputTokens > 0 {
+		pipe.HIncrBy(ctx, groupRedisKey, "in", sample.InputTokens)
+	}
+	pipe.Expire(ctx, groupRedisKey, time.Hour)
+	pipe.SAdd(ctx, groupsRedisKey, key.group)
+	pipe.Expire(ctx, groupsRedisKey, time.Hour)
 	_, _ = pipe.Exec(ctx)
+}
+
+func mergeRedisActiveGroupBuckets(groupBuckets map[string]map[int64]counters, allowedGroups map[string]struct{}, startTs int64, endTs int64) map[string]bool {
+	mergedGroups := make(map[string]bool)
+	if !common.RedisEnabled || common.RDB == nil {
+		return mergedGroups
+	}
+
+	currentBucketTs := bucketStart(endTs)
+	if currentBucketTs < startTs || currentBucketTs > endTs {
+		return mergedGroups
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	groups, err := common.RDB.SMembers(ctx, redisActiveGroupsKey(currentBucketTs)).Result()
+	if err != nil {
+		return mergedGroups
+	}
+
+	candidates := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[group]; !ok {
+				continue
+			}
+		}
+		candidates[group] = struct{}{}
+	}
+	for group := range allowedGroups {
+		candidates[group] = struct{}{}
+	}
+
+	missingGroups := make(map[string]struct{})
+	for group := range candidates {
+		values, err := common.RDB.HGetAll(ctx, redisGroupBucketKey(group, currentBucketTs)).Result()
+		if err != nil || len(values) == 0 {
+			missingGroups[group] = struct{}{}
+			continue
+		}
+		value := redisCounters(values)
+		if value.requestCount == 0 {
+			continue
+		}
+		mergeGroupBucket(groupBuckets, group, currentBucketTs, value)
+		mergedGroups[group] = true
+	}
+	if len(missingGroups) == 0 {
+		return mergedGroups
+	}
+
+	// Rebuild missing group summaries from the existing per-model bucket keys.
+	// This backfills the cache during a rolling upgrade without waiting for a
+	// new request to reach each group.
+	recovered := make(map[string]counters, len(missingGroups))
+	groupSuffixes := make(map[string]string, len(missingGroups))
+	groupsToRecover := make([]string, 0, len(missingGroups))
+	for group := range missingGroups {
+		groupSuffixes[group] = fmt.Sprintf(":%s:%d", group, currentBucketTs)
+		groupsToRecover = append(groupsToRecover, group)
+	}
+	sort.Slice(groupsToRecover, func(i, j int) bool {
+		return len(groupsToRecover[i]) > len(groupsToRecover[j])
+	})
+	var cursor uint64
+	for {
+		keys, nextCursor, err := common.RDB.Scan(ctx, cursor, "perf:*", 1000).Result()
+		if err != nil {
+			return mergedGroups
+		}
+		for _, key := range keys {
+			for _, group := range groupsToRecover {
+				suffix := groupSuffixes[group]
+				if !strings.HasSuffix(key, suffix) {
+					continue
+				}
+				values, err := common.RDB.HGetAll(ctx, key).Result()
+				if err != nil || len(values) == 0 {
+					continue
+				}
+				value := redisCounters(values)
+				current := recovered[group]
+				current.requestCount += value.requestCount
+				current.successCount += value.successCount
+				current.totalLatencyMs += value.totalLatencyMs
+				current.ttftSumMs += value.ttftSumMs
+				current.ttftCount += value.ttftCount
+				current.outputTokens += value.outputTokens
+				current.generationMs += value.generationMs
+				current.cacheHitTokens += value.cacheHitTokens
+				current.inputTokens += value.inputTokens
+				recovered[group] = current
+				break
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	pipe := common.RDB.TxPipeline()
+	for group := range missingGroups {
+		value := recovered[group]
+		groupRedisKey := redisGroupBucketKey(group, currentBucketTs)
+		pipe.HSet(ctx, groupRedisKey, map[string]interface{}{
+			"req":    value.requestCount,
+			"ok":     value.successCount,
+			"lat":    value.totalLatencyMs,
+			"ttft":   value.ttftSumMs,
+			"ttft_n": value.ttftCount,
+			"out":    value.outputTokens,
+			"gen_ms": value.generationMs,
+			"cache":  value.cacheHitTokens,
+			"in":     value.inputTokens,
+		})
+		pipe.Expire(ctx, groupRedisKey, time.Hour)
+		pipe.SAdd(ctx, redisActiveGroupsKey(currentBucketTs), group)
+		if value.requestCount > 0 {
+			mergeGroupBucket(groupBuckets, group, currentBucketTs, value)
+			mergedGroups[group] = true
+		}
+	}
+	pipe.Expire(ctx, redisActiveGroupsKey(currentBucketTs), time.Hour)
+	_, _ = pipe.Exec(ctx)
+	return mergedGroups
 }
 
 func mergeRedisActiveBuckets(merged map[bucketKey]counters, params QueryParams, startTs int64, endTs int64) {
@@ -752,4 +913,12 @@ func mergeRedisActiveBuckets(merged map[bucketKey]counters, params QueryParams, 
 
 func redisBucketKey(key bucketKey) string {
 	return fmt.Sprintf("perf:%s:%s:%d", key.model, key.group, key.bucketTs)
+}
+
+func redisGroupBucketKey(group string, bucketTs int64) string {
+	return fmt.Sprintf("perf:group:%d:%s", bucketTs, group)
+}
+
+func redisActiveGroupsKey(bucketTs int64) string {
+	return fmt.Sprintf("perf:groups:%d", bucketTs)
 }

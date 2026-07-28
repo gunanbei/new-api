@@ -151,16 +151,16 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
             )}
           >
             {!mobilePanelCollapsed && props.stats}
-            <div className='flex items-center justify-end gap-1.5'>
+            <div className='flex flex-wrap items-center gap-1.5'>
               <Button
                 type='button'
                 variant='ghost'
                 size='icon'
-                onClick={() => setMobilePanelCollapsed((collapsed) => !collapsed)}
-                aria-expanded={!mobilePanelCollapsed}
-                aria-label={
-                  mobilePanelCollapsed ? t('Expand') : t('Collapse')
+                onClick={() =>
+                  setMobilePanelCollapsed((collapsed) => !collapsed)
                 }
+                aria-expanded={!mobilePanelCollapsed}
+                aria-label={mobilePanelCollapsed ? t('Expand') : t('Collapse')}
                 className='text-muted-foreground hover:text-foreground mr-auto size-7'
               >
                 <ChevronDown
@@ -170,34 +170,36 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
                   )}
                 />
               </Button>
-              {props.actionStart}
-              <DrawerTrigger asChild>
+              <div className='flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5'>
+                {props.actionStart}
+                <DrawerTrigger asChild>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    className={cn(
+                      'text-muted-foreground hover:text-foreground gap-1 px-2',
+                      activeMobileFilterCount > 0 &&
+                        'text-primary hover:text-primary'
+                    )}
+                  >
+                    {t('Filter')}
+                    {activeMobileFilterCount > 0 && (
+                      <Badge className='ml-0.5 size-5 justify-center p-0 text-[10px]'>
+                        {activeMobileFilterCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </DrawerTrigger>
                 <Button
                   type='button'
-                  variant='ghost'
-                  className={cn(
-                    'text-muted-foreground hover:text-foreground gap-1 px-2',
-                    activeMobileFilterCount > 0 &&
-                      'text-primary hover:text-primary'
-                  )}
+                  onClick={props.onSearch}
+                  disabled={props.searchLoading}
                 >
-                  {t('Filter')}
-                  {activeMobileFilterCount > 0 && (
-                    <Badge className='ml-0.5 size-5 justify-center p-0 text-[10px]'>
-                      {activeMobileFilterCount}
-                    </Badge>
-                  )}
+                  {props.searchLoading && <Loader2 className='animate-spin' />}
+                  {t('Search')}
                 </Button>
-              </DrawerTrigger>
-              <Button
-                type='button'
-                onClick={props.onSearch}
-                disabled={props.searchLoading}
-              >
-                {props.searchLoading && <Loader2 className='animate-spin' />}
-                {t('Search')}
-              </Button>
-              <DataTableViewOptions table={props.table} />
+                <DataTableViewOptions table={props.table} />
+              </div>
             </div>
           </div>
         </div>

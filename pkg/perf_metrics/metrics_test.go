@@ -69,3 +69,20 @@ func TestApplyGroupStatusWithInsufficientSamples(t *testing.T) {
 	require.Equal(t, "unknown", unknown.Status)
 	require.Contains(t, unknown.StatusReasons, StatusReason{Code: "insufficient_sampling"})
 }
+
+func TestApplyGroupStatusUsesPersistedMetricsAfterRestart(t *testing.T) {
+	groupMonitorStates = sync.Map{}
+
+	summary := buildGroupSummaries(map[string]map[int64]counters{
+		"historical-success": {
+			1: {requestCount: 522, successCount: 505},
+			2: {requestCount: 20, successCount: 20},
+		},
+	})[0]
+	ApplyGroupStatus(&summary, 1, 0)
+
+	require.Equal(t, "available", summary.Status)
+	require.EqualValues(t, 542, summary.RequestCount)
+	require.InDelta(t, 96.86, summary.Availability, 0.01)
+	require.Empty(t, summary.StatusReasons)
+}

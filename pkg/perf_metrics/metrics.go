@@ -489,6 +489,14 @@ func ApplyGroupStatus(summary *GroupSummary, channelCount int64, disabledChannel
 		return
 	}
 
+	// Recent call samples are process-local and are empty after a restart. When
+	// persisted metrics already provide enough requests, retain the status that
+	// buildGroupSummaries derived from the latest metrics bucket instead of
+	// reporting an otherwise healthy group as unknown.
+	if summary.RequestCount >= 20 && len(summary.Series) > 0 {
+		return
+	}
+
 	if len(status.recentCalls) >= 20 && recentSuccessRate(status.recentCalls) >= 98 {
 		summary.Status = "available"
 		return

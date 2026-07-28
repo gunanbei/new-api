@@ -22,6 +22,7 @@ import type { ColumnDef, Row } from '@tanstack/react-table'
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   Eye,
   FolderOpen,
   GitBranch,
@@ -1203,113 +1204,106 @@ function FailoverTransitionDetail(props: {
     props.transition.target?.event === 'selection_failed'
 
   return (
-    <div className='relative mx-2 border-l-2 border-dashed border-amber-400/60 py-2 pl-5'>
-      <div className='bg-background absolute top-1/2 -left-[13px] flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-amber-400/60 text-amber-600 dark:text-amber-400'>
-        <GitBranch className='size-3.5' aria-hidden='true' />
+    <div className='space-y-3 border-y border-amber-400/40 bg-amber-50/40 py-3 dark:bg-amber-950/10'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <div className='flex items-center gap-2 text-amber-700 dark:text-amber-300'>
+          <GitBranch className='size-4 shrink-0' aria-hidden='true' />
+          <span className='text-sm font-medium'>{t('Failover Detail')}</span>
+        </div>
+        <span className='text-muted-foreground font-mono text-xs'>
+          {dayjs(props.transition.timestampMS).format('YYYY-MM-DD HH:mm:ss')}
+        </span>
       </div>
-      <div className='space-y-2'>
-        <div className='flex flex-wrap items-center justify-between gap-2'>
-          <StatusBadge
-            label={t('Failover Detail')}
-            variant='warning'
-            size='sm'
-            copyable={false}
-          />
-          <span className='text-muted-foreground font-mono text-xs'>
-            {dayjs(props.transition.timestampMS).format('YYYY-MM-DD HH:mm:ss')}
-          </span>
-        </div>
-        <div className='grid min-w-0 grid-cols-1 items-center gap-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'>
-          <div className='min-w-0 space-y-0.5'>
-            <div className='font-medium break-all'>
-              {t('Group')}: {source.group}
+      <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs'>
+        <div className='min-w-0 space-y-0.5'>
+          <div className='font-medium break-all'>
+            {t('Group')}: {source.group}
+          </div>
+          {props.isAdmin ? (
+            <div className='text-muted-foreground break-all'>
+              {t('Channel')}: {source.channel}
             </div>
-            {props.isAdmin ? (
+          ) : null}
+        </div>
+        <ArrowRight
+          className='text-muted-foreground size-3.5 shrink-0'
+          aria-hidden='true'
+        />
+        <div className='min-w-0 space-y-0.5 text-right'>
+          {targetSelectionFailed ? (
+            <>
+              <div className='font-medium break-all text-red-600 dark:text-red-400'>
+                {t('Channel selection failed')}
+              </div>
               <div className='text-muted-foreground break-all'>
-                {t('Channel')}: {source.channel}
+                {t('Group')}: {target.group}
               </div>
-            ) : null}
-          </div>
-          <ArrowRight
-            className='text-muted-foreground mx-auto size-3.5 shrink-0 rotate-90 sm:rotate-0'
-            aria-hidden='true'
-          />
-          <div className='min-w-0 space-y-0.5 text-right'>
-            {targetSelectionFailed ? (
-              <>
-                <div className='font-medium break-all text-red-600 dark:text-red-400'>
-                  {t('Channel selection failed')}
-                </div>
+            </>
+          ) : (
+            <>
+              <div className='font-medium break-all'>
+                {t('Group')}: {target.group}
+              </div>
+              {props.isAdmin ? (
                 <div className='text-muted-foreground break-all'>
-                  {t('Group')}: {target.group}
+                  {t('Channel')}: {target.channel}
                 </div>
-              </>
-            ) : (
-              <>
-                <div className='font-medium break-all'>
-                  {t('Group')}: {target.group}
-                </div>
-                {props.isAdmin ? (
-                  <div className='text-muted-foreground break-all'>
-                    {t('Channel')}: {target.channel}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
+              ) : null}
+            </>
+          )}
         </div>
-        <div className='grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs'>
-          <span className='text-muted-foreground'>{t('Trigger')}</span>
-          <div className='min-w-0 text-right break-all'>
-            <div>{triggerSummary || '-'}</div>
-            {props.transition.reason &&
-            !props.transition.statusCode &&
-            !props.transition.errorCode ? (
-              <div className='text-muted-foreground'>
-                {props.transition.reason}
-              </div>
-            ) : null}
-          </div>
-          <span className='text-muted-foreground'>
-            {t('Trigger Rule Details')}
-          </span>
-          <div className='flex justify-end'>
-            <FailoverTriggerDetailsDialog
-              transition={props.transition}
-              rules={props.rules}
-              rulesEnabled={props.rulesEnabled}
-            />
-          </div>
-          <span className='text-muted-foreground'>{t('Rollback Result')}</span>
-          <span className='text-right'>
-            {props.transition.rollback === 'completed'
-              ? t('Completed')
-              : props.transition.rollback || '-'}
-          </span>
+      </div>
+      <div className='grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs'>
+        <span className='text-muted-foreground'>{t('Trigger')}</span>
+        <div className='min-w-0 text-right break-all'>
+          <div>{triggerSummary || '-'}</div>
+          {props.transition.reason &&
+          !props.transition.statusCode &&
+          !props.transition.errorCode ? (
+            <div className='text-muted-foreground'>
+              {props.transition.reason}
+            </div>
+          ) : null}
         </div>
-        <div className='grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-3'>
-          <div className='text-muted-foreground text-xs sm:pt-0.5'>
-            {t('Transition Chain')}
-          </div>
-          <div className='flex flex-wrap items-center gap-1.5 sm:justify-end'>
-            {stateChain.map((state, index) => (
-              <Fragment key={stateChain.slice(0, index + 1).join('>')}>
-                {index > 0 ? (
-                  <ArrowRight
-                    className='text-muted-foreground size-3 shrink-0'
-                    aria-hidden='true'
-                  />
-                ) : null}
-                <StatusBadge
-                  label={state}
-                  variant='neutral'
-                  size='sm'
-                  copyable={false}
-                  showDot={false}
+        <span className='text-muted-foreground'>
+          {t('Trigger Rule Details')}
+        </span>
+        <div className='flex justify-end'>
+          <FailoverTriggerDetailsDialog
+            transition={props.transition}
+            rules={props.rules}
+            rulesEnabled={props.rulesEnabled}
+          />
+        </div>
+        <span className='text-muted-foreground'>{t('Rollback Result')}</span>
+        <span className='text-right'>
+          {props.transition.rollback === 'completed'
+            ? t('Completed')
+            : props.transition.rollback || '-'}
+        </span>
+      </div>
+      <div className='space-y-1 border-t border-amber-400/30 pt-2'>
+        <div className='text-muted-foreground text-xs'>
+          {t('Transition Chain')}
+        </div>
+        <div className='flex flex-wrap items-center gap-1.5'>
+          {stateChain.map((state, index) => (
+            <Fragment key={stateChain.slice(0, index + 1).join('>')}>
+              {index > 0 ? (
+                <ArrowRight
+                  className='text-muted-foreground size-3 shrink-0'
+                  aria-hidden='true'
                 />
-              </Fragment>
-            ))}
-          </div>
+              ) : null}
+              <StatusBadge
+                label={state}
+                variant='neutral'
+                size='sm'
+                copyable={false}
+                showDot={false}
+              />
+            </Fragment>
+          ))}
         </div>
       </div>
     </div>
@@ -1328,15 +1322,15 @@ function getTimelineAccentClass(status: string) {
 
 function getRetryPathAccentClass(
   task: InflightTask,
-  attempt: InflightTaskChannelAttempt
+  attempt: InflightTaskAttempt
 ) {
   if (attempt.status === 'failed') {
-    return 'bg-red-400/80'
+    return 'border-red-400/80'
   }
   if (attempt.retry_index === getRetryIndex(task) && !isFinalFailure(task)) {
-    return 'bg-amber-400/80'
+    return 'border-amber-400/80'
   }
-  return 'bg-border'
+  return 'border-border'
 }
 
 function shouldAttemptDefaultOpen(
@@ -1848,20 +1842,12 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
       )}
 
       {showRetryAttempts && (
-        <InflightDetailSection label={t('Retry Attempts')}>
-          <div className='space-y-2'>
+        <section className='min-w-0 space-y-2.5'>
+          <div className='text-xs font-semibold'>{t('Retry Attempts')}</div>
+          <div className='space-y-3'>
             {attempts.map((attempt) => {
               const displayStatus = getAttemptDisplayStatus(attempt, props.task)
               const displayError = getAttemptDisplayError(attempt, props.task)
-              const legacyAttempt: InflightTaskChannelAttempt = {
-                retry_index: attempt.retry_index,
-                channel_id: attempt.channel_id,
-                channel_name: attempt.channel_name,
-                status: displayStatus,
-                error: displayError,
-                started_at: attempt.started_at,
-                updated_at: attempt.updated_at,
-              }
               const attemptTimeline = attempt.timeline ?? []
               const defaultOpen = shouldAttemptDefaultOpen(
                 attempts,
@@ -1897,7 +1883,7 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                   <Collapsible
                     defaultOpen={defaultOpen}
                     className={cn(
-                      'rounded-md border border-border/60 bg-background/80',
+                      'group/attempt rounded-md border border-border/60 bg-background/80',
                       displayError &&
                         'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
                     )}
@@ -1906,13 +1892,13 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                       render={
                         <button
                           type='button'
-                          className='flex w-full items-start justify-between gap-3 p-3 text-left'
+                          className='flex w-full items-center justify-between gap-3 p-3 text-left'
                           aria-label={getAttemptSummary(attempt, props.task, t)}
                         />
                       }
                     >
-                      <div className='flex min-w-0 flex-1 flex-col gap-2'>
-                        <div className='flex flex-wrap items-center gap-2'>
+                      <div className='flex min-w-0 flex-1 flex-col gap-1.5'>
+                        <div className='flex min-w-0 flex-wrap items-center gap-2'>
                           <StatusBadge
                             label={getAttemptLabel(attempt, props.task, t)}
                             variant='neutral'
@@ -1948,26 +1934,20 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                           {attemptScope}
                         </div>
                       </div>
-                      <div className='text-muted-foreground shrink-0 text-xs'>
-                        {displayError ? t('Failure Reason') : t('Timeline')}
-                      </div>
+                      <ChevronDown
+                        className='text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]/attempt:rotate-180'
+                        aria-hidden='true'
+                      />
                     </CollapsibleTrigger>
                     <CollapsibleContent className='border-t px-3 py-3'>
                       <div className='space-y-3'>
                         <div
                           className={cn(
-                            'relative space-y-1 rounded-md border border-border/60 bg-background/80 p-2 pl-3',
-                            displayError &&
-                              'border-red-200/80 bg-red-50/50 dark:border-red-950 dark:bg-red-950/10'
+                            'space-y-1 border-l-2 pl-3',
+                            getRetryPathAccentClass(props.task, attempt),
+                            displayError && 'text-red-700 dark:text-red-300'
                           )}
                         >
-                          <span
-                            className={cn(
-                              'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
-                              getRetryPathAccentClass(props.task, legacyAttempt)
-                            )}
-                            aria-hidden='true'
-                          />
                           {attemptScopeRow}
                           {attempt.started_at ? (
                             <InflightDetailRow
@@ -1992,15 +1972,15 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                           ) : null}
                         </div>
                         {attemptTimeline.length > 0 ? (
-                          <div className='space-y-2'>
+                          <div className='border-border/70 space-y-2 border-l pl-3'>
                             {attemptTimeline.map((step) => (
                               <div
                                 key={`${attempt.retry_index}-${step.status}-${step.started_at}-${step.updated_at}`}
-                                className='border-border/60 bg-background/80 relative space-y-1 rounded-md border p-2 pl-3'
+                                className='relative space-y-1 py-0.5'
                               >
                                 <span
                                   className={cn(
-                                    'absolute top-2 left-0 h-[calc(100%-1rem)] w-0.5 rounded-full',
+                                    'absolute top-2 -left-[calc(0.75rem+3px)] size-1.5 rounded-full',
                                     getTimelineAccentClass(step.status)
                                   )}
                                   aria-hidden='true'
@@ -2025,11 +2005,6 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                                     className='font-mono'
                                   />
                                 </div>
-                                <InflightDetailRow
-                                  label={t('Started At')}
-                                  value={formatTime(step.started_at)}
-                                  mono
-                                />
                                 <InflightDetailRow
                                   label={t('Updated At')}
                                   value={formatTime(step.updated_at)}
@@ -2061,7 +2036,7 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
               )
             })}
           </div>
-        </InflightDetailSection>
+        </section>
       )}
 
       {latestError ? (
@@ -2569,7 +2544,7 @@ function InflightFilterBar<TData>(props: {
       onSearch={handleApply}
       searchLoading={props.isFetching && !props.liveRefresh}
       actionStart={
-        <div className='flex items-center gap-2'>
+        <div className='flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2'>
           <Button
             type='button'
             variant='outline'

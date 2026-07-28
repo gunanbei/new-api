@@ -145,7 +145,8 @@ export function ApiKeysMutateDrawer({
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const maxRetryTimes = status?.max_retry_times ?? 0
   const automaticRetryStatusCodes = status?.automatic_retry_status_codes ?? ''
-  const schema = getApiKeyFormSchema(t, maxRetryTimes)
+  const relayTimeout = status?.relay_timeout ?? 0
+  const schema = getApiKeyFormSchema(t, maxRetryTimes, relayTimeout)
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
@@ -516,7 +517,7 @@ export function ApiKeysMutateDrawer({
                     )}
                   />
 
-                  <FailoverTriggerRules />
+                  <FailoverTriggerRules relayTimeout={relayTimeout} />
                 </>
               )}
 

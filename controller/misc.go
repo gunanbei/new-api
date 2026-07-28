@@ -96,6 +96,7 @@ func GetStatus(c *gin.Context) {
 		// Upper bound the API key failover form may offer for its retry budget.
 		"max_retry_times":              common.RetryTimes,
 		"automatic_retry_status_codes": operation_setting.AutomaticRetryStatusCodesToString(),
+		"relay_timeout":                common.RelayTimeout,
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,

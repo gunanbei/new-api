@@ -1,11 +1,5 @@
 package types
 
-const (
-	MinFailoverTimeoutMS = 1000
-	MaxHeaderTimeoutMS   = 120000
-	MaxContentTimeoutMS  = 300000
-)
-
 // TokenFailoverRules controls which failures may advance a failover token to
 // another channel or group. Enabled is request-local and is not persisted.
 type TokenFailoverRules struct {

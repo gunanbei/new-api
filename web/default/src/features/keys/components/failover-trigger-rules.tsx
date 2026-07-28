@@ -129,7 +129,11 @@ function RetryRuleHelp({
   );
 }
 
-export function FailoverTriggerRules() {
+type FailoverTriggerRulesProps = {
+  relayTimeout: number;
+};
+
+export function FailoverTriggerRules({ relayTimeout }: FailoverTriggerRulesProps) {
   const { t } = useTranslation();
   const form = useFormContext<ApiKeyFormValues>();
 
@@ -159,10 +163,21 @@ export function FailoverTriggerRules() {
                       {...field}
                       type="number"
                       min={0}
-                      max={120}
+                      step={1}
+                      value={field.value ?? ""}
                       onChange={(event) =>
-                        field.onChange(Number(event.target.value))
+                        field.onChange(
+                          event.target.value === ""
+                            ? ""
+                            : Number(event.target.value),
+                        )
                       }
+                      onBlur={(event) => {
+                        if (event.target.value === "") {
+                          field.onChange(0);
+                        }
+                        field.onBlur();
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -182,10 +197,21 @@ export function FailoverTriggerRules() {
                       {...field}
                       type="number"
                       min={0}
-                      max={300}
+                      step={1}
+                      value={field.value ?? ""}
                       onChange={(event) =>
-                        field.onChange(Number(event.target.value))
+                        field.onChange(
+                          event.target.value === ""
+                            ? ""
+                            : Number(event.target.value),
+                        )
                       }
+                      onBlur={(event) => {
+                        if (event.target.value === "") {
+                          field.onChange(0);
+                        }
+                        field.onBlur();
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -195,11 +221,13 @@ export function FailoverTriggerRules() {
           </div>
         ))}
       </div>
-      <p className="text-muted-foreground text-xs">
-        {t(
-          "Set any timeout to 0 to disable only that failover trigger. Global timeout limits still apply.",
-        )}
-      </p>
+      {relayTimeout > 0 && (
+        <p className="text-muted-foreground text-xs">
+          {t("Global timeout of {{timeout}} seconds still applies.", {
+            timeout: relayTimeout,
+          })}
+        </p>
+      )}
 
       <FormField
         control={form.control}

@@ -175,6 +175,8 @@ export interface SystemStatus {
   /** System wide retry cap; upper bound for an API key's failover retry budget. */
   max_retry_times?: number
   automatic_retry_status_codes?: string
+  /** System wide relay timeout in seconds; 0 means disabled. */
+  relay_timeout?: number
   [key: string]: unknown
 }
 

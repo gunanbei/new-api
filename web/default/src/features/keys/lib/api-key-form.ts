@@ -38,7 +38,11 @@ import type { ApiKey, ApiKeyFormData } from '../types'
  * @param maxRetryTimes System wide retry cap from /api/status. A failover key may lower
  *   it but never raise it, and the backend rejects anything above it.
  */
-export function getApiKeyFormSchema(t: TFunction, maxRetryTimes: number) {
+export function getApiKeyFormSchema(
+  t: TFunction,
+  maxRetryTimes: number,
+  relayTimeout: number
+) {
   return z
     .object({
       name: z.string().min(1, t('Please enter a name')),
@@ -130,35 +134,25 @@ export function getApiKeyFormSchema(t: TFunction, maxRetryTimes: number) {
         })
       }
 
-      for (const [path, value, max] of [
-        [
-          'stream_response_header_timeout_seconds',
-          data.stream_response_header_timeout_seconds,
-          120,
-        ],
-        [
-          'stream_first_content_timeout_seconds',
-          data.stream_first_content_timeout_seconds,
-          300,
-        ],
-        [
-          'non_stream_response_header_timeout_seconds',
-          data.non_stream_response_header_timeout_seconds,
-          120,
-        ],
-        [
-          'non_stream_first_content_timeout_seconds',
-          data.non_stream_first_content_timeout_seconds,
-          300,
-        ],
+      for (const [path, value] of [
+        ['stream_response_header_timeout_seconds', data.stream_response_header_timeout_seconds],
+        ['stream_first_content_timeout_seconds', data.stream_first_content_timeout_seconds],
+        ['non_stream_response_header_timeout_seconds', data.non_stream_response_header_timeout_seconds],
+        ['non_stream_first_content_timeout_seconds', data.non_stream_first_content_timeout_seconds],
       ] as const) {
-        if (value !== 0 && (value < 1 || value > max)) {
+        if (!Number.isInteger(value) || value < 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [path],
+            message: t('Enter a non-negative integer'),
+          })
+        } else if (relayTimeout > 0 && value > relayTimeout) {
           ctx.addIssue({
             code: 'custom',
             path: [path],
             message: t(
-              'Enter 0 to disable, or a value between 1 and {{max}} seconds',
-              { max }
+              'Enter a value no greater than the global timeout of {{timeout}} seconds',
+              { timeout: relayTimeout }
             ),
           })
         }

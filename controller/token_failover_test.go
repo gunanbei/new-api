@@ -13,7 +13,7 @@ import (
 
 // setupFailoverValidationContext gives normalizeTokenFailover the state it reads:
 // a user row so GetUserGroup resolves a group, and a system retry cap.
-func setupFailoverValidationContext(t *testing.T, systemRetryTimes int) {
+func setupFailoverValidationContext(t *testing.T, systemRetryTimes int, relayTimeout int) {
 	t.Helper()
 
 	initModelListColumnNames(t)
@@ -27,6 +27,9 @@ func setupFailoverValidationContext(t *testing.T, systemRetryTimes int) {
 	previousRetryTimes := common.RetryTimes
 	common.RetryTimes = systemRetryTimes
 	t.Cleanup(func() { common.RetryTimes = previousRetryTimes })
+	previousRelayTimeout := common.RelayTimeout
+	common.RelayTimeout = relayTimeout
+	t.Cleanup(func() { common.RelayTimeout = previousRelayTimeout })
 }
 
 func TestNormalizeTokenFailoverRejectsInvalidConfigurations(t *testing.T) {
@@ -105,9 +108,9 @@ func TestNormalizeTokenFailoverRejectsInvalidConfigurations(t *testing.T) {
 			},
 		},
 		{
-			name: "header timeout below minimum",
+			name: "timeout above global limit",
 			token: model.Token{
-				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"response_header_timeout_ms":999}`,
+				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"stream_first_content_timeout_ms":3001}`,
 			},
 		},
 		{
@@ -116,17 +119,11 @@ func TestNormalizeTokenFailoverRejectsInvalidConfigurations(t *testing.T) {
 				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"http_status_codes":"99,500-400"}`,
 			},
 		},
-		{
-			name: "stream content timeout above maximum",
-			token: model.Token{
-				FailoverEnabled: true, FailoverGroups: `["default","vip"]`, FailoverStrategy: "order", FailoverMaxRetry: 2, FailoverRules: `{"stream_first_content_timeout_ms":300001}`,
-			},
-		},
 	}
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			setupFailoverValidationContext(t, 3)
+			setupFailoverValidationContext(t, 3, 3)
 			ctx, _ := newAuthenticatedContext(t, http.MethodPost, "/api/token/", nil, 1)
 
 			token := testCase.token
@@ -136,7 +133,7 @@ func TestNormalizeTokenFailoverRejectsInvalidConfigurations(t *testing.T) {
 }
 
 func TestNormalizeTokenFailoverRejectsWhenSystemRetriesAreOff(t *testing.T) {
-	setupFailoverValidationContext(t, 0)
+	setupFailoverValidationContext(t, 0, 0)
 	ctx, _ := newAuthenticatedContext(t, http.MethodPost, "/api/token/", nil, 1)
 
 	token := model.Token{
@@ -149,7 +146,7 @@ func TestNormalizeTokenFailoverRejectsWhenSystemRetriesAreOff(t *testing.T) {
 }
 
 func TestNormalizeTokenFailoverCanonicalizesValidConfiguration(t *testing.T) {
-	setupFailoverValidationContext(t, 3)
+	setupFailoverValidationContext(t, 3, 0)
 	ctx, _ := newAuthenticatedContext(t, http.MethodPost, "/api/token/", nil, 1)
 
 	token := model.Token{
@@ -159,7 +156,7 @@ func TestNormalizeTokenFailoverCanonicalizesValidConfiguration(t *testing.T) {
 		FailoverGroups:   `[" default ","vip","default"]`,
 		FailoverStrategy: "lowest_ratio",
 		FailoverMaxRetry: 3,
-		FailoverRules:    `{"http_status_codes":" 429,500-599 ","stream_response_header_timeout_ms":0,"non_stream_response_header_timeout_ms":15000}`,
+		FailoverRules:    `{"http_status_codes":" 429,500-599 ","stream_response_header_timeout_ms":0,"non_stream_response_header_timeout_ms":15000,"non_stream_first_content_timeout_ms":300001}`,
 	}
 	require.NoError(t, normalizeTokenFailover(ctx, &token))
 
@@ -170,10 +167,11 @@ func TestNormalizeTokenFailoverCanonicalizesValidConfiguration(t *testing.T) {
 	assert.Equal(t, "auto", token.Group)
 	assert.Contains(t, token.FailoverRules, `"http_status_codes":"429,500-599"`)
 	assert.Contains(t, token.FailoverRules, `"stream_response_header_timeout_ms":0`)
+	assert.Contains(t, token.FailoverRules, `"non_stream_first_content_timeout_ms":300001`)
 }
 
 func TestNormalizeTokenFailoverClearsSettingsWhenDisabled(t *testing.T) {
-	setupFailoverValidationContext(t, 3)
+	setupFailoverValidationContext(t, 3, 0)
 	ctx, _ := newAuthenticatedContext(t, http.MethodPost, "/api/token/", nil, 1)
 
 	token := model.Token{

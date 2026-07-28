@@ -168,12 +168,28 @@ type FailoverAuditEvent = {
   previous_channel_id?: number
   error_code?: string
   status_code?: number
+  error?: string
   rollback?: string
+}
+
+type FailoverRulesSnapshot = {
+  http_status_codes: string
+  response_header_timeout_ms?: number
+  first_content_timeout_ms?: number
+  stream_response_header_timeout_ms?: number
+  stream_first_content_timeout_ms?: number
+  non_stream_response_header_timeout_ms?: number
+  non_stream_first_content_timeout_ms?: number
+  retry_on_transport_error: boolean
+  retry_on_empty_response: boolean
+  retry_on_invalid_response: boolean
+  retry_on_stream_error: boolean
 }
 
 type FailoverAuditTrail = {
   state: string
   rules_enabled: boolean
+  rules: FailoverRulesSnapshot
   events: FailoverAuditEvent[]
 }
 
@@ -187,6 +203,7 @@ type FailoverTransition = {
   rollback: string
   timestampMS: number
   stateChain: string[]
+  failureContent: string
   source: FailoverAuditEvent
   target: FailoverAuditEvent
 }
@@ -352,6 +369,17 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
       failover_audit: {
         state: 'succeeded',
         rules_enabled: true,
+        rules: {
+          http_status_codes: '429,500-599',
+          response_header_timeout_ms: 5000,
+          first_content_timeout_ms: 10000,
+          stream_response_header_timeout_ms: 5000,
+          stream_first_content_timeout_ms: 10000,
+          retry_on_transport_error: true,
+          retry_on_empty_response: true,
+          retry_on_invalid_response: true,
+          retry_on_stream_error: true,
+        },
         events: [
           {
             sequence: 1,
@@ -386,6 +414,7 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
             channel_name: 'Azure Fallback',
             error_code: 'upstream_first_content_timeout',
             status_code: 504,
+            error: 'upstream did not return the first content chunk within 10000ms',
             rollback: 'started',
           },
           {
@@ -911,6 +940,12 @@ function getFailoverTransitions(task: InflightTask): FailoverTransition[] {
       rollback: rollback ?? '',
       timestampMS: retrySelected.timestamp_ms,
       stateChain,
+      failureContent:
+        rollbackStart?.error ??
+        retrySelected.error ??
+        rollbackStart?.reason ??
+        retrySelected.reason ??
+        '',
       source,
       target,
     })
@@ -957,9 +992,171 @@ const failoverTriggerLabel: Record<string, string> = {
   fixed_channel: 'Fixed Channel',
 }
 
+function FailoverTriggerDetailsDialog(props: {
+  transition: FailoverTransition
+  rules?: FailoverRulesSnapshot
+  rulesEnabled?: boolean
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const trigger = failoverTriggerLabel[props.transition.trigger]
+  const triggerSummary = [
+    trigger ? t(trigger) : props.transition.trigger,
+    props.transition.statusCode ? `HTTP ${props.transition.statusCode}` : '',
+    props.transition.errorCode,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const snapshotRows = props.rules
+    ? [
+        {
+          rule: t('Enabled'),
+          value: t(props.rulesEnabled ? 'Yes' : 'No'),
+        },
+        {
+          rule: t('Retry HTTP status codes'),
+          value: props.rules.http_status_codes || t('Not set'),
+        },
+        ...(props.rules.response_header_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('Response header timeout (ms)'),
+                value: `${props.rules.response_header_timeout_ms} ms`,
+              },
+            ]),
+        ...(props.rules.first_content_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('First content timeout (ms)'),
+                value: `${props.rules.first_content_timeout_ms} ms`,
+              },
+            ]),
+        ...(props.rules.stream_response_header_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('Stream response header timeout (ms)'),
+                value: `${props.rules.stream_response_header_timeout_ms} ms`,
+              },
+            ]),
+        ...(props.rules.stream_first_content_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('Stream first content timeout (ms)'),
+                value: `${props.rules.stream_first_content_timeout_ms} ms`,
+              },
+            ]),
+        ...(props.rules.non_stream_response_header_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('Non-stream response header timeout (ms)'),
+                value: `${props.rules.non_stream_response_header_timeout_ms} ms`,
+              },
+            ]),
+        ...(props.rules.non_stream_first_content_timeout_ms === undefined
+          ? []
+          : [
+              {
+                rule: t('Non-stream first content timeout (ms)'),
+                value: `${props.rules.non_stream_first_content_timeout_ms} ms`,
+              },
+            ]),
+        {
+          rule: t('Retry on transport error'),
+          value: t(props.rules.retry_on_transport_error ? 'Yes' : 'No'),
+        },
+        {
+          rule: t('Retry on empty response'),
+          value: t(props.rules.retry_on_empty_response ? 'Yes' : 'No'),
+        },
+        {
+          rule: t('Retry on invalid response'),
+          value: t(props.rules.retry_on_invalid_response ? 'Yes' : 'No'),
+        },
+        {
+          rule: t('Retry on stream error'),
+          value: t(props.rules.retry_on_stream_error ? 'Yes' : 'No'),
+        },
+      ]
+    : []
+
+  return (
+    <>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        onClick={() => setOpen(true)}
+      >
+        {t('View')}
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t('Failover Detail')}
+        contentClassName='sm:max-w-2xl'
+        contentHeight='auto'
+        bodyClassName='space-y-4'
+        footer={
+          <Button variant='outline' onClick={() => setOpen(false)}>
+            {t('Close')}
+          </Button>
+        }
+      >
+        <InflightDetailSection label={t('Failure Reason')} variant='danger'>
+          <InflightDetailRow label={t('Trigger')} value={triggerSummary || '-'} />
+          <InflightDetailRow
+            label={t('Failure Reason')}
+            value={props.transition.reason || '-'}
+            muted
+          />
+          <div className='space-y-1'>
+            <div className='text-xs font-medium'>{t('Error Message')}</div>
+            <pre className='border-border bg-background max-h-48 overflow-auto rounded-md border p-2 text-xs wrap-break-word whitespace-pre-wrap'>
+              {props.transition.failureContent || '-'}
+            </pre>
+          </div>
+        </InflightDetailSection>
+        <InflightDetailSection label={t('Current Trigger Limit Snapshot')}>
+          {snapshotRows.length > 0 ? (
+            <Table className='[&_td]:h-auto [&_th]:h-auto'>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('Rule')}</TableHead>
+                  <TableHead>{t('Value')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {snapshotRows.map((row) => (
+                  <TableRow key={row.rule}>
+                    <TableCell className='text-muted-foreground whitespace-normal'>
+                      {row.rule}
+                    </TableCell>
+                    <TableCell className='font-mono whitespace-normal'>
+                      {row.value}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className='text-muted-foreground text-xs'>-</p>
+          )}
+        </InflightDetailSection>
+      </Dialog>
+    </>
+  )
+}
+
 function FailoverTransitionDetail(props: {
   transition: FailoverTransition
   isAdmin: boolean
+  rules?: FailoverRulesSnapshot
+  rulesEnabled?: boolean
 }) {
   const { t } = useTranslation()
   const getEndpoint = (event: FailoverAuditEvent) => {
@@ -1042,6 +1239,14 @@ function FailoverTransitionDetail(props: {
                 {props.transition.reason}
               </div>
             ) : null}
+          </div>
+          <span className='text-muted-foreground'>{t('Trigger Rule Details')}</span>
+          <div className='flex justify-end'>
+            <FailoverTriggerDetailsDialog
+              transition={props.transition}
+              rules={props.rules}
+              rulesEnabled={props.rulesEnabled}
+            />
           </div>
           <span className='text-muted-foreground'>{t('Rollback Result')}</span>
           <span className='text-right'>
@@ -1814,6 +2019,8 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                     <FailoverTransitionDetail
                       transition={transition}
                       isAdmin={props.isAdmin}
+                      rules={props.task.detail?.failover_audit?.rules}
+                      rulesEnabled={props.task.detail?.failover_audit?.rules_enabled}
                     />
                   ) : null}
                 </Fragment>

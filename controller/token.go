@@ -48,17 +48,24 @@ func normalizeTokenFailover(c *gin.Context, token *model.Token) error {
 		for _, timeout := range []struct {
 			name  string
 			value *int
-			max   int
 		}{
-			{name: "响应头超时", value: &rules.ResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
-			{name: "首个有效内容超时", value: &rules.FirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
-			{name: "流式响应头超时", value: rules.StreamResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
-			{name: "流式首个有效内容超时", value: rules.StreamFirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
-			{name: "非流式响应头超时", value: rules.NonStreamResponseHeaderTimeoutMS, max: types.MaxHeaderTimeoutMS},
-			{name: "非流式首个有效内容超时", value: rules.NonStreamFirstContentTimeoutMS, max: types.MaxContentTimeoutMS},
+			{name: "响应头超时", value: &rules.ResponseHeaderTimeoutMS},
+			{name: "首个有效内容超时", value: &rules.FirstContentTimeoutMS},
+			{name: "流式响应头超时", value: rules.StreamResponseHeaderTimeoutMS},
+			{name: "流式首个有效内容超时", value: rules.StreamFirstContentTimeoutMS},
+			{name: "非流式响应头超时", value: rules.NonStreamResponseHeaderTimeoutMS},
+			{name: "非流式首个有效内容超时", value: rules.NonStreamFirstContentTimeoutMS},
 		} {
-			if timeout.value != nil && *timeout.value != 0 && (*timeout.value < types.MinFailoverTimeoutMS || *timeout.value > timeout.max) {
-				return fmt.Errorf("%s必须为 0 或 %d 到 %d 毫秒", timeout.name, types.MinFailoverTimeoutMS, timeout.max)
+			if timeout.value == nil {
+				continue
+			}
+			if *timeout.value < 0 {
+				return fmt.Errorf("%s不能小于 0 毫秒", timeout.name)
+			}
+			if common.RelayTimeout > 0 &&
+				(*timeout.value/1000 > common.RelayTimeout ||
+					(*timeout.value/1000 == common.RelayTimeout && *timeout.value%1000 > 0)) {
+				return fmt.Errorf("%s不能超过全局超时 %d 秒", timeout.name, common.RelayTimeout)
 			}
 		}
 		if _, err := operation_setting.ParseHTTPStatusCodeRanges(rules.HTTPStatusCodes); err != nil {

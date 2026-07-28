@@ -163,6 +163,148 @@ func TestUpdateInflightTaskDetailBuildsAttemptTimeline(t *testing.T) {
 	assert.Equal(t, "timeout", detail.Attempts[0].Error)
 }
 
+func TestMergeInflightTaskDetailPreservesAcceptedOnInitialAttempt(t *testing.T) {
+	stored := &InflightTask{
+		Status:    InflightTaskStatusAccepted,
+		UpdatedAt: 100,
+		Detail: inflightTaskDetailFromRelayInfo(
+			&relaycommon.RelayInfo{RetryIndex: 0},
+			InflightTaskStatusAccepted,
+			100,
+		),
+	}
+	next := &InflightTask{
+		Status:    InflightTaskStatusRouting,
+		UpdatedAt: 105,
+		Detail: inflightTaskDetailFromRelayInfo(&relaycommon.RelayInfo{
+			RetryIndex: 0,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelId:   16,
+				ChannelName: "Hiyo",
+			},
+		}, InflightTaskStatusRouting, 105),
+	}
+
+	mergeInflightTaskDetail(stored, next)
+
+	require.NotNil(t, next.Detail)
+	require.Len(t, next.Detail.Attempts, 1)
+	assert.Equal(t, int64(100), next.Detail.Attempts[0].StartedAt)
+	require.Len(t, next.Detail.Attempts[0].Timeline, 2)
+	assert.Equal(t, InflightTaskStatusAccepted, next.Detail.Attempts[0].Timeline[0].Status)
+	assert.Equal(t, InflightTaskStatusRouting, next.Detail.Attempts[0].Timeline[1].Status)
+}
+
+func TestMergeInflightTaskDetailAppendsCompletedAfterRicherTimeline(t *testing.T) {
+	stored := &InflightTask{
+		Status:    InflightTaskStatusStreaming,
+		UpdatedAt: 115,
+		Detail: &InflightTaskDetail{
+			RetryIndex:   0,
+			ChannelID:    16,
+			ChannelName:  "Hiyo",
+			LatestError:  "stale upstream error",
+			CurrentStage: InflightTaskStatusStreaming,
+			Timeline: []InflightTaskStatusStep{
+				{Status: InflightTaskStatusAccepted, StartedAt: 100, UpdatedAt: 105, DurationSeconds: 5},
+				{Status: InflightTaskStatusRouting, StartedAt: 105, UpdatedAt: 106, DurationSeconds: 1},
+				{Status: InflightTaskStatusUpstreamPending, StartedAt: 106, UpdatedAt: 110, DurationSeconds: 4},
+				{Status: InflightTaskStatusStreaming, StartedAt: 110, UpdatedAt: 115, DurationSeconds: 5},
+			},
+			ChannelChain: []InflightTaskChannelAttempt{{
+				RetryIndex: 0, ChannelID: 16, ChannelName: "Hiyo", Status: InflightTaskStatusStreaming,
+				Error: "stale upstream error", StartedAt: 105, UpdatedAt: 115,
+			}},
+			Attempts: []InflightTaskAttempt{{
+				RetryIndex: 0, ChannelID: 16, ChannelName: "Hiyo", Status: InflightTaskStatusStreaming,
+				Error: "stale upstream error", StartedAt: 105, UpdatedAt: 115,
+				Timeline: []InflightTaskStatusStep{
+					{Status: InflightTaskStatusRouting, StartedAt: 105, UpdatedAt: 106, DurationSeconds: 1},
+					{Status: InflightTaskStatusUpstreamPending, StartedAt: 106, UpdatedAt: 110, DurationSeconds: 4},
+					{Status: InflightTaskStatusStreaming, StartedAt: 110, UpdatedAt: 115, DurationSeconds: 5},
+				},
+			}},
+		},
+	}
+	next := &InflightTask{
+		Status:    InflightTaskStatusCompleted,
+		UpdatedAt: 120,
+		Detail: inflightTaskDetailFromRelayInfo(&relaycommon.RelayInfo{
+			RetryIndex: 0,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelId:   16,
+				ChannelName: "Hiyo",
+			},
+		}, InflightTaskStatusCompleted, 120),
+	}
+
+	mergeInflightTaskDetail(stored, next)
+
+	require.NotNil(t, next.Detail)
+	require.Len(t, next.Detail.Attempts, 1)
+	attempt := next.Detail.Attempts[0]
+	assert.Equal(t, InflightTaskStatusCompleted, attempt.Status)
+	assert.Empty(t, attempt.Error)
+	require.Len(t, attempt.Timeline, 5)
+	assert.Equal(t, InflightTaskStatusAccepted, attempt.Timeline[0].Status)
+	assert.Equal(t, InflightTaskStatusCompleted, attempt.Timeline[len(attempt.Timeline)-1].Status)
+	assert.Equal(t, InflightTaskStatusCompleted, next.Detail.ChannelChain[0].Status)
+	assert.Empty(t, next.Detail.ChannelChain[0].Error)
+	assert.Empty(t, next.Detail.LatestError)
+}
+
+func TestReconcileInflightTaskTerminalStatusUpdatesCurrentAttempt(t *testing.T) {
+	task := &InflightTask{
+		Status:    InflightTaskStatusCompleted,
+		UpdatedAt: 130,
+		Detail: &InflightTaskDetail{
+			RetryIndex:   1,
+			ChannelID:    20,
+			ChannelName:  "Neco",
+			LatestError:  "stale retry error",
+			CurrentStage: InflightTaskStatusStreaming,
+			Timeline: []InflightTaskStatusStep{
+				{Status: InflightTaskStatusAccepted, StartedAt: 100, UpdatedAt: 105, DurationSeconds: 5},
+				{Status: InflightTaskStatusStreaming, StartedAt: 120, UpdatedAt: 130, DurationSeconds: 10},
+			},
+			ChannelChain: []InflightTaskChannelAttempt{
+				{RetryIndex: 0, ChannelID: 16, ChannelName: "Hiyo", Status: InflightTaskStatusFailed, Error: "timeout", StartedAt: 105, UpdatedAt: 115},
+				{RetryIndex: 1, ChannelID: 20, ChannelName: "Neco", Status: InflightTaskStatusStreaming, Error: "stale retry error", StartedAt: 120, UpdatedAt: 130},
+			},
+			Attempts: []InflightTaskAttempt{
+				{
+					RetryIndex: 0, ChannelID: 16, ChannelName: "Hiyo", Status: InflightTaskStatusFailed,
+					Error: "timeout", StartedAt: 105, UpdatedAt: 115,
+					Timeline: []InflightTaskStatusStep{{Status: InflightTaskStatusFailed, StartedAt: 115, UpdatedAt: 115}},
+				},
+				{
+					RetryIndex: 1, ChannelID: 20, ChannelName: "Neco", Status: InflightTaskStatusStreaming,
+					Error: "stale retry error", StartedAt: 120, UpdatedAt: 130,
+					Timeline: []InflightTaskStatusStep{{Status: InflightTaskStatusStreaming, StartedAt: 120, UpdatedAt: 130, DurationSeconds: 10}},
+				},
+			},
+		},
+	}
+
+	require.True(t, inflightTaskNeedsTerminalReconciliation(task))
+	reconcileInflightTaskTerminalStatus(task, InflightTaskStatusCompleted, 140)
+
+	assert.Equal(t, InflightTaskStatusCompleted, task.Status)
+	assert.Equal(t, int64(140), task.UpdatedAt)
+	require.NotNil(t, task.Detail)
+	assert.Equal(t, InflightTaskStatusCompleted, task.Detail.CurrentStage)
+	assert.Empty(t, task.Detail.LatestError)
+	assert.Equal(t, InflightTaskStatusFailed, task.Detail.Attempts[0].Status)
+	assert.Equal(t, "timeout", task.Detail.Attempts[0].Error)
+	assert.Equal(t, InflightTaskStatusCompleted, task.Detail.Attempts[1].Status)
+	assert.Empty(t, task.Detail.Attempts[1].Error)
+	assert.Equal(t, InflightTaskStatusCompleted, task.Detail.Attempts[1].Timeline[len(task.Detail.Attempts[1].Timeline)-1].Status)
+	assert.Equal(t, InflightTaskStatusCompleted, task.Detail.ChannelChain[1].Status)
+	assert.Empty(t, task.Detail.ChannelChain[1].Error)
+	assert.Equal(t, InflightTaskStatusCompleted, task.Detail.Timeline[len(task.Detail.Timeline)-1].Status)
+	assert.False(t, inflightTaskNeedsTerminalReconciliation(task))
+}
+
 func TestMergeInflightTaskDetailSplitsAttemptsByRetryIndex(t *testing.T) {
 	stored := &InflightTask{
 		Detail: &InflightTaskDetail{

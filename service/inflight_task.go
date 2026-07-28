@@ -327,6 +327,69 @@ func shouldApplyReconciledTerminalStatus(task *InflightTask, terminalStatus stri
 	return task.Detail.RetryIndex >= maxRetryIndex
 }
 
+func reconcileInflightTaskTerminalStatus(task *InflightTask, terminalStatus string, now int64) {
+	if task == nil || !isInflightTaskTerminalStatus(terminalStatus) {
+		return
+	}
+	task.Status = terminalStatus
+	task.UpdatedAt = now
+	if task.Detail == nil {
+		return
+	}
+	updateInflightTaskDetail(task.Detail, terminalStatus, now, task.Detail.RetryIndex)
+	ensureInflightAttemptCoverage(task.Detail, terminalStatus, now)
+}
+
+func inflightTaskNeedsTerminalReconciliation(task *InflightTask) bool {
+	if task == nil || task.Detail == nil || !isInflightTaskTerminalStatus(task.Status) {
+		return false
+	}
+	detail := task.Detail
+	if detail.CurrentStage != task.Status || len(detail.Timeline) == 0 || detail.Timeline[len(detail.Timeline)-1].Status != task.Status {
+		return true
+	}
+	if task.Status == InflightTaskStatusCompleted && detail.LatestError != "" {
+		return true
+	}
+	attemptIndex := indexOfInflightAttempt(detail.Attempts, detail.RetryIndex)
+	if attemptIndex < 0 {
+		return true
+	}
+	attempt := detail.Attempts[attemptIndex]
+	if attempt.Status != task.Status || len(attempt.Timeline) == 0 || attempt.Timeline[len(attempt.Timeline)-1].Status != task.Status {
+		return true
+	}
+	if initialAttemptIndex := indexOfInflightAttempt(detail.Attempts, 0); initialAttemptIndex >= 0 {
+		hasRequestAccepted := false
+		for _, step := range detail.Timeline {
+			if step.Status == InflightTaskStatusAccepted {
+				hasRequestAccepted = true
+				break
+			}
+		}
+		if hasRequestAccepted {
+			hasAttemptAccepted := false
+			for _, step := range detail.Attempts[initialAttemptIndex].Timeline {
+				if step.Status == InflightTaskStatusAccepted {
+					hasAttemptAccepted = true
+					break
+				}
+			}
+			if !hasAttemptAccepted {
+				return true
+			}
+		}
+	}
+	if task.Status == InflightTaskStatusCompleted && attempt.Error != "" {
+		return true
+	}
+	channelIndex := indexOfInflightChannelAttempt(detail.ChannelChain, detail.RetryIndex)
+	if channelIndex < 0 || detail.ChannelChain[channelIndex].Status != task.Status {
+		return true
+	}
+	return task.Status == InflightTaskStatusCompleted && detail.ChannelChain[channelIndex].Error != ""
+}
+
 func inflightTaskRetentionTTL(status string) time.Duration {
 	switch status {
 	case InflightTaskStatusCompleted, InflightTaskStatusFailed:
@@ -653,6 +716,27 @@ func ensureInflightAttemptCoverage(detail *InflightTaskDetail, status string, no
 			UpdatedAt:   attempt.UpdatedAt,
 		})
 	}
+
+	initialAttemptIndex := indexOfInflightAttempt(detail.Attempts, 0)
+	if initialAttemptIndex < 0 {
+		return
+	}
+	for _, step := range detail.Timeline {
+		if step.Status != InflightTaskStatusAccepted {
+			continue
+		}
+		initialAttempt := &detail.Attempts[initialAttemptIndex]
+		for _, attemptStep := range initialAttempt.Timeline {
+			if attemptStep.Status == InflightTaskStatusAccepted {
+				return
+			}
+		}
+		initialAttempt.Timeline = append([]InflightTaskStatusStep{step}, initialAttempt.Timeline...)
+		if initialAttempt.StartedAt == 0 || (step.StartedAt > 0 && step.StartedAt < initialAttempt.StartedAt) {
+			initialAttempt.StartedAt = step.StartedAt
+		}
+		return
+	}
 }
 
 // inflightAttemptFromFailoverAudit recovers a slot when earlier asynchronous
@@ -753,6 +837,7 @@ func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAtte
 		return
 	}
 	current := &detail.Attempts[idx]
+	previousStatus := current.Status
 	if current.StartedAt == 0 {
 		current.StartedAt = incoming.StartedAt
 	}
@@ -765,7 +850,8 @@ func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAtte
 	if incoming.ChannelName != "" {
 		current.ChannelName = incoming.ChannelName
 	}
-	if incoming.Status != "" && shouldOverwriteInflightTaskStatus(current.Status, incoming.Status) {
+	statusChanged := incoming.Status != "" && incoming.Status != previousStatus && shouldOverwriteInflightTaskStatus(previousStatus, incoming.Status)
+	if incoming.Status != "" && shouldOverwriteInflightTaskStatus(previousStatus, incoming.Status) {
 		current.Status = incoming.Status
 	}
 	if incoming.Status == InflightTaskStatusCompleted {
@@ -775,6 +861,13 @@ func upsertInflightAttempt(detail *InflightTaskDetail, incoming InflightTaskAtte
 	}
 	if len(incoming.Timeline) > len(current.Timeline) {
 		current.Timeline = incoming.Timeline
+	}
+	if statusChanged {
+		transitionAt := incoming.UpdatedAt
+		if transitionAt == 0 {
+			transitionAt = current.UpdatedAt
+		}
+		updateInflightAttemptTimeline(current, incoming.Status, transitionAt)
 	}
 }
 
@@ -1103,9 +1196,6 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 		if task.UserID != userID {
 			continue
 		}
-		if query.Status != "" && task.Status != query.Status {
-			continue
-		}
 		if query.Kind != "" && task.Kind != query.Kind {
 			continue
 		}
@@ -1140,14 +1230,26 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 	reconciled := make([]*InflightTask, 0)
 	for i := range tasks {
 		if terminalStatus, ok := terminalStatuses[tasks[i].RequestID]; ok && shouldApplyReconciledTerminalStatus(&tasks[i], terminalStatus) {
-			tasks[i].Status = terminalStatus
-			tasks[i].UpdatedAt = time.Now().Unix()
+			reconcileInflightTaskTerminalStatus(&tasks[i], terminalStatus, time.Now().Unix())
+			reconciled = append(reconciled, &tasks[i])
+			continue
+		}
+		if inflightTaskNeedsTerminalReconciliation(&tasks[i]) {
+			reconcileInflightTaskTerminalStatus(&tasks[i], tasks[i].Status, tasks[i].UpdatedAt)
 			reconciled = append(reconciled, &tasks[i])
 		}
 	}
-
 	for _, task := range reconciled {
 		_ = persistInflightTask(ctx, client, task)
+	}
+	if query.Status != "" {
+		filtered := tasks[:0]
+		for i := range tasks {
+			if tasks[i].Status == query.Status {
+				filtered = append(filtered, tasks[i])
+			}
+		}
+		tasks = filtered
 	}
 
 	if len(missing) > 0 {

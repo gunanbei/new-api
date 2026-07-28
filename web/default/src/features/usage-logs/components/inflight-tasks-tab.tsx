@@ -698,10 +698,16 @@ function canOpenInflightDetails(task: InflightTask, isAdmin: boolean) {
 }
 
 function getCurrentStage(task: InflightTask) {
+  if (isInflightTaskTerminal(task)) {
+    return task.status
+  }
   return task.detail?.current_stage || task.status
 }
 
 function getLatestError(task: InflightTask) {
+  if (task.status === 'completed') {
+    return ''
+  }
   if (task.detail?.latest_error) {
     return task.detail.latest_error
   }
@@ -931,7 +937,67 @@ function getAttempts(task: InflightTask): InflightTaskAttempt[] {
     }
   }
 
-  return fillMissingInflightAttempts(task, resolved)
+  const normalized = fillMissingInflightAttempts(task, resolved)
+  const acceptedStep = task.detail?.timeline?.find(
+    (step) => step.status === 'accepted'
+  )
+  const currentRetryIndex = getRetryIndex(task)
+  const terminalStatus = isInflightTaskTerminal(task) ? task.status : ''
+
+  return normalized.map((attempt) => {
+    let timeline = [...(attempt.timeline ?? [])]
+    if (
+      attempt.retry_index === 0 &&
+      acceptedStep &&
+      !timeline.some((step) => step.status === 'accepted')
+    ) {
+      timeline = [acceptedStep, ...timeline]
+    }
+
+    const isCurrentAttempt = attempt.retry_index === currentRetryIndex
+    if (
+      isCurrentAttempt &&
+      terminalStatus &&
+      timeline.at(-1)?.status !== terminalStatus
+    ) {
+      const terminalAt =
+        task.updated_at ||
+        timeline.at(-1)?.updated_at ||
+        attempt.updated_at ||
+        task.created_at
+      const lastStep = timeline.at(-1)
+      if (lastStep) {
+        timeline[timeline.length - 1] = {
+          ...lastStep,
+          updated_at: terminalAt,
+          duration_seconds: Math.max(0, terminalAt - lastStep.started_at),
+        }
+      }
+      timeline.push({
+        status: terminalStatus,
+        started_at: terminalAt,
+        updated_at: terminalAt,
+        duration_seconds: 0,
+      })
+    }
+
+    return {
+      ...attempt,
+      status:
+        isCurrentAttempt && terminalStatus ? terminalStatus : attempt.status,
+      error:
+        isCurrentAttempt && terminalStatus === 'completed' ? '' : attempt.error,
+      started_at:
+        attempt.retry_index === 0 && acceptedStep
+          ? acceptedStep.started_at
+          : attempt.started_at,
+      updated_at:
+        isCurrentAttempt && terminalStatus
+          ? task.updated_at
+          : attempt.updated_at,
+      timeline,
+    }
+  })
 }
 
 function getFailoverTransitions(task: InflightTask): FailoverTransition[] {

@@ -215,6 +215,10 @@ func selectFailoverChannel(param *RetryParam, groups []string) (*model.Channel, 
 		common.SetContextKey(param.Ctx, constant.ContextKeyFailoverGroupIndex, cursor.GroupIndex)
 		common.SetContextKey(param.Ctx, constant.ContextKeyFailoverGroupStartRetry, cursor.StartRetry)
 	}()
+	if common.GetContextKeyBool(param.Ctx, constant.ContextKeyFailoverAdvanceGroup) {
+		cursor.skip(param.GetRetry())
+		common.SetContextKey(param.Ctx, constant.ContextKeyFailoverAdvanceGroup, false)
+	}
 
 	for {
 		group, priorityRetry, ok := cursor.nextTarget(param.GetRetry(), levelsOf)

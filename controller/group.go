@@ -3,9 +3,11 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -25,17 +27,31 @@ func GetGroups(c *gin.Context) {
 
 func GetUserGroups(c *gin.Context) {
 	usableGroups := make(map[string]map[string]interface{})
-	userGroup := ""
+	crossGroupRetryStatusCodes := make(map[string]string)
 	userId := c.GetInt("id")
+	if userId > 0 {
+		common.OptionMapRWMutex.RLock()
+		for _, rule := range operation_setting.GetRoutingReliabilitySetting().CrossGroupRetryRules {
+			if rule.HTTPStatusCodes != "" {
+				crossGroupRetryStatusCodes[rule.Group] = rule.HTTPStatusCodes
+			}
+		}
+		common.OptionMapRWMutex.RUnlock()
+	}
+	userGroup := ""
 	userGroup, _ = model.GetUserGroup(userId, false)
 	userUsableGroups := service.GetUserUsableGroups(userGroup)
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
-			usableGroups[groupName] = map[string]interface{}{
+			groupInfo := map[string]interface{}{
 				"ratio": service.GetUserGroupRatio(userGroup, groupName),
 				"desc":  desc,
 			}
+			if statusCodes := crossGroupRetryStatusCodes[groupName]; statusCodes != "" {
+				groupInfo["cross_group_retry_status_codes"] = statusCodes
+			}
+			usableGroups[groupName] = groupInfo
 		}
 	}
 	if _, ok := userUsableGroups["auto"]; ok {

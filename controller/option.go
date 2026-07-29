@@ -296,6 +296,29 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "routing_reliability_setting.cross_group_retry_rules":
+		rules, parseErr := operation_setting.ParseCrossGroupRetryRules(option.Value.(string))
+		if parseErr != nil {
+			common.ApiErrorMsg(c, parseErr.Error())
+			return
+		}
+		groups := ratio_setting.GetGroupRatioCopy()
+		for _, rule := range rules {
+			if rule.Group == "auto" {
+				common.ApiErrorMsg(c, "跨分组重试规则不能使用 auto 分组")
+				return
+			}
+			if _, exists := groups[rule.Group]; !exists {
+				common.ApiErrorMsg(c, fmt.Sprintf("分组 %s 不存在", rule.Group))
+				return
+			}
+		}
+		encoded, marshalErr := common.Marshal(rules)
+		if marshalErr != nil {
+			common.ApiErrorMsg(c, "跨分组重试规则序列化失败")
+			return
+		}
+		option.Value = string(encoded)
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")
 		if err != nil {

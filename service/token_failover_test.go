@@ -89,6 +89,20 @@ func TestFailoverCursorNeverExceedsRetryBudget(t *testing.T) {
 	assert.Len(t, walkFailoverSequence(groups, levels, retryTimes), retryTimes+1)
 }
 
+func TestFailoverCursorCanAdvanceToNextGroupImmediately(t *testing.T) {
+	cursor := &failoverCursor{
+		Groups:     []string{"a", "b"},
+		GroupIndex: 0,
+		StartRetry: 0,
+	}
+	cursor.skip(1)
+
+	group, priorityRetry, ok := cursor.nextTarget(1, func(string) int { return 3 })
+	require.True(t, ok)
+	assert.Equal(t, "b", group)
+	assert.Equal(t, 0, priorityRetry)
+}
+
 func newFailoverTestContext(t *testing.T) *gin.Context {
 	t.Helper()
 

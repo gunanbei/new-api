@@ -325,6 +325,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 			break
 		}
+		if common.GetContextKeyBool(c, constant.ContextKeyTokenFailoverEnabled) &&
+			operation_setting.ShouldRetryAcrossGroup(common.GetContextKeyString(c, constant.ContextKeyAutoGroup), newAPIError.StatusCode) {
+			common.SetContextKey(c, constant.ContextKeyFailoverAdvanceGroup, true)
+		}
 		logger.LogInfo(c, fmt.Sprintf("failover retry selected: retry=%d channel=%d group=%s trigger=%s", relayInfo.RetryIndex, channel.Id, relayInfo.UsingGroup, decision.Trigger))
 		processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 		service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusFailed)
@@ -492,6 +496,10 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) r
 	}
 	if operation_setting.ShouldRetryByStatusCode(code) {
 		return retryDecision{Retry: true, Trigger: "system_http_status_rule", Reason: fmt.Sprintf("HTTP status %d matched system rule", code)}
+	}
+	if common.GetContextKeyBool(c, constant.ContextKeyTokenFailoverEnabled) &&
+		operation_setting.ShouldRetryAcrossGroup(common.GetContextKeyString(c, constant.ContextKeyAutoGroup), code) {
+		return retryDecision{Retry: true, Trigger: "cross_group_http_status_rule", Reason: fmt.Sprintf("HTTP status %d matched cross-group rule", code)}
 	}
 	if rules.Enabled && rules.HTTPStatusCodes != "" {
 		ranges, err := operation_setting.ParseHTTPStatusCodeRanges(rules.HTTPStatusCodes)

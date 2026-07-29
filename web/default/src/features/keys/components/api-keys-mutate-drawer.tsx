@@ -140,6 +140,7 @@ export function ApiKeysMutateDrawer({
       label: key,
       desc: info.desc || key,
       ratio: info.ratio,
+      crossGroupRetryStatusCodes: info.cross_group_retry_status_codes,
     })
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')

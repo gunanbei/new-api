@@ -39,6 +39,12 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type AdminGroupsResponse = {
+  success: boolean
+  message?: string
+  data?: string[]
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string
@@ -263,6 +269,7 @@ export type ModelSettings = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  'routing_reliability_setting.cross_group_retry_rules': string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_mode': 'scheduled_all' | 'passive_recovery'

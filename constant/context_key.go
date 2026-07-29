@@ -36,6 +36,9 @@ const (
 	// ContextKeyFailoverGroupStartRetry holds the global retry index at which the current
 	// group started, so the in-group priority level is retry - startRetry.
 	ContextKeyFailoverGroupStartRetry ContextKey = "failover_group_start_retry"
+	// ContextKeyFailoverAdvanceGroup directs the next retry to skip the remaining
+	// channel priorities in the current failover group.
+	ContextKeyFailoverAdvanceGroup ContextKey = "failover_advance_group"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"

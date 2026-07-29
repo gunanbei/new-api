@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -46,6 +47,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
+import { getAdminGroups } from '../api'
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -56,6 +58,10 @@ import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import {
+  CrossGroupRetryRulesField,
+  type CrossGroupRetryRule,
+} from './cross-group-retry-rules-field'
 
 const numericString = z.string().refine((value) => {
   const trimmed = value.trim()
@@ -75,6 +81,12 @@ const routingReliabilitySchema = z
     AutomaticDisableKeywords: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
+    cross_group_retry_rules: z.array(
+      z.object({
+        group: z.string().trim().min(1, 'Group is required'),
+        http_status_codes: z.string(),
+      })
+    ),
     monitor_setting: z.object({
       auto_test_channel_enabled: z.boolean(),
       auto_test_channel_minutes: z.coerce
@@ -110,6 +122,30 @@ const routingReliabilitySchema = z
         )}`,
       })
     }
+
+    const seenGroups = new Set<string>()
+    values.cross_group_retry_rules.forEach((rule, index) => {
+      const group = rule.group.trim()
+      if (seenGroups.has(group)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cross_group_retry_rules', index, 'group'],
+          message: 'Duplicate group',
+        })
+      }
+      seenGroups.add(group)
+
+      const parsed = parseHttpStatusCodeRules(rule.http_status_codes)
+      if (!parsed.ok || !parsed.normalized) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cross_group_retry_rules', index, 'http_status_codes'],
+          message: parsed.ok
+            ? 'Enter at least one HTTP status code'
+            : `Invalid status code rules: ${parsed.invalidTokens.join(', ')}`,
+        })
+      }
+    })
   })
 
 type RoutingReliabilityFormValues = z.output<typeof routingReliabilitySchema>
@@ -124,6 +160,7 @@ type RoutingReliabilitySectionProps = {
     AutomaticDisableKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
+    'routing_reliability_setting.cross_group_retry_rules': string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_mode': ChannelTestMode
@@ -142,6 +179,7 @@ type NormalizedRoutingReliabilityValues = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  'routing_reliability_setting.cross_group_retry_rules': string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_mode': ChannelTestMode
@@ -149,6 +187,32 @@ type NormalizedRoutingReliabilityValues = {
 
 function normalizeChannelTestMode(value?: string): ChannelTestMode {
   return value === 'passive_recovery' ? 'passive_recovery' : 'scheduled_all'
+}
+
+function parseCrossGroupRetryRules(value: string): CrossGroupRetryRule[] {
+  try {
+    const parsed: unknown = JSON.parse(value || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (rule): rule is CrossGroupRetryRule =>
+        typeof rule === 'object' &&
+        rule !== null &&
+        typeof (rule as CrossGroupRetryRule).group === 'string' &&
+        typeof (rule as CrossGroupRetryRule).http_status_codes === 'string'
+    )
+  } catch {
+    return []
+  }
+}
+
+function normalizeCrossGroupRetryRules(rules: CrossGroupRetryRule[]) {
+  return JSON.stringify(
+    rules.map((rule) => ({
+      group: rule.group.trim(),
+      http_status_codes: parseHttpStatusCodeRules(rule.http_status_codes)
+        .normalized,
+    }))
+  )
 }
 
 const buildFormDefaults = (
@@ -163,6 +227,9 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
+  cross_group_retry_rules: parseCrossGroupRetryRules(
+    defaults['routing_reliability_setting.cross_group_retry_rules']
+  ),
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -190,6 +257,12 @@ const normalizeDefaults = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticRetryStatusCodes ?? ''
   ).normalized,
+  'routing_reliability_setting.cross_group_retry_rules':
+    normalizeCrossGroupRetryRules(
+      parseCrossGroupRetryRules(
+        defaults['routing_reliability_setting.cross_group_retry_rules']
+      )
+    ),
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -215,6 +288,8 @@ const normalizeFormValues = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticRetryStatusCodes
   ).normalized,
+  'routing_reliability_setting.cross_group_retry_rules':
+    normalizeCrossGroupRetryRules(values.cross_group_retry_rules),
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -227,6 +302,10 @@ export function RoutingReliabilitySection({
 }: RoutingReliabilitySectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const groupsQuery = useQuery({
+    queryKey: ['groups'],
+    queryFn: getAdminGroups,
+  })
   const baselineRef = useRef<NormalizedRoutingReliabilityValues>(
     normalizeDefaults(defaultValues)
   )
@@ -250,6 +329,7 @@ export function RoutingReliabilitySection({
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
+  const crossGroupRetryRules = form.watch('cross_group_retry_rules')
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -347,6 +427,49 @@ export function RoutingReliabilitySection({
                 )}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className='flex min-w-0 flex-col gap-4'>
+            <div className='flex flex-col gap-1'>
+              <h4 className='text-sm font-medium'>
+                {t('API key failover · Cross-group retry')}
+              </h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'For matching HTTP status codes, skip the remaining channel priorities in the current group and try the next group.'
+                )}
+              </p>
+            </div>
+            <FormField
+              control={form.control}
+              name='cross_group_retry_rules'
+              render={() => (
+                <FormItem>
+                  <FormControl>
+                    <CrossGroupRetryRulesField
+                      groups={groupsQuery.data?.data ?? []}
+                      isLoading={groupsQuery.isLoading}
+                      value={crossGroupRetryRules}
+                      getError={(index) => {
+                        const error = form.getFieldState(
+                          `cross_group_retry_rules.${index}.http_status_codes`
+                        ).error
+                        return error?.message
+                      }}
+                      onChange={(rules) => {
+                        form.setValue('cross_group_retry_rules', rules, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
 
           <Separator />

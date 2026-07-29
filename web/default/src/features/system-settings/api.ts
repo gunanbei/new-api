@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  AdminGroupsResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   InflightCleanupCronPreviewResponse,
@@ -32,6 +33,11 @@ import type {
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
 } from './types'
+
+export async function getAdminGroups() {
+  const res = await api.get<AdminGroupsResponse>('/api/group/')
+  return res.data
+}
 
 export async function getSystemOptions() {
   const res = await api.get<SystemOptionsResponse>('/api/option/')
@@ -94,7 +100,9 @@ export async function getCurrentInflightLogCleanupTask() {
 }
 
 export async function getInflightTaskStats() {
-  const res = await api.get<InflightTaskStatsResponse>('/api/log/inflight/stats')
+  const res = await api.get<InflightTaskStatsResponse>(
+    '/api/log/inflight/stats'
+  )
   return res.data
 }
 

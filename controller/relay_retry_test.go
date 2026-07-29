@@ -16,11 +16,16 @@ import (
 
 func TestShouldRetryKeepsSystemHTTPStatusRulesWithFailoverKey(t *testing.T) {
 	originalRanges := operation_setting.AutomaticRetryStatusCodeRanges
+	originalCrossGroupRules := operation_setting.GetRoutingReliabilitySetting().CrossGroupRetryRules
 	operation_setting.AutomaticRetryStatusCodeRanges = []operation_setting.StatusCodeRange{
 		{Start: http.StatusInternalServerError, End: http.StatusInternalServerError},
 	}
+	operation_setting.GetRoutingReliabilitySetting().CrossGroupRetryRules = []operation_setting.CrossGroupRetryRule{
+		{Group: "default", HTTPStatusCodes: "429"},
+	}
 	t.Cleanup(func() {
 		operation_setting.AutomaticRetryStatusCodeRanges = originalRanges
+		operation_setting.GetRoutingReliabilitySetting().CrossGroupRetryRules = originalCrossGroupRules
 	})
 
 	testCases := []struct {
@@ -48,6 +53,14 @@ func TestShouldRetryKeepsSystemHTTPStatusRulesWithFailoverKey(t *testing.T) {
 			trigger:    "http_status_rule",
 		},
 		{
+			name:       "cross-group rule adds a status code not selected by the system",
+			statusCode: http.StatusTooManyRequests,
+			errorCode:  types.ErrorCodeBadResponse,
+			rules:      "",
+			retry:      true,
+			trigger:    "cross_group_http_status_rule",
+		},
+		{
 			name:       "key rule cannot override an always skipped status code",
 			statusCode: http.StatusGatewayTimeout,
 			errorCode:  types.ErrorCodeBadResponse,
@@ -73,6 +86,8 @@ func TestShouldRetryKeepsSystemHTTPStatusRulesWithFailoverKey(t *testing.T) {
 				Enabled:         true,
 				HTTPStatusCodes: testCase.rules,
 			})
+			ctx.Set(constant.ContextKeyTokenFailoverEnabled, true)
+			ctx.Set(constant.ContextKeyAutoGroup, "default")
 
 			decision := shouldRetry(ctx, types.NewErrorWithStatusCode(
 				errors.New("upstream error"), testCase.errorCode, testCase.statusCode,

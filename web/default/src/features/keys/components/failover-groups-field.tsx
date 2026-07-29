@@ -70,8 +70,18 @@ export function FailoverGroupsField(props: FailoverGroupsFieldProps) {
                     {index + 1}
                   </span>
                 )}
-                <span className='min-w-0 flex-1 truncate text-sm font-medium'>
-                  {group}
+                <span className='flex min-w-0 flex-1 flex-col gap-0.5'>
+                  <span className='truncate text-sm font-medium'>{group}</span>
+                  {option?.crossGroupRetryStatusCodes && (
+                    <span className='text-muted-foreground line-clamp-2 text-[11px] leading-4 break-all sm:text-xs'>
+                      {t(
+                        'Automatic cross-group HTTP status codes: [{{codes}}]',
+                        {
+                          codes: option.crossGroupRetryStatusCodes,
+                        }
+                      )}
+                    </span>
+                  )}
                 </span>
                 {option?.ratio !== undefined && option.ratio !== '' && (
                   <Badge variant='outline' className='shrink-0 text-[10px]'>

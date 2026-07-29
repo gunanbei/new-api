@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type StatusBadgeProps } from '@/components/status-badge'
+import type { StatusBadgeProps } from '@/components/status-badge'
 
 // ============================================================================
 // API Key Status Configuration
@@ -89,17 +89,20 @@ export const FAILOVER_STRATEGY_OPTIONS: {
   {
     value: 'order',
     label: 'In configured order',
-    description: 'Try the groups from top to bottom as listed below',
+    description:
+      'Try groups from top to bottom in the list. Each group exhausts its channel priorities before the next group is tried.',
   },
   {
     value: 'lowest_ratio',
     label: 'Lowest ratio first',
-    description: 'Try the cheapest group available to you first',
+    description:
+      'Try groups from the lowest ratio to the highest. Groups with the same ratio follow the list order.',
   },
   {
     value: 'random',
     label: 'Random',
-    description: 'Shuffle the group order once per request',
+    description:
+      'Randomize the group order once per request. Each group exhausts its channel priorities before the next group is tried.',
   },
 ]
 

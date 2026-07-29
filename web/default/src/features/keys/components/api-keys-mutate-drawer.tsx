@@ -423,7 +423,7 @@ export function ApiKeysMutateDrawer({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Each request starts on the first group and moves to the next one when every channel priority in the current group has failed.'
+                            'The selected strategy determines the group order. The next group is tried only after every channel priority in the current group has failed.'
                           )}
                         </FormDescription>
                         <FormMessage />

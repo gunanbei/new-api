@@ -2001,7 +2001,7 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                       render={
                         <button
                           type='button'
-                          className='flex w-full items-center justify-between gap-3 p-3 text-left'
+                          className='group/attempt-trigger flex w-full items-center justify-between gap-3 p-3 text-left'
                           aria-label={getAttemptSummary(attempt, props.task, t)}
                         />
                       }
@@ -2044,7 +2044,7 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                         </div>
                       </div>
                       <ChevronDown
-                        className='text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]/attempt:rotate-180'
+                        className='text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]/attempt-trigger:rotate-180'
                         aria-hidden='true'
                       />
                     </CollapsibleTrigger>
@@ -2128,19 +2128,19 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
                             ))}
                           </div>
                         ) : null}
+                        {transition ? (
+                          <FailoverTransitionDetail
+                            transition={transition}
+                            isAdmin={props.isAdmin}
+                            rules={props.task.detail?.failover_audit?.rules}
+                            rulesEnabled={
+                              props.task.detail?.failover_audit?.rules_enabled
+                            }
+                          />
+                        ) : null}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
-                  {transition ? (
-                    <FailoverTransitionDetail
-                      transition={transition}
-                      isAdmin={props.isAdmin}
-                      rules={props.task.detail?.failover_audit?.rules}
-                      rulesEnabled={
-                        props.task.detail?.failover_audit?.rules_enabled
-                      }
-                    />
-                  ) : null}
                 </Fragment>
               )
             })}

@@ -11,6 +11,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,6 +20,27 @@ func buildChannelAffinityTemplateContextForTest(meta channelAffinityMeta) *gin.C
 	ctx, _ := gin.CreateTestContext(rec)
 	setChannelAffinityContext(ctx, meta)
 	return ctx
+}
+
+func TestAttachChannelAffinityToRelayInfo(t *testing.T) {
+	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{})
+	ctx.Set(ginKeyChannelAffinityLogInfo, map[string]interface{}{
+		"rule_name":      "codex-cli",
+		"selected_group": "vip",
+		"using_group":    "default",
+		"key_hint":       "request-42",
+		"key_fp":         "abc123",
+	})
+	relayInfo := &relaycommon.RelayInfo{}
+
+	AttachChannelAffinityToRelayInfo(ctx, relayInfo)
+
+	require.NotNil(t, relayInfo.ChannelAffinity)
+	assert.Equal(t, "codex-cli", relayInfo.ChannelAffinity.RuleName)
+	assert.Equal(t, "vip", relayInfo.ChannelAffinity.SelectedGroup)
+	assert.Equal(t, "default", relayInfo.ChannelAffinity.UsingGroup)
+	assert.Equal(t, "request-42", relayInfo.ChannelAffinity.KeyHint)
+	assert.Equal(t, "abc123", relayInfo.ChannelAffinity.KeyFingerprint)
 }
 
 func TestApplyChannelAffinityOverrideTemplate_NoTemplate(t *testing.T) {

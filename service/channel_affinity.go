@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/cachex"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -708,6 +709,41 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, adminInfo map[string]interfa
 		return
 	}
 	adminInfo["channel_affinity"] = anyInfo
+}
+
+// AttachChannelAffinityToRelayInfo preserves affinity data for asynchronous
+// in-flight records, which are written after the Gin context may be released.
+func AttachChannelAffinityToRelayInfo(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
+	if c == nil || relayInfo == nil {
+		return
+	}
+	anyInfo, ok := c.Get(ginKeyChannelAffinityLogInfo)
+	if !ok || anyInfo == nil {
+		return
+	}
+	info, ok := anyInfo.(map[string]interface{})
+	if !ok {
+		return
+	}
+	affinity := &relaycommon.ChannelAffinityLogInfo{}
+	if value, ok := info["rule_name"].(string); ok {
+		affinity.RuleName = value
+	}
+	if value, ok := info["selected_group"].(string); ok {
+		affinity.SelectedGroup = value
+	}
+	if value, ok := info["key_hint"].(string); ok {
+		affinity.KeyHint = value
+	}
+	if value, ok := info["key_fp"].(string); ok {
+		affinity.KeyFingerprint = value
+	}
+	if value, ok := info["using_group"].(string); ok {
+		affinity.UsingGroup = value
+	}
+	if affinity.RuleName != "" {
+		relayInfo.ChannelAffinity = affinity
+	}
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {

@@ -131,6 +131,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	service.AttachChannelAffinityToRelayInfo(c, relayInfo)
 	relayInfo.FailoverRules = service.GetFailoverRules(c)
 	traceCapture = service.StartInflightTraceCapture(c, relayInfo, relayFormat)
 	service.UpdateInflightTaskStatusAsync(c.Request.Context(), relayInfo, service.InflightTaskStatusAccepted)

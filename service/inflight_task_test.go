@@ -102,6 +102,13 @@ func TestShouldApplyReconciledTerminalStatus(t *testing.T) {
 func TestInflightTaskDetailFromRelayInfoIncludesChannelWhenMetaSet(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		RetryIndex: 0,
+		ChannelAffinity: &relaycommon.ChannelAffinityLogInfo{
+			RuleName:       "codex-cli",
+			SelectedGroup:  "default",
+			KeyHint:        "request-42",
+			KeyFingerprint: "abc123",
+			UsingGroup:     "default",
+		},
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelId:   16,
 			ChannelName: "Hiyo",
@@ -116,6 +123,9 @@ func TestInflightTaskDetailFromRelayInfoIncludesChannelWhenMetaSet(t *testing.T)
 	assert.Equal(t, 16, detail.ChannelChain[0].ChannelID)
 	require.Len(t, detail.Attempts, 1)
 	assert.Equal(t, InflightTaskStatusUpstreamPending, detail.Attempts[0].Status)
+	require.NotNil(t, detail.ChannelAffinity)
+	assert.Equal(t, "codex-cli", detail.ChannelAffinity.RuleName)
+	assert.Equal(t, "abc123", detail.ChannelAffinity.KeyFingerprint)
 }
 
 func TestInflightTaskDetailFromRelayInfoOmitsChannelWithoutMeta(t *testing.T) {
@@ -756,6 +766,9 @@ func TestSanitizeInflightTasksForUserClearsChannelFields(t *testing.T) {
 			Detail: &InflightTaskDetail{
 				ChannelID:   3,
 				ChannelName: "Neco",
+				ChannelAffinity: &relaycommon.ChannelAffinityLogInfo{
+					RuleName: "codex-cli",
+				},
 				RetryIndex:  1,
 				LatestError: "timeout",
 				ChannelChain: []InflightTaskChannelAttempt{
@@ -782,6 +795,7 @@ func TestSanitizeInflightTasksForUserClearsChannelFields(t *testing.T) {
 	assert.Equal(t, "default", tasks[0].Group)
 	assert.Equal(t, 0, tasks[0].Detail.ChannelID)
 	assert.Empty(t, tasks[0].Detail.ChannelName)
+	assert.Nil(t, tasks[0].Detail.ChannelAffinity)
 	assert.Equal(t, 1, tasks[0].Detail.RetryIndex)
 	assert.Equal(t, "timeout", tasks[0].Detail.LatestError)
 	require.Len(t, tasks[0].Detail.ChannelChain, 2)

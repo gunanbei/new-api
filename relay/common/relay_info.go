@@ -81,6 +81,16 @@ type ChannelMeta struct {
 	SupportStreamOptions bool // 是否支持流式选项
 }
 
+// ChannelAffinityLogInfo is the admin-visible channel-affinity context for a
+// request. It lives on RelayInfo so asynchronous records outlive Gin context.
+type ChannelAffinityLogInfo struct {
+	RuleName       string `json:"rule_name,omitempty"`
+	SelectedGroup  string `json:"selected_group,omitempty"`
+	KeyHint        string `json:"key_hint,omitempty"`
+	KeyFingerprint string `json:"key_fp,omitempty"`
+	UsingGroup     string `json:"using_group,omitempty"`
+}
+
 type TokenCountMeta struct {
 	//promptTokens int
 	estimatePromptTokens int
@@ -93,6 +103,7 @@ type RelayInfo struct {
 	UserId            int
 	UsingGroup        string // 使用的分组，当auto跨分组重试时，会变动
 	UserGroup         string // 用户所在分组
+	ChannelAffinity   *ChannelAffinityLogInfo
 	TokenUnlimited    bool
 	StartTime         time.Time
 	FirstResponseTime time.Time

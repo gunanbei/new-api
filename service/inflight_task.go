@@ -85,16 +85,17 @@ type InflightTask struct {
 }
 
 type InflightTaskDetail struct {
-	ChannelID     int                             `json:"channel_id,omitempty"`
-	ChannelName   string                          `json:"channel_name,omitempty"`
-	RetryIndex    int                             `json:"retry_index,omitempty"`
-	MaxRetryIndex int                             `json:"max_retry_index,omitempty"`
-	LatestError   string                          `json:"latest_error,omitempty"`
-	CurrentStage  string                          `json:"current_stage,omitempty"`
-	ChannelChain  []InflightTaskChannelAttempt    `json:"channel_chain,omitempty"`
-	Attempts      []InflightTaskAttempt           `json:"attempts,omitempty"`
-	Timeline      []InflightTaskStatusStep        `json:"timeline,omitempty"`
-	FailoverAudit *relaycommon.FailoverAuditTrail `json:"failover_audit,omitempty"`
+	ChannelID       int                                 `json:"channel_id,omitempty"`
+	ChannelName     string                              `json:"channel_name,omitempty"`
+	ChannelAffinity *relaycommon.ChannelAffinityLogInfo `json:"channel_affinity,omitempty"`
+	RetryIndex      int                                 `json:"retry_index,omitempty"`
+	MaxRetryIndex   int                                 `json:"max_retry_index,omitempty"`
+	LatestError     string                              `json:"latest_error,omitempty"`
+	CurrentStage    string                              `json:"current_stage,omitempty"`
+	ChannelChain    []InflightTaskChannelAttempt        `json:"channel_chain,omitempty"`
+	Attempts        []InflightTaskAttempt               `json:"attempts,omitempty"`
+	Timeline        []InflightTaskStatusStep            `json:"timeline,omitempty"`
+	FailoverAudit   *relaycommon.FailoverAuditTrail     `json:"failover_audit,omitempty"`
 }
 
 type InflightTaskChannelAttempt struct {
@@ -547,6 +548,10 @@ func inflightTaskDetailFromRelayInfo(info *relaycommon.RelayInfo, status string,
 		MaxRetryIndex: info.MaxRetryIndex,
 		CurrentStage:  status,
 	}
+	if info.ChannelAffinity != nil {
+		affinity := *info.ChannelAffinity
+		detail.ChannelAffinity = &affinity
+	}
 	if info.FailoverState != nil {
 		trail := info.FailoverState.Trail()
 		detail.FailoverAudit = &trail
@@ -619,6 +624,10 @@ func mergeInflightTaskDetail(stored *InflightTask, next *InflightTask) {
 	}
 	if next.Detail.ChannelName != "" {
 		detail.ChannelName = next.Detail.ChannelName
+	}
+	if next.Detail.ChannelAffinity != nil {
+		affinity := *next.Detail.ChannelAffinity
+		detail.ChannelAffinity = &affinity
 	}
 	if incomingRetryIndex > detail.RetryIndex {
 		detail.RetryIndex = incomingRetryIndex
@@ -1320,6 +1329,7 @@ func sanitizeInflightTaskDetailForUser(detail *InflightTaskDetail) {
 	}
 	detail.ChannelID = 0
 	detail.ChannelName = ""
+	detail.ChannelAffinity = nil
 	for i := range detail.ChannelChain {
 		detail.ChannelChain[i].ChannelID = 0
 		detail.ChannelChain[i].ChannelName = ""

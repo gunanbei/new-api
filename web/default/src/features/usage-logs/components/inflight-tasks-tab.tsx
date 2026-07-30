@@ -28,6 +28,7 @@ import {
   GitBranch,
   RefreshCw,
   ScrollText,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 import {
@@ -96,6 +97,7 @@ import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { cn, tryPrettyJson } from '@/lib/utils'
 
+import type { ChannelAffinityInfo } from '../types'
 import {
   deleteInflightTraceLocalCacheFiles,
   listInflightTraceLocalCacheFiles,
@@ -114,7 +116,7 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
-import { useLogsViewScope } from './usage-logs-provider'
+import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 const autoRefreshIntervalSeconds = [5, 10, 15, 30, 60, 120] as const
@@ -144,6 +146,7 @@ type InflightTaskChannelAttempt = {
 type InflightTaskDetail = {
   channel_id?: number
   channel_name?: string
+  channel_affinity?: ChannelAffinityInfo
   retry_index?: number
   latest_error?: string
   current_stage?: string
@@ -1608,10 +1611,13 @@ function getChannelDisplay(task: InflightTask) {
   return { channelIdDisplay, channelDisplay, channelName }
 }
 
-function renderChannelCell(task: InflightTask, t: (key: string) => string) {
-  const { channelIdDisplay, channelName } = getChannelDisplay(task)
-  const attempts = getAttempts(task)
-  const hasRetryChain = hasInflightRetries(task)
+function InflightChannelCell(props: { task: InflightTask }) {
+  const { t } = useTranslation()
+  const { setAffinityTarget, setAffinityDialogOpen } = useUsageLogsContext()
+  const { channelIdDisplay, channelName } = getChannelDisplay(props.task)
+  const attempts = getAttempts(props.task)
+  const hasRetryChain = hasInflightRetries(props.task)
+  const affinity = props.task.detail?.channel_affinity
   const retryText = attempts
     .map((attempt) =>
       attempt.channel_id
@@ -1620,7 +1626,7 @@ function renderChannelCell(task: InflightTask, t: (key: string) => string) {
     )
     .join(' → ')
 
-  if (!task.detail?.channel_id) {
+  if (!props.task.detail?.channel_id) {
     return <span className='text-muted-foreground/60 text-xs'>-</span>
   }
 
@@ -1629,8 +1635,8 @@ function renderChannelCell(task: InflightTask, t: (key: string) => string) {
       <div className='relative inline-flex w-fit items-center gap-1'>
         <StatusBadge
           label={channelIdDisplay}
-          autoColor={String(task.detail.channel_id)}
-          copyText={String(task.detail.channel_id)}
+          autoColor={String(props.task.detail.channel_id)}
+          copyText={String(props.task.detail.channel_id)}
           size='sm'
           showDot={false}
           className='font-mono'
@@ -1661,6 +1667,26 @@ function renderChannelCell(task: InflightTask, t: (key: string) => string) {
               </div>
             </PopoverContent>
           </Popover>
+        )}
+        {affinity && (
+          <button
+            type='button'
+            className='absolute -top-1 -right-1 leading-none text-amber-500'
+            aria-label={t('Channel Affinity')}
+            onClick={(event) => {
+              event.stopPropagation()
+              setAffinityTarget({
+                rule_name: affinity.rule_name || '',
+                using_group:
+                  affinity.using_group || affinity.selected_group || '',
+                key_hint: affinity.key_hint || '',
+                key_fp: affinity.key_fp || '',
+              })
+              setAffinityDialogOpen(true)
+            }}
+          >
+            <Sparkles className='size-3 fill-current' />
+          </button>
         )}
       </div>
       {channelName && (
@@ -2197,8 +2223,9 @@ function useInflightTaskColumns(props: {
             id: 'channel',
             header: t('Channel'),
             accessorFn: (row: InflightTask) => row.detail?.channel_id,
-            cell: ({ row }: { row: Row<InflightTask> }) =>
-              renderChannelCell(row.original, t),
+            cell: ({ row }: { row: Row<InflightTask> }) => (
+              <InflightChannelCell task={row.original} />
+            ),
           } satisfies ColumnDef<InflightTask>)
         : ({
             id: 'group',

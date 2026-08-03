@@ -158,6 +158,12 @@ const (
 	MsgPaymentComplianceRequired = "payment.compliance_required"
 )
 
+// Inflight log related messages
+const (
+	MsgInflightLogComplianceRequired = "inflight_log.compliance_required"
+	MsgInflightLogSelfUseModeBlocked = "inflight_log.self_use_mode_blocked"
+)
+
 // Topup related messages
 const (
 	MsgTopupNotProvided    = "topup.not_provided"

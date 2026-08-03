@@ -140,6 +140,10 @@ payment.price_id_not_configured: "该套餐未配置 StripePriceId"
 payment.creem_not_configured: "该套餐未配置 CreemProductId"
 payment.compliance_required: "支付、兑换码、订阅计划和邀请返利功能已禁用。管理员需先确认合规声明后方可启用。"
 
+# Inflight log messages
+inflight_log.compliance_required: "在途调试日志可能包含敏感数据。非自用模式下启用前，管理员需先确认合规声明。"
+inflight_log.self_use_mode_blocked: "关闭自用模式前，请先确认在途日志合规声明或关闭在途调试日志。"
+
 # Topup messages
 topup.not_provided: "未提供支付单号"
 topup.order_not_exists: "充值订单不存在"

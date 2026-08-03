@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { InformationCircleIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -26,7 +27,13 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { DateTimePicker } from '@/components/datetime-picker'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { RiskAcknowledgementDialog } from '@/components/risk-acknowledgement-dialog'
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +78,7 @@ import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
+  confirmInflightLogCompliance,
   getCurrentInflightLogCleanupTask,
   getInflightTaskStats,
   getSystemTask,
@@ -145,6 +153,12 @@ type LogSettingsSectionProps = {
   defaultInflightTaskTraceArchiveRetentionMonths: number
   defaultInflightTaskTraceArchiveRetentionDays: number
   defaultInflightTaskTraceArchiveRetentionHours: number
+  defaultSelfUseModeEnabled: boolean
+  defaultDemoSiteEnabled: boolean
+  defaultInflightLogComplianceConfirmed: boolean
+  defaultInflightLogComplianceTermsVersion: string
+  defaultInflightLogComplianceConfirmedAt: number
+  defaultInflightLogComplianceConfirmedBy: number
   defaultInflightTracePath: string
 }
 
@@ -180,6 +194,7 @@ type FileUploadChannel = {
 }
 
 const HOURS_IN_DAY = 24
+const CURRENT_INFLIGHT_LOG_COMPLIANCE_TERMS_VERSION = 'v1'
 
 function formatBytes(bytes: number, decimals = 2): string {
   if (!bytes || Number.isNaN(bytes)) return '0 Bytes'
@@ -267,9 +282,16 @@ export function LogSettingsSection({
   defaultInflightTaskTraceArchiveRetentionMonths,
   defaultInflightTaskTraceArchiveRetentionDays,
   defaultInflightTaskTraceArchiveRetentionHours,
+  defaultSelfUseModeEnabled,
+  defaultDemoSiteEnabled,
+  defaultInflightLogComplianceConfirmed,
+  defaultInflightLogComplianceTermsVersion,
+  defaultInflightLogComplianceConfirmedAt,
+  defaultInflightLogComplianceConfirmedBy,
   defaultInflightTracePath,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
   const form = useForm<LogSettingsFormValues>({
     resolver: zodResolver(logSettingsSchema),
@@ -304,6 +326,14 @@ export function LogSettingsSection({
     null
   )
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [showInflightLogComplianceDialog, setShowInflightLogComplianceDialog] =
+    useState(false)
+  const [inflightLogComplianceConfirmed, setInflightLogComplianceConfirmed] =
+    useState(
+      defaultInflightLogComplianceConfirmed &&
+        defaultInflightLogComplianceTermsVersion ===
+          CURRENT_INFLIGHT_LOG_COMPLIANCE_TERMS_VERSION
+    )
   const [inflightTaskStats, setInflightTaskStats] =
     useState<InflightTaskStats | null>(null)
   const [serverLogInfo, setServerLogInfo] = useState<ServerLogInfo | null>(null)
@@ -311,6 +341,94 @@ export function LogSettingsSection({
   const [serverLogCleanupValue, setServerLogCleanupValue] = useState(10)
   const [serverLogCleanupLoading, setServerLogCleanupLoading] = useState(false)
   const [archiveChannels, setArchiveChannels] = useState<FileUploadChannel[]>([])
+
+  const inflightLogComplianceRequired =
+    !defaultSelfUseModeEnabled || defaultDemoSiteEnabled
+
+  useEffect(() => {
+    setInflightLogComplianceConfirmed(
+      defaultInflightLogComplianceConfirmed &&
+        defaultInflightLogComplianceTermsVersion ===
+          CURRENT_INFLIGHT_LOG_COMPLIANCE_TERMS_VERSION
+    )
+  }, [
+    defaultInflightLogComplianceConfirmed,
+    defaultInflightLogComplianceTermsVersion,
+  ])
+
+  const inflightLogComplianceStatements = useMemo(
+    () => [
+      t(
+        'You have, in accordance with applicable laws, clearly informed relevant users or data subjects of the processing purpose, scope of recording, retention period, and possible storage locations, and have obtained the necessary authorization or another lawful basis for processing.'
+      ),
+      t(
+        'You will use inflight logs only for lawful, specific, and necessary purposes such as troubleshooting, security auditing, and service quality analysis, and not for unrelated purposes.'
+      ),
+      t(
+        'You have applied data minimization, reasonably limited log size, retention, and collection scope, and avoided unnecessary sensitive data and credentials.'
+      ),
+      t(
+        'You have implemented risk-appropriate access controls, identity verification, transmission and storage safeguards, log deletion, and incident response.'
+      ),
+      t(
+        'When using local disks, Redis, remote object storage, or other third-party services, you will independently assess and meet applicable requirements for data processing, vendor management, cross-border transfers, and data location.'
+      ),
+      t(
+        'You understand this reminder is not legal advice or a compliance guarantee, and you bear responsibility for enabling, storing, viewing, downloading, exporting, sharing, and deleting inflight logs.'
+      ),
+    ],
+    [t]
+  )
+
+  const inflightLogComplianceRequiredTextParts = useMemo(
+    () => [
+      {
+        type: 'input' as const,
+        text: t('I have completed the necessary notice'),
+      },
+      { type: 'static' as const, text: t('，') },
+      {
+        type: 'input' as const,
+        text: t(
+          'I have obtained authorization or have another lawful basis for processing'
+        ),
+      },
+      { type: 'static' as const, text: t('；') },
+      {
+        type: 'input' as const,
+        text: t(
+          'I will use inflight logs only for lawful, specific, and necessary purposes'
+        ),
+      },
+      { type: 'static' as const, text: t('；') },
+      {
+        type: 'input' as const,
+        text: t(
+          'I will apply data minimization, secure storage, and time-limited deletion, and bear the related compliance responsibility'
+        ),
+      },
+      { type: 'static' as const, text: t('。') },
+    ],
+    [t]
+  )
+
+  const confirmInflightLogComplianceMutation = useMutation({
+    mutationFn: confirmInflightLogCompliance,
+    onSuccess: (data) => {
+      if (!data.success) {
+        toast.error(data.message || t('Failed to confirm compliance'))
+        return
+      }
+      setInflightLogComplianceConfirmed(true)
+      form.setValue('InflightTaskTraceEnabled', true, { shouldDirty: false })
+      setShowInflightLogComplianceDialog(false)
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      toast.success(t('Inflight log compliance confirmed and recording enabled.'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to confirm compliance'))
+    },
+  })
 
   const archiveUploadInProgress =
     (inflightTaskStats?.trace_uploading_count ?? 0) > 0
@@ -489,6 +607,15 @@ export function LogSettingsSection({
   }, [logCleanupActive, logCleanupTaskId, t])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
+    if (
+      values.InflightTaskTraceEnabled &&
+      inflightLogComplianceRequired &&
+      !inflightLogComplianceConfirmed
+    ) {
+      setShowInflightLogComplianceDialog(true)
+      return
+    }
+
     if (values.LogConsumeEnabled !== defaultEnabled) {
       await updateOption.mutateAsync({
         key: 'LogConsumeEnabled',
@@ -669,7 +796,9 @@ export function LogSettingsSection({
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
+            isSaving={
+              updateOption.isPending || confirmInflightLogComplianceMutation.isPending
+            }
             saveLabel='Save log settings'
           />
           <FormField
@@ -755,6 +884,39 @@ export function LogSettingsSection({
                 )}
               </p>
             </div>
+            {inflightLogComplianceRequired && !inflightLogComplianceConfirmed ? (
+              <Alert variant='destructive'>
+                <AlertDescription>
+                  {t(
+                    'Non-self-use modes require inflight log compliance confirmation before recording can be enabled.'
+                  )}
+                </AlertDescription>
+                <AlertAction>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='destructive'
+                    onClick={() => setShowInflightLogComplianceDialog(true)}
+                  >
+                    {t('Confirm compliance')}
+                  </Button>
+                </AlertAction>
+              </Alert>
+            ) : inflightLogComplianceRequired && inflightLogComplianceConfirmed ? (
+              <Alert>
+                <AlertTitle>{t('Compliance confirmed')}</AlertTitle>
+                <AlertDescription>
+                  {t('Confirmed at {{time}} by user #{{userId}}', {
+                    time: defaultInflightLogComplianceConfirmedAt
+                      ? new Date(
+                          defaultInflightLogComplianceConfirmedAt * 1000
+                        ).toLocaleString()
+                      : '-',
+                    userId: defaultInflightLogComplianceConfirmedBy || '-',
+                  })}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <FormField
               control={form.control}
               name='InflightTaskTraceEnabled'
@@ -766,7 +928,14 @@ export function LogSettingsSection({
                   <FormControl>
                     <Switch
                       checked={field.value}
-                      onCheckedChange={field.onChange}
+                      onCheckedChange={(checked) => {
+                        if (!checked || !inflightLogComplianceRequired) {
+                          field.onChange(checked)
+                          return
+                        }
+                        setShowInflightLogComplianceDialog(true)
+                      }}
+                      disabled={confirmInflightLogComplianceMutation.isPending}
                     />
                   </FormControl>
                   <FormMessage />
@@ -1239,6 +1408,23 @@ export function LogSettingsSection({
             </Alert>
           ))}
       </div>
+
+      <RiskAcknowledgementDialog
+        open={showInflightLogComplianceDialog}
+        onOpenChange={setShowInflightLogComplianceDialog}
+        title={t('Inflight Log Compliance Confirmation')}
+        description={t(
+          'Inflight debug logs are for troubleshooting, security auditing, and service quality analysis. They can record request paths and query strings, request and response headers, complete request and response bodies, and user, model, and request identifiers. These records may contain prompts, conversations, files or multimedia data, personal information, account credentials, trade secrets, or other sensitive data. Automatic redaction only covers some known fields and may not remove every sensitive value.'
+        )}
+        items={inflightLogComplianceStatements}
+        requiredTextParts={inflightLogComplianceRequiredTextParts}
+        inputPrompt={t('Please type the following text to confirm:')}
+        inputPlaceholder={t('Type the confirmation text here')}
+        mismatchHint={t('The entered text does not match the required text.')}
+        confirmText={t('Confirm and enable')}
+        isLoading={confirmInflightLogComplianceMutation.isPending}
+        onConfirm={() => confirmInflightLogComplianceMutation.mutate()}
+      />
 
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

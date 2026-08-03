@@ -139,6 +139,10 @@ payment.price_id_not_configured: "StripePriceId is not configured for this plan"
 payment.creem_not_configured: "CreemProductId is not configured for this plan"
 payment.compliance_required: "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them."
 
+# Inflight log messages
+inflight_log.compliance_required: "Inflight debug logs may contain sensitive data. The administrator must confirm compliance terms before enabling them outside self-use mode."
+inflight_log.self_use_mode_blocked: "Confirm inflight log compliance or disable inflight debug logs before leaving self-use mode."
+
 # Topup messages
 topup.not_provided: "Payment order number not provided"
 topup.order_not_exists: "Top-up order does not exist"

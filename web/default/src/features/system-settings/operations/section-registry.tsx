@@ -145,6 +145,20 @@ const OPERATIONS_SECTIONS = [
         defaultInflightTaskTraceArchiveRetentionHours={
           Number(settings.InflightTaskTraceArchiveRetentionHours) || 0
         }
+        defaultSelfUseModeEnabled={settings.SelfUseModeEnabled}
+        defaultDemoSiteEnabled={settings.DemoSiteEnabled}
+        defaultInflightLogComplianceConfirmed={Boolean(
+          settings['inflight_log_setting.compliance_confirmed']
+        )}
+        defaultInflightLogComplianceTermsVersion={
+          settings['inflight_log_setting.compliance_terms_version'] ?? ''
+        }
+        defaultInflightLogComplianceConfirmedAt={
+          Number(settings['inflight_log_setting.compliance_confirmed_at']) || 0
+        }
+        defaultInflightLogComplianceConfirmedBy={
+          Number(settings['inflight_log_setting.compliance_confirmed_by']) || 0
+        }
         defaultInflightTracePath={
           settings['performance_setting.inflight_trace_path'] ?? ''
         }

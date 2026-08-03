@@ -34,6 +34,10 @@ func isPaymentComplianceOptionKey(key string) bool {
 	return strings.HasPrefix(key, "payment_setting.compliance_")
 }
 
+func isInflightLogComplianceOptionKey(key string) bool {
+	return strings.HasPrefix(key, "inflight_log_setting.compliance_")
+}
+
 func isPositiveOptionValue(value string) bool {
 	intValue, err := strconv.Atoi(strings.TrimSpace(value))
 	if err == nil {
@@ -79,9 +83,13 @@ func buildCompletionRatioMetaValue(optionValues map[string]string) string {
 func GetOptions(c *gin.Context) {
 	var options []*model.Option
 	optionValues := make(map[string]string)
+	inflightTraceEnabled := service.InflightTaskTraceEnabled()
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
 		value := common.Interface2String(v)
+		if k == "InflightTaskTraceEnabled" {
+			value = strconv.FormatBool(inflightTraceEnabled)
+		}
 		isSensitiveKey := strings.HasSuffix(k, "Token") ||
 			strings.HasSuffix(k, "Secret") ||
 			strings.HasSuffix(k, "Key") ||
@@ -138,15 +146,35 @@ func UpdateOption(c *gin.Context) {
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
+	if isPaymentComplianceOptionKey(option.Key) || isInflightLogComplianceOptionKey(option.Key) {
+		common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
+		return
+	}
+	if option.Key == "InflightTaskTraceEnabled" || option.Key == "SelfUseModeEnabled" || option.Key == "DemoSiteEnabled" {
+		boolValue, parseErr := strconv.ParseBool(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil {
+			common.ApiErrorMsg(c, "无效的布尔值")
+			return
+		}
+		option.Value = strconv.FormatBool(boolValue)
+		if option.Key == "InflightTaskTraceEnabled" && boolValue &&
+			operation_setting.InflightLogComplianceRequired() &&
+			!operation_setting.IsInflightLogComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgInflightLogComplianceRequired)
+			return
+		}
+		if (option.Key == "SelfUseModeEnabled" && !boolValue) ||
+			(option.Key == "DemoSiteEnabled" && boolValue) {
+			if service.InflightTaskTraceConfigured() && !operation_setting.IsInflightLogComplianceConfirmed() {
+				common.ApiErrorI18n(c, i18n.MsgInflightLogSelfUseModeBlocked)
+				return
+			}
+		}
+	}
 	switch option.Key {
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
-			return
-		}
-	default:
-		if isPaymentComplianceOptionKey(option.Key) {
-			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
 			return
 		}
 	}

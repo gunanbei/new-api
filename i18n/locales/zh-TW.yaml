@@ -140,6 +140,10 @@ payment.price_id_not_configured: "該訂閱方案未設定 StripePriceId"
 payment.creem_not_configured: "該訂閱方案未設定 CreemProductId"
 payment.compliance_required: "支付、兌換碼、訂閱方案和邀請返利功能已停用。管理員需先確認合規聲明後方可啟用。"
 
+# Inflight log messages
+inflight_log.compliance_required: "在途除錯日誌可能包含敏感資料。非自用模式下啟用前，管理員需先確認合規聲明。"
+inflight_log.self_use_mode_blocked: "關閉自用模式前，請先確認在途日誌合規聲明或關閉在途除錯日誌。"
+
 # Topup messages
 topup.not_provided: "未提供支付單號"
 topup.order_not_exists: "充值訂單不存在"

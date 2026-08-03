@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   AdminGroupsResponse,
+  ConfirmInflightLogComplianceResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   InflightCleanupCronPreviewResponse,
@@ -52,6 +53,14 @@ export async function updateSystemOption(request: UpdateOptionRequest) {
 export async function confirmPaymentCompliance() {
   const res = await api.post<ConfirmPaymentComplianceResponse>(
     '/api/option/payment_compliance',
+    { confirmed: true }
+  )
+  return res.data
+}
+
+export async function confirmInflightLogCompliance() {
+  const res = await api.post<ConfirmInflightLogComplianceResponse>(
+    '/api/option/inflight_log_compliance',
     { confirmed: true }
   )
   return res.data

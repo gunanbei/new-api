@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -177,10 +178,19 @@ type InflightTraceCapture struct {
 }
 
 func InflightTaskTraceEnabled() bool {
+	if operation_setting.InflightLogComplianceRequired() &&
+		!operation_setting.IsInflightLogComplianceConfirmed() {
+		return false
+	}
+	return InflightTaskTraceConfigured()
+}
+
+func InflightTaskTraceConfigured() bool {
 	common.OptionMapRWMutex.RLock()
 	raw := common.OptionMap[inflightTaskTraceEnabledOptionKey]
 	common.OptionMapRWMutex.RUnlock()
-	return raw == "true"
+	configured, err := strconv.ParseBool(strings.TrimSpace(raw))
+	return err == nil && configured
 }
 
 func InflightTaskTraceMenuVisible() bool {

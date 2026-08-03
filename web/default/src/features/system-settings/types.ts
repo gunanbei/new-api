@@ -56,6 +56,8 @@ export type ConfirmPaymentComplianceResponse = {
   }
 }
 
+export type ConfirmInflightLogComplianceResponse = ConfirmPaymentComplianceResponse
+
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
 export type SystemTask<
@@ -401,6 +403,10 @@ export type OperationsSettings = {
   InflightTaskTraceArchiveRetentionMonths: number
   InflightTaskTraceArchiveRetentionDays: number
   InflightTaskTraceArchiveRetentionHours: number
+  'inflight_log_setting.compliance_confirmed': boolean
+  'inflight_log_setting.compliance_terms_version': string
+  'inflight_log_setting.compliance_confirmed_at': number
+  'inflight_log_setting.compliance_confirmed_by': number
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,6 +39,32 @@ func withTraceOptions(enabled, menuVisible string, maxRequest, maxResponse strin
 			common.OptionMap[inflightTaskTraceMaxResponseBytesOptionKey] = originalMaxResponse
 		}
 		common.OptionMapRWMutex.Unlock()
+	}()
+
+	fn()
+}
+
+func withInflightLogComplianceState(selfUse, demo, confirmed bool, fn func()) {
+	originalSelfUse := operation_setting.SelfUseModeEnabled
+	originalDemo := operation_setting.DemoSiteEnabled
+	setting := operation_setting.GetInflightLogSetting()
+	originalConfirmed := setting.ComplianceConfirmed
+	originalTermsVersion := setting.ComplianceTermsVersion
+
+	operation_setting.SelfUseModeEnabled = selfUse
+	operation_setting.DemoSiteEnabled = demo
+	setting.ComplianceConfirmed = confirmed
+	if confirmed {
+		setting.ComplianceTermsVersion = operation_setting.CurrentInflightLogComplianceTermsVersion
+	} else {
+		setting.ComplianceTermsVersion = ""
+	}
+
+	defer func() {
+		operation_setting.SelfUseModeEnabled = originalSelfUse
+		operation_setting.DemoSiteEnabled = originalDemo
+		setting.ComplianceConfirmed = originalConfirmed
+		setting.ComplianceTermsVersion = originalTermsVersion
 	}()
 
 	fn()
@@ -84,6 +111,23 @@ func TestInflightTraceMenuVisible(t *testing.T) {
 	})
 	withTraceOptions("true", "false", "0", "0", func() {
 		assert.False(t, InflightTaskTraceMenuVisible())
+	})
+}
+
+func TestInflightTaskTraceEnabledRequiresComplianceOutsideSelfUseMode(t *testing.T) {
+	withTraceOptions("true", "true", "0", "0", func() {
+		withInflightLogComplianceState(true, false, false, func() {
+			assert.True(t, InflightTaskTraceEnabled())
+		})
+		withInflightLogComplianceState(false, false, false, func() {
+			assert.False(t, InflightTaskTraceEnabled())
+		})
+		withInflightLogComplianceState(true, true, false, func() {
+			assert.False(t, InflightTaskTraceEnabled())
+		})
+		withInflightLogComplianceState(false, false, true, func() {
+			assert.True(t, InflightTaskTraceEnabled())
+		})
 	})
 }
 

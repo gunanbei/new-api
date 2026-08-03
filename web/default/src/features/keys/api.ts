@@ -25,6 +25,7 @@ import type {
   GetApiKeysResponse,
   SearchApiKeysParams,
   ApiKeyFormData,
+  TokenAutoGroupsConfig,
 } from './types'
 
 // ============================================================================
@@ -37,6 +38,11 @@ export async function getApiKeys(
 ): Promise<GetApiKeysResponse> {
   const { p = 1, size = 10 } = params
   const res = await api.get(`/api/token/?p=${p}&size=${size}`)
+  return res.data
+}
+
+export async function getTokenAutoGroups(): Promise<ApiResponse<TokenAutoGroupsConfig>> {
+  const res = await api.get('/api/token/auto-groups')
   return res.data
 }
 

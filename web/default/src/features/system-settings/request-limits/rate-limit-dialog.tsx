@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
@@ -34,6 +34,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const rateLimitDialogSchema = z.object({
   groupName: z.string().min(1, 'Group name is required'),
@@ -62,6 +70,8 @@ type RateLimitDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: RateLimitEntryData) => void
   editData?: RateLimitEntryData | null
+  groupOptions: string[]
+  isLoadingGroups: boolean
 }
 
 export function RateLimitDialog({
@@ -69,9 +79,20 @@ export function RateLimitDialog({
   onOpenChange,
   onSave,
   editData,
+  groupOptions,
+  isLoadingGroups,
 }: RateLimitDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
+  const selectableGroups = useMemo(() => {
+    if (editData?.groupName && !groupOptions.includes(editData.groupName)) {
+      return [editData.groupName, ...groupOptions]
+    }
+    return groupOptions
+  }, [editData?.groupName, groupOptions])
+  const groupPlaceholder = isLoadingGroups
+    ? t('Loading...')
+    : t('Select a group')
 
   const form = useForm<RateLimitDialogFormValues>({
     resolver: zodResolver(rateLimitDialogSchema),
@@ -141,11 +162,34 @@ export function RateLimitDialog({
               <FormItem>
                 <FormLabel>{t('Group Name')}</FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder={t('e.g., default, vip, premium')}
-                    {...field}
-                    disabled={isEditMode}
-                  />
+                  <Select
+                    value={field.value === '' ? null : field.value}
+                    onValueChange={(value) => {
+                      if (typeof value === 'string' && value !== '') {
+                        field.onChange(value)
+                      }
+                    }}
+                    disabled={isEditMode || isLoadingGroups}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue placeholder={groupPlaceholder} />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {selectableGroups.length === 0 ? (
+                          <SelectItem value='__no_groups__' disabled>
+                            {t('No group found.')}
+                          </SelectItem>
+                        ) : (
+                          selectableGroups.map((name) => (
+                            <SelectItem key={name} value={name}>
+                              {name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </FormControl>
                 <FormDescription>
                   {isEditMode
@@ -172,7 +216,7 @@ export function RateLimitDialog({
                       step={1}
                       {...field}
                       onChange={(e) =>
-                        field.onChange(parseInt(e.target.value) || 0)
+                        field.onChange(Number.parseInt(e.target.value) || 0)
                       }
                     />
                     <span className='text-muted-foreground text-sm'>
@@ -203,7 +247,7 @@ export function RateLimitDialog({
                       step={1}
                       {...field}
                       onChange={(e) =>
-                        field.onChange(parseInt(e.target.value) || 1)
+                        field.onChange(Number.parseInt(e.target.value) || 1)
                       }
                     />
                     <span className='text-muted-foreground text-sm'>

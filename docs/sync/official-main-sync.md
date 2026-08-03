@@ -147,8 +147,48 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
+| 2026-08-03 | 003 | Completed | f3ab2cff36b3962815be9114e300d26927cc42b3..0ab02020603d22e5613bc4cf46bfab06f8567769 | develop_tmp | uncommitted | Ported the isolated provider, billing, channel transport, and token Auto-group behavior; three coupled relay/session changes remain deferred. |
 | 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
+
+### 2026-08-03 - 003 - Completed
+
+- Source: origin/main; range: f3ab2cff36b3962815be9114e300d26927cc42b3..0ab02020603d22e5613bc4cf46bfab06f8567769
+- Target: develop_tmp; start: dd26f1d358d520a8f667fe7270945570682029d8; result: uncommitted
+- Baseline: previous ledger entry; its source end is an ancestor of the reviewed origin/main tip.
+- Triage:
+
+  | Candidate | User-visible behavior | Upstream files/contracts | Target equivalent? | Decision |
+  |---|---|---|---|---|
+  | Gemini OpenAI-chat stream terminal conversion | Normalizes terminal state for converted Gemini streams | relay stream converter and shared relay state | No, but coupled to conflicting relay stream architecture | Defer |
+  | iPad login session detection | Correctly recognizes iPad sessions during login | frontend auth/session detection | No, but requires broader session-browser compatibility review | Defer |
+  | Per-channel HTTP transport controls | Select HTTP negotiation mode and HTTP/2 connection shards per channel | channel setting JSON, transport client cache, API/AWS/Coze/Vertex callers, channel form | No | Port / Adapt |
+  | OIDC display name | Allows an administrator to label the OIDC login option | option, status API, auth settings form | No | Port |
+  | Provider and relay fixes | zstd request handling, Qwen thinking budget passthrough, DeepSeek Responses conversion, stream-status log visibility, OAuth opener binding, Bedrock cancellation | middleware, relay DTO/adaptors, logs, OAuth | No | Port |
+  | Retry billing fixes | Uses final group and bounded retry accounting during tiered settlement | billing usage and tiered settlement | No | Port |
+  | Token-specific Auto group order | Persists a per-token ordered Auto snapshot with an administrator-set cap | token model/controller/routes, group selection, settings, key and admin forms | No | Port / Adapt |
+  | GORM SQL logging redaction | Avoids exposing values in slow-query and error logs | model logger | No | Port |
+  | New API multipart image edits | Preserves multipart image-edit payloads | relay New API adaptor and request flow | No, coupled to a broader relay contract change | Defer |
+  | CI, RelayKit README, .gitattributes, mutex/TCP test refactors, navigation text-size change | No product behavior in this sync scope | workflow, documentation, configuration, tests, styles | N/A | Excluded |
+- Ported:
+  - OIDC display-name option, status propagation, and translated admin UI - `setting/system_setting/oidc.go`, `controller/misc.go`, `web/default/src/features/system-settings/auth/oauth-section.tsx`.
+  - zstd request decompression, Qwen `thinking_budget` passthrough, stream-status log visibility, OAuth opener/bind handling, and DeepSeek Responses conversion - middleware, relay, OAuth, and log UI paths.
+  - Tiered retry billing settlement, client-disconnect cancellation for AWS Bedrock, and parameter-redacted GORM slow-query/error logging - `service/`, `relay/channel/aws/`, and `model/gorm_logger.go`.
+  - Per-channel HTTP transport policy, sharded transports, and channel editor controls for automatic/HTTP/1.1 mode and HTTP/2 shard count - `dto/channel_settings.go`, `service/http_*`, relay callers, and channel form/UI files.
+  - Token-specific Auto-group persistence and selection, user-scoped Auto-group API, maximum snapshot setting, and key/admin UI support - token model/controller/service/settings plus `web/default/src/features/keys/` and system settings forms.
+- Already equivalent / excluded:
+  - CI, RelayKit documentation, `.gitattributes`, mutex/TCP test refactors, and navigation typography were excluded as nonfunctional or outside the requested sync scope.
+- Deferred:
+  - Gemini OpenAI-chat terminal stream conversion - conflicts with the target stream conversion design and needs dedicated relay integration coverage.
+  - iPad login-session detection - requires a dedicated compatibility review across existing browser/session detection paths.
+  - New API multipart image edits - requires isolating the broader multipart relay contract before porting safely.
+- Validation:
+  - `gofmt -w` on touched Go files - passed
+  - `cd web/default && bun run i18n:sync` - passed
+  - `git diff --check` - passed
+  - final diff and `git status --short` - reviewed
+  - Go tests, frontend typecheck/lint/build, and manual browser tests - not run at user request.
+- Known blockers: none; deferred items are intentionally outside this isolated sync.
 
 ### 2026-07-27 - 002 - Completed
 

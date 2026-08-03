@@ -407,6 +407,11 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "MaxTokenAutoGroups":
+		if err := setting.ValidateMaxTokenAutoGroups(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 	case "InflightTaskTraceStorageMode", "InflightTaskTraceArchiveChannelID", "InflightTaskTraceArchiveThresholdBytes", "InflightTaskTraceArchiveRetentionYears", "InflightTaskTraceArchiveRetentionMonths", "InflightTaskTraceArchiveRetentionDays", "InflightTaskTraceArchiveRetentionHours":
 		if err := service.ValidateInflightTraceStorageOption(option.Key, option.Value.(string)); err != nil {
 			c.JSON(http.StatusOK, gin.H{

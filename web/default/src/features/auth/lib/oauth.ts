@@ -58,8 +58,9 @@ export function getAvailableOAuthProviders(
   }
 
   if (status.oidc_enabled) {
+    const oidcDisplayName = status.oidc_display_name?.trim() || 'OIDC'
     providers.push({
-      name: 'OIDC',
+      name: oidcDisplayName,
       type: 'oidc',
       enabled: true,
       clientId: status.oidc_client_id,

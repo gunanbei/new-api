@@ -27,13 +27,37 @@ type Token struct {
 	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
-	CrossGroupRetry    bool           `json:"cross_group_retry"`                         // 跨分组重试，仅auto分组有效
+	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	AutoGroups         string         `json:"-" gorm:"type:text"`
 	FailoverEnabled    bool           `json:"failover_enabled"`                          // 故障转移模式，与 auto 跨分组重试互斥
 	FailoverGroups     string         `json:"failover_groups" gorm:"type:text"`          // JSON 数组，故障转移的分组序列
 	FailoverStrategy   string         `json:"failover_strategy" gorm:"type:varchar(32)"` // order | lowest_ratio | random
 	FailoverMaxRetry   int            `json:"failover_max_retry"`                        // 0 表示跟随系统 RetryTimes
 	FailoverRules      string         `json:"failover_rules" gorm:"type:text"`           // JSON encoded custom trigger rules
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+func (token *Token) GetAutoGroups() ([]string, error) {
+	if token.AutoGroups == "" {
+		return nil, nil
+	}
+	var groups []string
+	if err := common.UnmarshalJsonStr(token.AutoGroups, &groups); err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+func (token *Token) SetAutoGroups(groups []string) error {
+	if len(groups) == 0 {
+		token.AutoGroups = ""
+		return nil
+	}
+	b, err := common.Marshal(groups)
+	if err != nil {
+		return err
+	}
+	token.AutoGroups = string(b)
+	return nil
 }
 
 // GetFailoverGroups returns the group sequence configured on the token, in the order
@@ -321,7 +345,7 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "auto_groups",
 		"failover_enabled", "failover_groups", "failover_strategy", "failover_max_retry", "failover_rules").Updates(token).Error
 	return err
 }

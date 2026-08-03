@@ -36,6 +36,27 @@ import {
 // Form Validation Schema
 // ============================================================================
 
+export const HTTP_PROTOCOL_AUTO = 'auto'
+export const HTTP_PROTOCOL_HTTP1 = 'http1'
+export const MAX_HTTP2_CONNECTION_SHARDS = 8
+
+function normalizeHttpProtocol(
+  value: string | undefined | null
+): 'auto' | 'http1' {
+  return String(value || '')
+    .trim()
+    .toLowerCase() === HTTP_PROTOCOL_HTTP1
+    ? HTTP_PROTOCOL_HTTP1
+    : HTTP_PROTOCOL_AUTO
+}
+
+function normalizeHttp2ConnectionShards(
+  value: number | undefined | null
+): number {
+  if (!Number.isFinite(value) || value == null || value < 1) return 1
+  return Math.min(value, MAX_HTTP2_CONNECTION_SHARDS)
+}
+
 function parseOptionalJson(value: string | undefined): unknown {
   if (!value?.trim()) return undefined
   return JSON.parse(value)
@@ -188,6 +209,8 @@ export const channelFormSchema = z
     force_format: z.boolean().optional(),
     thinking_to_content: z.boolean().optional(),
     proxy: z.string().optional(),
+    http_protocol: z.enum(['auto', 'http1']).optional(),
+    http2_connection_shards: z.number().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -290,6 +313,23 @@ export const channelFormSchema = z
         'Vertex AI API Key mode does not support batch creation'
       )
     }
+
+    const protocol = normalizeHttpProtocol(data.http_protocol)
+    const shards = data.http2_connection_shards ?? 1
+    if (shards < 1 || shards > MAX_HTTP2_CONNECTION_SHARDS) {
+      addRequiredIssue(
+        ctx,
+        'http2_connection_shards',
+        ERROR_MESSAGES.INVALID_HTTP2_CONNECTION_SHARDS
+      )
+    }
+    if (protocol === HTTP_PROTOCOL_HTTP1 && shards > 1) {
+      addRequiredIssue(
+        ctx,
+        'http2_connection_shards',
+        ERROR_MESSAGES.INVALID_HTTP1_WITH_SHARDS
+      )
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -328,6 +368,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   force_format: false,
   thinking_to_content: false,
   proxy: '',
+  http_protocol: HTTP_PROTOCOL_AUTO,
+  http2_connection_shards: 1,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -366,6 +408,8 @@ export function transformChannelToFormDefaults(
     force_format: false,
     thinking_to_content: false,
     proxy: '',
+    http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
+    http2_connection_shards: 1,
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
@@ -374,10 +418,17 @@ export function transformChannelToFormDefaults(
   if (channel.setting) {
     try {
       const parsed = JSON.parse(channel.setting)
+      const protocol = normalizeHttpProtocol(parsed.http_protocol)
+      const shards = normalizeHttp2ConnectionShards(
+        parsed.http2_connection_shards
+      )
       extraSettings = {
         force_format: parsed.force_format || false,
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
+        http_protocol: protocol,
+        http2_connection_shards:
+          protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -491,14 +542,27 @@ export function transformChannelToFormDefaults(
  * Build the setting JSON string from form extra settings
  */
 function buildSettingJSON(formData: ChannelFormValues): string {
-  const settingObj = {
+  const settingObj: Record<string, unknown> = {
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
-    proxy: formData.proxy || '',
+    proxy: formData.proxy?.trim() || '',
     pass_through_body_enabled: formData.pass_through_body_enabled || false,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
   }
+
+  const protocol = normalizeHttpProtocol(formData.http_protocol)
+  const shards =
+    protocol === HTTP_PROTOCOL_HTTP1
+      ? 1
+      : normalizeHttp2ConnectionShards(formData.http2_connection_shards)
+
+  if (protocol === HTTP_PROTOCOL_HTTP1) {
+    settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
+  } else if (shards > 1) {
+    settingObj.http2_connection_shards = shards
+  }
+
   return JSON.stringify(settingObj)
 }
 

@@ -29,6 +29,11 @@ import { toast } from 'sonner'
 
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
+import {
+  getOAuthSessionStorage,
+  resolveOAuthCallbackMode,
+  type OAuthCallbackMode,
+} from '@/features/auth/lib/oauth-callback-mode'
 import { api, getSelf } from '@/lib/api'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 
@@ -46,16 +51,22 @@ function OAuthCallback() {
     state?: string
     redirect?: string
   }
-  const [mode, setMode] = useState<'login' | 'bind'>(() => {
+  const getCallbackMode = (): OAuthCallbackMode => {
     if (typeof window === 'undefined') return 'login'
-    return window.opener ? 'bind' : 'login'
-  })
+    return resolveOAuthCallbackMode(
+      provider,
+      search.state ?? '',
+      window.opener,
+      getOAuthSessionStorage(window)
+    )
+  }
+  const [mode, setMode] = useState<OAuthCallbackMode>(getCallbackMode)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMode(window.opener ? 'bind' : 'login')
-  }, [])
+    setMode(getCallbackMode())
+  }, [provider, search.state])
 
   useEffect(() => {
     ;(async () => {
@@ -84,7 +95,9 @@ function OAuthCallback() {
         return
       }
       const isBindingFlow =
-        typeof window !== 'undefined' ? Boolean(window.opener) : mode === 'bind'
+        typeof window !== 'undefined'
+          ? getCallbackMode() === 'bind'
+          : mode === 'bind'
       if (isBindingFlow && mode !== 'bind') {
         setMode('bind')
       } else if (!isBindingFlow && mode !== 'login') {

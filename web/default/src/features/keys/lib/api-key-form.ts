@@ -41,8 +41,12 @@ import type { ApiKey, ApiKeyFormData } from '../types'
 export function getApiKeyFormSchema(
   t: TFunction,
   maxRetryTimes: number,
-  relayTimeout: number
+  relayTimeout: number,
+  maxAutoGroups = 5
 ) {
+  const autoGroupLimit =
+    Number.isInteger(maxAutoGroups) && maxAutoGroups > 0 ? maxAutoGroups : 5
+
   return z
     .object({
       name: z.string().min(1, t('Please enter a name')),
@@ -52,6 +56,8 @@ export function getApiKeyFormSchema(
       model_limits: z.array(z.string()),
       allow_ips: z.string().optional(),
       group: z.string().optional(),
+      auto_groups: z.array(z.string()),
+      auto_groups_mode: z.enum(['inherit', 'custom']),
       cross_group_retry: z.boolean().optional(),
       failover_enabled: z.boolean().optional(),
       failover_groups: z.array(z.string()),
@@ -79,6 +85,38 @@ export function getApiKeyFormSchema(
           path: ['remain_quota_dollars'],
           message: t('Quota must be zero or greater'),
         })
+      }
+
+      if (
+        !data.failover_enabled &&
+        data.group === 'auto' &&
+        data.auto_groups_mode === 'custom'
+      ) {
+        if (data.auto_groups.length === 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['auto_groups'],
+            message: t(
+              'Select at least one Auto group or restore global Auto.'
+            ),
+          })
+        }
+        if (data.auto_groups.length > autoGroupLimit) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['auto_groups'],
+            message: t('Select at most {{max}} Auto groups', {
+              max: autoGroupLimit,
+            }),
+          })
+        }
+        if (new Set(data.auto_groups).size !== data.auto_groups.length) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['auto_groups'],
+            message: t('Auto groups must not contain duplicates'),
+          })
+        }
       }
 
       if (!data.failover_enabled) {
@@ -174,6 +212,8 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   model_limits: [],
   allow_ips: '',
   group: DEFAULT_GROUP,
+  auto_groups: [],
+  auto_groups_mode: 'inherit',
   cross_group_retry: true,
   failover_enabled: false,
   failover_groups: [],
@@ -198,6 +238,8 @@ export function getApiKeyFormDefaultValues(
     ...API_KEY_FORM_DEFAULT_VALUES,
     group: defaultUseAutoGroup ? 'auto' : DEFAULT_GROUP,
     cross_group_retry: defaultUseAutoGroup,
+    auto_groups: [],
+    auto_groups_mode: 'inherit',
   }
 }
 
@@ -227,6 +269,10 @@ export function transformFormDataToPayload(
     // The group stays on the payload while failover is on so turning it back off
     // restores the single group the user had picked before.
     group: data.group || '',
+    auto_groups:
+      data.group === 'auto' && data.auto_groups_mode === 'custom'
+        ? data.auto_groups
+        : null,
     cross_group_retry:
       !failoverEnabled && data.group === 'auto' && !!data.cross_group_retry,
     failover_enabled: failoverEnabled,
@@ -261,9 +307,15 @@ export function transformFormDataToPayload(
  * Transform API key data to form defaults
  */
 export function transformApiKeyToFormDefaults(
-  apiKey: ApiKey
+  apiKey: ApiKey,
+  availableAutoGroups: string[] = [],
+  maxAutoGroups = 5
 ): ApiKeyFormValues {
   const rules = parseFailoverRules(apiKey.failover_rules)
+  const autoGroups = (apiKey.auto_groups || [])
+    .filter((group) => availableAutoGroups.includes(group))
+    .slice(0, maxAutoGroups)
+  const hasCustomAutoGroups = autoGroups.length > 0
   return {
     name: apiKey.name,
     remain_quota_dollars: apiKey.unlimited_quota
@@ -279,6 +331,8 @@ export function transformApiKeyToFormDefaults(
       : [],
     allow_ips: apiKey.allow_ips || '',
     group: apiKey.group || DEFAULT_GROUP,
+    auto_groups: hasCustomAutoGroups ? autoGroups : [],
+    auto_groups_mode: hasCustomAutoGroups ? 'custom' : 'inherit',
     cross_group_retry: !!apiKey.cross_group_retry,
     failover_enabled: !!apiKey.failover_enabled,
     failover_groups: parseFailoverGroups(apiKey.failover_groups),

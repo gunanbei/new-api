@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -75,7 +75,12 @@ import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
-import { createApiKey, updateApiKey, getApiKey } from '../api'
+import {
+  createApiKey,
+  getApiKey,
+  getTokenAutoGroups,
+  updateApiKey,
+} from '../api'
 import {
   ERROR_MESSAGES,
   FAILOVER_STRATEGY_OPTIONS,
@@ -96,6 +101,7 @@ import {
 import { useApiKeys } from './api-keys-provider'
 import { FailoverGroupsField } from './failover-groups-field'
 import { FailoverTriggerRules } from './failover-trigger-rules'
+import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -114,6 +120,7 @@ export function ApiKeysMutateDrawer({
   const { status } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const initializedTargetRef = useRef<string | null>(null)
   const defaultUseAutoGroup = status?.default_use_auto_group === true
 
   // Fetch models
@@ -125,29 +132,59 @@ export function ApiKeysMutateDrawer({
   })
 
   // Fetch groups
-  const { data: groupsData } = useQuery({
+  const { data: groupsData, isFetched: groupsFetched } = useQuery({
     queryKey: ['user-groups'],
     queryFn: getUserGroups,
     enabled: open,
     staleTime: 0,
   })
+  const { data: autoGroupsData, isFetched: autoGroupsFetched } = useQuery({
+    queryKey: ['token-auto-groups'],
+    queryFn: getTokenAutoGroups,
+    enabled: open,
+  })
 
   const models = modelsData?.data || []
-  const groupsRaw = groupsData?.data || {}
-  const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
-    ([key, info]) => ({
-      value: key,
-      label: key,
-      desc: info.desc || key,
-      ratio: info.ratio,
-      crossGroupRetryStatusCodes: info.cross_group_retry_status_codes,
-    })
+  const groups = useMemo<ApiKeyGroupOption[]>(
+    () =>
+      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
+        value: key,
+        label: key,
+        desc: info.desc || key,
+        ratio: info.ratio,
+        crossGroupRetryStatusCodes: info.cross_group_retry_status_codes,
+      })),
+    [groupsData]
   )
+  const autoGroupOptions = useMemo(() => {
+    const selectableGroups = new Set(
+      groups
+        .filter((group) => group.value !== 'auto')
+        .map((group) => group.value)
+    )
+    return [
+      ...new Set(
+        (autoGroupsData?.data?.groups || []).filter(
+          (group) => group !== 'auto' && selectableGroups.has(group)
+        )
+      ),
+    ]
+  }, [autoGroupsData, groups])
+  const maxAutoGroups = useMemo(() => {
+    const configuredMax = Number(autoGroupsData?.data?.max_count)
+    return Number.isInteger(configuredMax) && configuredMax > 0
+      ? configuredMax
+      : 5
+  }, [autoGroupsData])
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const maxRetryTimes = status?.max_retry_times ?? 0
   const automaticRetryStatusCodes = status?.automatic_retry_status_codes ?? ''
   const relayTimeout = status?.relay_timeout ?? 0
-  const schema = getApiKeyFormSchema(t, maxRetryTimes, relayTimeout)
+  const schema = useMemo(
+    () =>
+      getApiKeyFormSchema(t, maxRetryTimes, relayTimeout, maxAutoGroups),
+    [t, maxRetryTimes, relayTimeout, maxAutoGroups]
+  )
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
@@ -156,16 +193,43 @@ export function ApiKeysMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
-    if (open && isUpdate && currentRow) {
-      void getApiKey(currentRow.id).then((result) => {
-        if (result.success && result.data) {
-          form.reset(transformApiKeyToFormDefaults(result.data))
-        }
-      })
-    } else if (open && !isUpdate) {
+    if (!open) {
+      initializedTargetRef.current = null
+      return
+    }
+
+    if (!groupsFetched || !autoGroupsFetched) return
+
+    const target = isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
+    if (initializedTargetRef.current === target) return
+
+    if (!isUpdate) {
       form.reset(
         getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
       )
+      initializedTargetRef.current = target
+      return
+    }
+
+    if (!currentRow) return
+
+    let cancelled = false
+    void getApiKey(currentRow.id).then((result) => {
+      if (cancelled) return
+      if (result.success && result.data) {
+        form.reset(
+          transformApiKeyToFormDefaults(
+            result.data,
+            autoGroupOptions,
+            maxAutoGroups
+          )
+        )
+      }
+      initializedTargetRef.current = target
+    })
+
+    return () => {
+      cancelled = true
     }
   }, [
     open,
@@ -174,6 +238,10 @@ export function ApiKeysMutateDrawer({
     form,
     defaultUseAutoGroup,
     backendHasAuto,
+    groupsFetched,
+    autoGroupsFetched,
+    autoGroupOptions,
+    maxAutoGroups,
   ])
 
   // Correct group after groups load: if the form value is not in available groups, fall back
@@ -187,6 +255,8 @@ export function ApiKeysMutateDrawer({
         ''
       form.setValue('group', fallback)
       if (currentGroup === 'auto') {
+        form.setValue('auto_groups', [])
+        form.setValue('auto_groups_mode', 'inherit')
         form.setValue('cross_group_retry', false)
       }
     }
@@ -273,6 +343,7 @@ export function ApiKeysMutateDrawer({
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const selectedGroup = form.watch('group')
+  const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
   const failoverEnabled = form.watch('failover_enabled')
   const failoverStrategy = form.watch('failover_strategy')
@@ -349,30 +420,100 @@ export function ApiKeysMutateDrawer({
               )}
 
               {!failoverEnabled && selectedGroup === 'auto' && (
-                <FormField
-                  control={form.control}
-                  name='cross_group_retry'
-                  render={({ field }) => (
-                    <FormItem className={sideDrawerSwitchItemClassName()}>
-                      <div className='flex flex-col gap-0.5'>
-                        <FormLabel className='text-sm'>
-                          {t('Cross-group retry')}
-                        </FormLabel>
-                        <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
-                          {t(
-                            'When enabled, if channels in the current group fail, it will try channels in the next group in order.'
-                          )}
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={!!field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
+                <>
+                  <FormField
+                    control={form.control}
+                    name='cross_group_retry'
+                    render={({ field }) => (
+                      <FormItem className={sideDrawerSwitchItemClassName()}>
+                        <div className='flex flex-col gap-0.5'>
+                          <FormLabel className='text-sm'>
+                            {t('Cross-group retry')}
+                          </FormLabel>
+                          <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
+                            {t(
+                              'When enabled, if channels in the current group fail, it will try channels in the next group in order.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={!!field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='auto_groups_mode'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Auto group order')}</FormLabel>
+                        <Select
+                          items={[
+                            { value: 'inherit', label: t('Use global order') },
+                            { value: 'custom', label: t('Custom order') },
+                          ]}
+                          value={field.value}
+                          onValueChange={(value) => {
+                            const mode =
+                              value === 'custom' ? 'custom' : 'inherit'
+                            field.onChange(mode)
+                            if (mode === 'inherit') {
+                              form.setValue('auto_groups', [], {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              })
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent alignItemWithTrigger={false}>
+                            <SelectGroup>
+                              <SelectItem value='inherit'>
+                                {t('Use global order')}
+                              </SelectItem>
+                              <SelectItem value='custom'>
+                                {t('Custom order')}
+                              </SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {autoGroupsMode === 'custom' && (
+                    <FormField
+                      control={form.control}
+                      name='auto_groups'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <AutoGroupOrderEditor
+                              value={field.value}
+                              options={autoGroupOptions}
+                              maxCount={maxAutoGroups}
+                              onChange={(value) => {
+                                form.setValue('auto_groups', value, {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                })
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   )}
-                />
+                </>
               )}
 
               <FormField

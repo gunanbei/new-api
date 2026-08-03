@@ -16,6 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  getOAuthSessionStorage,
+  markOAuthBindFlow,
+} from '@/features/auth/lib/oauth-callback-mode'
+
 import { api } from './api'
 
 // ============================================================================
@@ -99,23 +104,29 @@ export async function getOAuthState(): Promise<string | null> {
 /**
  * Handle GitHub OAuth binding/login
  */
-export async function handleGitHubOAuth(clientId: string): Promise<void> {
+export async function handleGitHubOAuth(
+  clientId: string,
+  bindFlow = false
+): Promise<void> {
   const state = await getOAuthState()
   if (!state) return
 
   const url = buildGitHubOAuthUrl(clientId, state)
-  window.open(url, '_blank')
+  openOAuthUrl(url, 'github', state, bindFlow)
 }
 
 /**
  * Handle Discord OAuth binding/login
  */
-export async function handleDiscordOAuth(clientId: string): Promise<void> {
+export async function handleDiscordOAuth(
+  clientId: string,
+  bindFlow = false
+): Promise<void> {
   const state = await getOAuthState()
   if (!state) return
 
   const url = buildDiscordOAuthUrl(clientId, state)
-  window.open(url, '_blank')
+  openOAuthUrl(url, 'discord', state, bindFlow)
 }
 
 /**
@@ -123,22 +134,46 @@ export async function handleDiscordOAuth(clientId: string): Promise<void> {
  */
 export async function handleOIDCOAuth(
   authUrl: string,
-  clientId: string
+  clientId: string,
+  bindFlow = false
 ): Promise<void> {
   const state = await getOAuthState()
   if (!state) return
 
   const url = buildOIDCOAuthUrl(authUrl, clientId, state)
-  window.open(url, '_blank')
+  openOAuthUrl(url, 'oidc', state, bindFlow)
 }
 
 /**
  * Handle LinuxDO OAuth binding/login
  */
-export async function handleLinuxDOOAuth(clientId: string): Promise<void> {
+export async function handleLinuxDOOAuth(
+  clientId: string,
+  bindFlow = false
+): Promise<void> {
   const state = await getOAuthState()
   if (!state) return
 
   const url = buildLinuxDOOAuthUrl(clientId, state)
-  window.open(url, '_blank')
+  openOAuthUrl(url, 'linuxdo', state, bindFlow)
+}
+
+function openOAuthUrl(
+  url: string,
+  provider: string,
+  state: string,
+  bindFlow: boolean
+): void {
+  if (!bindFlow) {
+    window.open(url, '_self')
+    return
+  }
+
+  const popup = window.open('', bindFlow ? '_blank' : '_self')
+  if (!popup) return
+  if (!markOAuthBindFlow(getOAuthSessionStorage(popup), provider, state)) {
+    popup.close()
+    return
+  }
+  popup.location.replace(url)
 }

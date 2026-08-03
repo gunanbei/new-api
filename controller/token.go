@@ -12,11 +12,90 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
+
+type tokenAutoGroupsInput struct {
+	Set    bool
+	Groups []string
+}
+
+func (v *tokenAutoGroupsInput) UnmarshalJSON(data []byte) error {
+	v.Set = true
+	if strings.TrimSpace(string(data)) == "null" {
+		return nil
+	}
+	return common.Unmarshal(data, &v.Groups)
+}
+
+type tokenRequest struct {
+	model.Token
+	AutoGroups tokenAutoGroupsInput `json:"auto_groups"`
+}
+
+type tokenResponse struct {
+	*model.Token
+	AutoGroups []string `json:"auto_groups"`
+}
+
+func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
+	if token == nil {
+		return nil
+	}
+	masked := *token
+	masked.Key = token.GetMaskedKey()
+	groups, err := token.GetAutoGroups()
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to parse auto groups for token %d: %v", token.Id, err))
+		groups = nil
+	}
+	return &tokenResponse{Token: &masked, AutoGroups: groups}
+}
+
+func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
+	if len(groups) == 0 {
+		_ = token.SetAutoGroups(nil)
+		return true
+	}
+	maxGroups := setting.GetMaxTokenAutoGroups()
+	if len(groups) > maxGroups {
+		common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsTooMany, map[string]any{"Max": maxGroups})
+		return false
+	}
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	if userGroup == "" {
+		userGroup = c.GetString("group")
+	}
+	if userGroup == "" {
+		var err error
+		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)
+		if err != nil {
+			common.ApiError(c, err)
+			return false
+		}
+	}
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		if _, ok := seen[group]; ok {
+			common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsDuplicate, map[string]any{"Group": group})
+			return false
+		}
+		seen[group] = struct{}{}
+		if !service.IsUserSelectableGroup(userGroup, group) {
+			common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsInvalid, map[string]any{"Group": group})
+			return false
+		}
+	}
+	if err := token.SetAutoGroups(groups); err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return true
+}
 
 // normalizeTokenFailover validates the failover settings submitted by the user and
 // rewrites them into their canonical stored form. Failover is mutually exclusive with
@@ -120,17 +199,8 @@ func normalizeTokenFailover(c *gin.Context, token *model.Token) error {
 	return nil
 }
 
-func buildMaskedTokenResponse(token *model.Token) *model.Token {
-	if token == nil {
-		return nil
-	}
-	maskedToken := *token
-	maskedToken.Key = token.GetMaskedKey()
-	return &maskedToken
-}
-
-func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
-	maskedTokens := make([]*model.Token, 0, len(tokens))
+func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
+	maskedTokens := make([]*tokenResponse, 0, len(tokens))
 	for _, token := range tokens {
 		maskedTokens = append(maskedTokens, buildMaskedTokenResponse(token))
 	}
@@ -181,6 +251,22 @@ func GetToken(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, buildMaskedTokenResponse(token))
+}
+
+func GetTokenAutoGroups(c *gin.Context) {
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	if userGroup == "" {
+		userGroup = c.GetString("group")
+	}
+	if userGroup == "" {
+		var err error
+		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	common.ApiSuccess(c, gin.H{"groups": service.GetUserAutoGroup(userGroup), "max_count": setting.GetMaxTokenAutoGroups()})
 }
 
 func GetTokenKey(c *gin.Context) {
@@ -271,8 +357,9 @@ func GetTokenUsage(c *gin.Context) {
 }
 
 func AddToken(c *gin.Context) {
-	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	request := tokenRequest{}
+	err := c.ShouldBindJSON(&request)
+	token := request.Token
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -311,6 +398,13 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if token.Group == "auto" {
+		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
+			return
+		}
+	} else {
+		_ = token.SetAutoGroups(nil)
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -331,6 +425,7 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		AutoGroups:         token.AutoGroups,
 		FailoverEnabled:    token.FailoverEnabled,
 		FailoverGroups:     token.FailoverGroups,
 		FailoverStrategy:   token.FailoverStrategy,
@@ -365,8 +460,9 @@ func DeleteToken(c *gin.Context) {
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
-	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	request := tokenRequest{}
+	err := c.ShouldBindJSON(&request)
+	token := request.Token
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -418,6 +514,12 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		if token.Group != "auto" {
+			cleanToken.CrossGroupRetry = false
+			_ = cleanToken.SetAutoGroups(nil)
+		} else if request.AutoGroups.Set && !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
+			return
+		}
 		cleanToken.FailoverEnabled = token.FailoverEnabled
 		cleanToken.FailoverGroups = token.FailoverGroups
 		cleanToken.FailoverStrategy = token.FailoverStrategy

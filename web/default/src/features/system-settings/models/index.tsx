@@ -62,6 +62,7 @@ const defaultModelSettings: ModelSettings = {
   GroupGroupRatio: '',
   AutoGroups: '',
   DefaultUseAutoGroup: false,
+  MaxTokenAutoGroups: 5,
   'group_ratio_setting.group_special_usable_group': '{}',
   RetryTimes: 0,
   ChannelDisableThreshold: '',

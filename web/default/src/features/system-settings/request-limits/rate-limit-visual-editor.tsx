@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Plus, Search } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,6 +28,7 @@ import { Input } from '@/components/ui/input'
 
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isObjectRecord } from '../utils/json-validators'
+import { getAdminGroups } from '../api'
 import { RateLimitDialog, type RateLimitEntryData } from './rate-limit-dialog'
 
 type RateLimitVisualEditorProps = {
@@ -44,6 +46,10 @@ export function RateLimitVisualEditor({
   const [searchText, setSearchText] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editData, setEditData] = useState<RateLimitEntry | null>(null)
+  const groupsQuery = useQuery({
+    queryKey: ['groups'],
+    queryFn: getAdminGroups,
+  })
 
   const rateLimits = useMemo(() => {
     if (!value || value.trim() === '') return []
@@ -81,6 +87,13 @@ export function RateLimitVisualEditor({
       limit.groupName.toLowerCase().includes(lowerSearch)
     )
   }, [rateLimits, searchText])
+
+  const availableGroupOptions = useMemo(() => {
+    const configuredGroups = new Set(rateLimits.map((limit) => limit.groupName))
+    return (groupsQuery.data?.data ?? []).filter((group) => {
+      return editData?.groupName === group || !configuredGroups.has(group)
+    })
+  }, [editData?.groupName, groupsQuery.data?.data, rateLimits])
 
   const handleSave = (data: RateLimitEntryData) => {
     const parsed = safeJsonParseWithValidation<Record<string, unknown>>(value, {
@@ -121,9 +134,9 @@ export function RateLimitVisualEditor({
   }
 
   return (
-    <div className='space-y-4'>
-      <div className='flex items-center gap-4'>
-        <div className='relative flex-1'>
+    <div className='min-w-0 space-y-4'>
+      <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
+        <div className='relative min-w-0 sm:flex-1'>
           <Search className='text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4' />
           <Input
             placeholder={t('Search group names...')}
@@ -132,13 +145,19 @@ export function RateLimitVisualEditor({
             className='pl-9'
           />
         </div>
-        <Button onClick={handleAdd}>
+        <Button
+          type='button'
+          onClick={handleAdd}
+          className='w-full shrink-0 sm:w-auto'
+        >
           <Plus className='mr-2 h-4 w-4' />
           {t('Add group')}
         </Button>
       </div>
 
       <StaticDataTable
+        className='min-w-0'
+        tableClassName='min-w-[640px]'
         data={filteredRateLimits}
         getRowKey={(limit) => limit.groupName}
         emptyContent={
@@ -202,6 +221,8 @@ export function RateLimitVisualEditor({
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        groupOptions={availableGroupOptions}
+        isLoadingGroups={groupsQuery.isLoading}
       />
     </div>
   )

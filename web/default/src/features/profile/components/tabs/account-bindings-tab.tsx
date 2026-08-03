@@ -186,7 +186,7 @@ export function AccountBindingsTab({
         isEnabled: status?.github_oauth || false,
         onBind: () => {
           if (status?.github_client_id) {
-            handleGitHubOAuth(status.github_client_id)
+            handleGitHubOAuth(status.github_client_id, true)
           }
         },
       },
@@ -203,13 +203,13 @@ export function AccountBindingsTab({
         isEnabled: status?.discord_oauth || false,
         onBind: () => {
           if (status?.discord_client_id) {
-            handleDiscordOAuth(status.discord_client_id)
+            handleDiscordOAuth(status.discord_client_id, true)
           }
         },
       },
       {
         id: 'oidc',
-        label: t('OIDC'),
+        label: status?.oidc_display_name?.trim() || t('OIDC'),
         icon: Shield,
         value: (profile as unknown as Record<string, unknown>).oidc_id as
           | string
@@ -222,7 +222,8 @@ export function AccountBindingsTab({
           if (status?.oidc_authorization_endpoint && status?.oidc_client_id) {
             handleOIDCOAuth(
               status.oidc_authorization_endpoint,
-              status.oidc_client_id
+              status.oidc_client_id,
+              true
             )
           }
         },
@@ -253,7 +254,7 @@ export function AccountBindingsTab({
         isEnabled: status?.linuxdo_oauth || false,
         onBind: () => {
           if (status?.linuxdo_client_id) {
-            handleLinuxDOOAuth(status.linuxdo_client_id)
+            handleLinuxDOOAuth(status.linuxdo_client_id, true)
           }
         },
       },

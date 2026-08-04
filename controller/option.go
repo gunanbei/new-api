@@ -347,6 +347,29 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 		option.Value = string(encoded)
+	case "routing_reliability_setting.group_auto_disable_rules":
+		rules, parseErr := operation_setting.ParseGroupAutoDisableRules(option.Value.(string))
+		if parseErr != nil {
+			common.ApiErrorMsg(c, parseErr.Error())
+			return
+		}
+		groups := ratio_setting.GetGroupRatioCopy()
+		for _, rule := range rules {
+			if rule.Group == "auto" {
+				common.ApiErrorMsg(c, "分组自动禁用规则不能使用 auto 分组")
+				return
+			}
+			if _, exists := groups[rule.Group]; !exists {
+				common.ApiErrorMsg(c, fmt.Sprintf("分组 %s 不存在", rule.Group))
+				return
+			}
+		}
+		encoded, marshalErr := common.Marshal(rules)
+		if marshalErr != nil {
+			common.ApiErrorMsg(c, "分组自动禁用规则序列化失败")
+			return
+		}
+		option.Value = string(encoded)
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")
 		if err != nil {

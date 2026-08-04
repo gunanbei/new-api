@@ -275,6 +275,7 @@ export type ModelSettings = {
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'routing_reliability_setting.cross_group_retry_rules': string
+  'routing_reliability_setting.group_auto_disable_rules': string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_mode': 'scheduled_all' | 'passive_recovery'

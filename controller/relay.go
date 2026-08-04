@@ -540,11 +540,20 @@ func isTextFailoverRequest(format types.RelayFormat, mode int) bool {
 	}
 }
 
-func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError) {
+func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError, groups ...string) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
+	if len(groups) == 0 {
+		groups = []string{common.GetContextKeyString(c, constant.ContextKeyAutoGroup)}
+		if relayInfo != nil && relayInfo.UsingGroup != "" {
+			groups[0] = relayInfo.UsingGroup
+		}
+		if groups[0] == "" {
+			groups[0] = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		}
+	}
+	if service.ShouldDisableChannel(err, groups...) && channelError.AutoBan {
 		gopool.Go(func() {
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})

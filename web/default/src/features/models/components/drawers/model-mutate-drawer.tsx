@@ -209,6 +209,7 @@ export function ModelMutateDrawer({
       AutomaticEnableChannelEnabled: false,
       AutomaticDisableKeywords: '',
       'routing_reliability_setting.cross_group_retry_rules': '[]',
+      'routing_reliability_setting.group_auto_disable_rules': '[]',
       AutomaticDisableStatusCodes: '401',
       AutomaticRetryStatusCodes:
         '100-199,300-399,401-407,409-499,500-503,505-523,525-599',

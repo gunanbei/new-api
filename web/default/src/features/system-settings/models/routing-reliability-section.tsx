@@ -62,6 +62,10 @@ import {
   CrossGroupRetryRulesField,
   type CrossGroupRetryRule,
 } from './cross-group-retry-rules-field'
+import {
+  GroupAutoDisableRulesField,
+  type GroupAutoDisableRule,
+} from './group-auto-disable-rules-field'
 
 const numericString = z.string().refine((value) => {
   const trimmed = value.trim()
@@ -85,6 +89,18 @@ const routingReliabilitySchema = z
       z.object({
         group: z.string().trim().min(1, 'Group is required'),
         http_status_codes: z.string(),
+      })
+    ),
+    group_auto_disable_rules: z.array(
+      z.object({
+        group: z.string().trim().min(1, 'Group is required'),
+        enabled: z.boolean(),
+        disable_threshold_seconds: z.coerce
+          .number<number>()
+          .finite()
+          .min(0, 'Enter a non-negative number'),
+        http_status_codes: z.string(),
+        failure_keywords: z.string(),
       })
     ),
     monitor_setting: z.object({
@@ -136,13 +152,33 @@ const routingReliabilitySchema = z
       seenGroups.add(group)
 
       const parsed = parseHttpStatusCodeRules(rule.http_status_codes)
-      if (!parsed.ok || !parsed.normalized) {
+      if (!parsed.ok) {
         ctx.addIssue({
           code: 'custom',
           path: ['cross_group_retry_rules', index, 'http_status_codes'],
-          message: parsed.ok
-            ? 'Enter at least one HTTP status code'
-            : `Invalid status code rules: ${parsed.invalidTokens.join(', ')}`,
+          message: `Invalid status code rules: ${parsed.invalidTokens.join(', ')}`,
+        })
+      }
+    })
+
+    const seenAutoDisableGroups = new Set<string>()
+    values.group_auto_disable_rules.forEach((rule, index) => {
+      const group = rule.group.trim()
+      if (seenAutoDisableGroups.has(group)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['group_auto_disable_rules', index, 'group'],
+          message: 'Duplicate group',
+        })
+      }
+      seenAutoDisableGroups.add(group)
+
+      const parsed = parseHttpStatusCodeRules(rule.http_status_codes)
+      if (!parsed.ok) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['group_auto_disable_rules', index, 'http_status_codes'],
+          message: `Invalid status code rules: ${parsed.invalidTokens.join(', ')}`,
         })
       }
     })
@@ -161,6 +197,7 @@ type RoutingReliabilitySectionProps = {
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
     'routing_reliability_setting.cross_group_retry_rules': string
+    'routing_reliability_setting.group_auto_disable_rules': string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_mode': ChannelTestMode
@@ -180,6 +217,7 @@ type NormalizedRoutingReliabilityValues = {
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'routing_reliability_setting.cross_group_retry_rules': string
+  'routing_reliability_setting.group_auto_disable_rules': string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_mode': ChannelTestMode
@@ -205,12 +243,58 @@ function parseCrossGroupRetryRules(value: string): CrossGroupRetryRule[] {
   }
 }
 
+function parseGroupAutoDisableRules(value: string): GroupAutoDisableRule[] {
+  try {
+    const parsed: unknown = JSON.parse(value || '[]')
+    if (!Array.isArray(parsed)) return []
+    const rules: GroupAutoDisableRule[] = []
+    for (const rule of parsed) {
+      if (typeof rule !== 'object' || rule === null) continue
+      const candidate = rule as Record<string, unknown>
+      if (
+        typeof candidate.group !== 'string' ||
+        typeof candidate.enabled !== 'boolean' ||
+        typeof candidate.disable_threshold_seconds !== 'number' ||
+        typeof candidate.http_status_codes !== 'string'
+      ) {
+        continue
+      }
+      rules.push({
+        group: candidate.group,
+        enabled: candidate.enabled,
+        disable_threshold_seconds: candidate.disable_threshold_seconds,
+        http_status_codes: candidate.http_status_codes,
+        failure_keywords:
+          typeof candidate.failure_keywords === 'string'
+            ? candidate.failure_keywords
+            : '',
+      })
+    }
+    return rules
+  } catch {
+    return []
+  }
+}
+
 function normalizeCrossGroupRetryRules(rules: CrossGroupRetryRule[]) {
   return JSON.stringify(
     rules.map((rule) => ({
       group: rule.group.trim(),
       http_status_codes: parseHttpStatusCodeRules(rule.http_status_codes)
         .normalized,
+    }))
+  )
+}
+
+function normalizeGroupAutoDisableRules(rules: GroupAutoDisableRule[]) {
+  return JSON.stringify(
+    rules.map((rule) => ({
+      group: rule.group.trim(),
+      enabled: rule.enabled,
+      disable_threshold_seconds: rule.disable_threshold_seconds,
+      http_status_codes: parseHttpStatusCodeRules(rule.http_status_codes)
+        .normalized,
+      failure_keywords: normalizeLineEndings(rule.failure_keywords),
     }))
   )
 }
@@ -229,6 +313,9 @@ const buildFormDefaults = (
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
   cross_group_retry_rules: parseCrossGroupRetryRules(
     defaults['routing_reliability_setting.cross_group_retry_rules']
+  ),
+  group_auto_disable_rules: parseGroupAutoDisableRules(
+    defaults['routing_reliability_setting.group_auto_disable_rules']
   ),
   monitor_setting: {
     auto_test_channel_enabled:
@@ -263,6 +350,12 @@ const normalizeDefaults = (
         defaults['routing_reliability_setting.cross_group_retry_rules']
       )
     ),
+  'routing_reliability_setting.group_auto_disable_rules':
+    normalizeGroupAutoDisableRules(
+      parseGroupAutoDisableRules(
+        defaults['routing_reliability_setting.group_auto_disable_rules']
+      )
+    ),
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -290,6 +383,8 @@ const normalizeFormValues = (
   ).normalized,
   'routing_reliability_setting.cross_group_retry_rules':
     normalizeCrossGroupRetryRules(values.cross_group_retry_rules),
+  'routing_reliability_setting.group_auto_disable_rules':
+    normalizeGroupAutoDisableRules(values.group_auto_disable_rules),
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -330,6 +425,7 @@ export function RoutingReliabilitySection({
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
   const crossGroupRetryRules = form.watch('cross_group_retry_rules')
+  const groupAutoDisableRules = form.watch('group_auto_disable_rules')
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -605,7 +701,9 @@ export function RoutingReliabilitySection({
 
           <div className='flex min-w-0 flex-col gap-4'>
             <div className='flex flex-col gap-1'>
-              <h4 className='text-sm font-medium'>{t('Auto-disable rules')}</h4>
+              <h4 className='text-sm font-medium'>
+                {t('Global auto-disable rules')}
+              </h4>
             </div>
             <div className='grid min-w-0 gap-6 lg:grid-cols-2'>
               <FormField
@@ -708,6 +806,46 @@ export function RoutingReliabilitySection({
                 )}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className='flex min-w-0 flex-col gap-4'>
+            <div className='flex flex-col gap-1'>
+              <h4 className='text-sm font-medium'>{t('Group auto-disable')}</h4>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Override auto-disable switches, thresholds, and HTTP status codes for individual groups.'
+                )}
+              </p>
+            </div>
+            <FormField
+              control={form.control}
+              name='group_auto_disable_rules'
+              render={() => (
+                <FormItem>
+                  <FormControl>
+                    <GroupAutoDisableRulesField
+                      groups={groupsQuery.data?.data ?? []}
+                      isLoading={groupsQuery.isLoading}
+                      value={groupAutoDisableRules}
+                      getError={(index, field) =>
+                        form.getFieldState(
+                          `group_auto_disable_rules.${index}.${field}`
+                        ).error?.message
+                      }
+                      onChange={(rules) => {
+                        form.setValue('group_auto_disable_rules', rules, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
         </SettingsForm>
       </Form>

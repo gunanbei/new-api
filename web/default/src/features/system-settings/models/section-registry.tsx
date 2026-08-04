@@ -81,6 +81,8 @@ const MODELS_SECTIONS = [
           AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
           'routing_reliability_setting.cross_group_retry_rules':
             settings['routing_reliability_setting.cross_group_retry_rules'],
+          'routing_reliability_setting.group_auto_disable_rules':
+            settings['routing_reliability_setting.group_auto_disable_rules'],
           'monitor_setting.auto_test_channel_enabled':
             settings['monitor_setting.auto_test_channel_enabled'],
           'monitor_setting.auto_test_channel_minutes':

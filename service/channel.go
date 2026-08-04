@@ -42,26 +42,28 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 	}
 }
 
-func ShouldDisableChannel(err *types.NewAPIError) bool {
+func ShouldDisableChannel(err *types.NewAPIError, groups ...string) bool {
 	if !common.AutomaticDisableChannelEnabled {
 		return false
 	}
 	if err == nil {
 		return false
 	}
-	if types.IsChannelError(err) {
-		return true
-	}
 	if types.IsSkipRetryError(err) {
 		return false
 	}
-	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
-		return true
-	}
 
 	lowerMessage := strings.ToLower(err.Error())
-	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
-	return search
+	globalKeywordMatched, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
+	if len(groups) == 0 {
+		groups = []string{""}
+	}
+	for _, group := range groups {
+		if operation_setting.ShouldDisableInGroupWithMessage(group, err.StatusCode, types.IsChannelError(err), globalKeywordMatched, lowerMessage) {
+			return true
+		}
+	}
+	return false
 }
 
 func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {

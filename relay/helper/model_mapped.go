@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/common"

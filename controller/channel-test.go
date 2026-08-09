@@ -46,7 +46,7 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if normalized != "" {
 		return normalized
 	}
-	if strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
+	if ratio_setting.HasCompactModelSuffix(modelName) {
 		return string(constant.EndpointTypeOpenAIResponseCompact)
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
@@ -146,7 +146,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 
 		// responses compaction models (must use /v1/responses/compact)
-		if strings.HasSuffix(testModel, ratio_setting.CompactModelSuffix) {
+		if ratio_setting.HasCompactModelSuffix(testModel) {
 			requestPath = "/v1/responses/compact"
 		}
 	}
@@ -779,7 +779,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	}
 
 	// Responses compaction models (must use /v1/responses/compact)
-	if strings.HasSuffix(model, ratio_setting.CompactModelSuffix) {
+	if ratio_setting.HasCompactModelSuffix(model) {
 		return &dto.OpenAIResponsesCompactionRequest{
 			Model: model,
 			Input: testResponsesInput,

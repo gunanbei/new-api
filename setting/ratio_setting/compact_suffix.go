@@ -5,8 +5,16 @@ import "strings"
 const CompactModelSuffix = "-openai-compact"
 const CompactWildcardModelKey = "*" + CompactModelSuffix
 
+func HasCompactModelSuffix(modelName string) bool {
+	return strings.HasSuffix(modelName, CompactModelSuffix)
+}
+
+func TrimCompactModelSuffix(modelName string) string {
+	return strings.TrimSuffix(modelName, CompactModelSuffix)
+}
+
 func WithCompactModelSuffix(modelName string) string {
-	if strings.HasSuffix(modelName, CompactModelSuffix) {
+	if HasCompactModelSuffix(modelName) {
 		return modelName
 	}
 	return modelName + CompactModelSuffix

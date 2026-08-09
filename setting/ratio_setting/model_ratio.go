@@ -364,7 +364,7 @@ func GetModelPrice(name string, printErr bool) (float64, bool) {
 		return price, true
 	}
 
-	if strings.HasSuffix(name, CompactModelSuffix) {
+	if HasCompactModelSuffix(name) {
 		price, ok := modelPriceMap.Get(CompactWildcardModelKey)
 		if !ok {
 			if printErr {
@@ -398,7 +398,7 @@ func GetModelRatio(name string) (float64, bool, string) {
 
 	ratio, ok := modelRatioMap.Get(name)
 	if !ok {
-		if strings.HasSuffix(name, CompactModelSuffix) {
+		if HasCompactModelSuffix(name) {
 			if wildcardRatio, ok := modelRatioMap.Get(CompactWildcardModelKey); ok {
 				return wildcardRatio, true, name
 			}

@@ -41,6 +41,7 @@ import {
 
 import { fetchUpstreamModels, updateChannel } from '../../api'
 import {
+  categorizeModels,
   channelsQueryKeys,
   categorizeModelsWithRedirect,
   normalizeModelName,
@@ -140,8 +141,8 @@ export function FetchModelsDialog({
         setFetchedModels(list)
         setSelectedModels(existingModels)
         toast.success(t('Fetched {{count}} models', { count: list.length }))
-      } else {
-        const response = await fetchUpstreamModels(activeChannel!.id)
+      } else if (activeChannel) {
+        const response = await fetchUpstreamModels(activeChannel.id)
         if (response.success) {
           const list = Array.isArray(response.data) ? response.data : []
           setFetchedModels(list)
@@ -202,45 +203,6 @@ export function FetchModelsDialog({
     onOpenChange(false)
   }
 
-  // Categorize models by common prefixes
-  const categorizeModels = (models: string[]) => {
-    const categories: Record<string, string[]> = {}
-
-    models.forEach((model) => {
-      let category = 'Other'
-
-      // Determine category based on model name
-      if (
-        model.toLowerCase().includes('gpt') ||
-        model.toLowerCase().includes('o1') ||
-        model.toLowerCase().includes('o3')
-      ) {
-        category = 'OpenAI'
-      } else if (model.toLowerCase().includes('claude')) {
-        category = 'Anthropic'
-      } else if (model.toLowerCase().includes('gemini')) {
-        category = 'Gemini'
-      } else if (model.toLowerCase().includes('qwen')) {
-        category = 'Qwen'
-      } else if (model.toLowerCase().includes('deepseek')) {
-        category = 'DeepSeek'
-      } else if (model.toLowerCase().includes('glm')) {
-        category = 'Zhipu'
-      } else if (model.toLowerCase().includes('llama')) {
-        category = 'Meta'
-      } else if (model.toLowerCase().includes('mistral')) {
-        category = 'Mistral'
-      }
-
-      if (!categories[category]) {
-        categories[category] = []
-      }
-      categories[category].push(model)
-    })
-
-    return categories
-  }
-
   // Filter models by search
   const filteredModels = useMemo(() => {
     if (!searchKeyword) return fetchedModels
@@ -249,18 +211,27 @@ export function FetchModelsDialog({
     )
   }, [fetchedModels, searchKeyword])
 
-  // Helper to check if a model is considered "existing" (in selected or redirect)
-  const isExistingModel = (model: string) =>
-    classificationSet.has(normalizeModelName(model))
-
   // Separate new and existing models
-  const newModels = filteredModels.filter((m) => !isExistingModel(m))
-  const existingFilteredModels = filteredModels.filter((m) =>
-    isExistingModel(m)
-  )
-
-  const newModelsByCategory = categorizeModels(newModels)
-  const existingModelsByCategory = categorizeModels(existingFilteredModels)
+  const {
+    newModels,
+    existingFilteredModels,
+    newModelsByCategory,
+    existingModelsByCategory,
+  } = useMemo(() => {
+    const newModels: string[] = []
+    const existingFilteredModels: string[] = []
+    for (const model of filteredModels) {
+      if (classificationSet.has(normalizeModelName(model)))
+        existingFilteredModels.push(model)
+      else newModels.push(model)
+    }
+    return {
+      newModels,
+      existingFilteredModels,
+      newModelsByCategory: categorizeModels(newModels),
+      existingModelsByCategory: categorizeModels(existingFilteredModels),
+    }
+  }, [classificationSet, filteredModels])
 
   // 厂商分类按 a-z 排序，Other 放最后，便于查找
   const getSortedCategoryEntries = (

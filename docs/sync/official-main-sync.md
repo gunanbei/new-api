@@ -17,6 +17,15 @@ Use this skill when syncing the official main branch, or an explicitly named off
 
 Include user-visible features, API behavior, bug fixes, protocol/provider support, data migrations, and billing or security behavior. Exclude formatting-only diffs, comments, lockfiles, behavior-neutral refactors, and unrelated configuration changes.
 
+### Confirmed Frontend Path Mapping
+
+The current `develop` branch intentionally keeps the frontend under `web/default/`, while newer `origin/main` history may place the same frontend under `web/` (for example, `web/src/...`). Treat this as an established directory rename, not a new sync decision:
+
+- `origin/main:web/src/<path>` maps to `develop:web/default/src/<path>`.
+- Compare and port behavior across the mapped paths; do not ask for confirmation again.
+- Do not create a second frontend tree or copy the upstream `web/` directory wholesale.
+- Keep this mapping until the target branch explicitly adopts a different frontend layout.
+
 Do not call a change already ported merely because its commit is absent. Patch identity is a clue; equivalent observable behavior is the decision criterion.
 
 ## Procedure
@@ -147,9 +156,52 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
+| 2026-08-09 | 004 | Completed | 1086038f5f893a4558366f4d314cabc4ef5c8a23..823e26304a396854ace30b52b98ec497c2dd9c36 | develop | uncommitted | Merge-base fallback because the latest completed ledger entry targets `develop_tmp`; ported request replay, native channel tests, model categorization, user critical limits, redemption precision, Ali `top_p`, and Qwen TTS classification. Focused Go regression passed; broader Go/frontend checks remain blocked by environment or pre-existing repository issues. |
 | 2026-08-03 | 003 | Completed | f3ab2cff36b3962815be9114e300d26927cc42b3..0ab02020603d22e5613bc4cf46bfab06f8567769 | develop_tmp | uncommitted | Ported the isolated provider, billing, channel transport, and token Auto-group behavior; three coupled relay/session changes remain deferred. |
 | 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
+
+### 2026-08-09 - 004 - Completed
+
+- Source: origin/main; range: 1086038f5f893a4558366f4d314cabc4ef5c8a23..823e26304a396854ace30b52b98ec497c2dd9c36
+- Target: develop; start: 63056c6a8eee5e7a91928e8650f4f7451b2546a9; result: uncommitted
+- Baseline: merge-base fallback. The latest completed entry is for `develop_tmp`, so no completed ledger entry matches the current target branch. The common ancestor was used instead of treating a target commit as an upstream baseline.
+- Triage:
+
+  | Candidate | User-visible behavior | Target equivalent? | Decision |
+  |---|---|---|---|
+  | HTTP request-body replay metadata | Preserves body size and provides independent `GetBody` readers for transparent upstream retries | Missing; existing task path reused a consumed reader | Port / Adapt |
+  | Fetched model categorization | Groups fetched models by provider-specific rules, including Qwen TTS | Missing; dialog used a short prefix heuristic | Port / Adapt |
+  | Native Claude/Gemini channel tests | Sends native DTOs and invokes native adaptor conversion; Gemini streaming uses `:streamGenerateContent` | Missing; all chat tests used OpenAI DTOs | Port |
+  | User critical limits | Applies user-scoped limits to access-token generation and affiliate transfer | Missing | Port |
+  | Redemption quota precision | Keeps exact editable quota precision and preserves server quota when the quota field is untouched during update | Missing; displayed floating-point values could overwrite stored quota | Port / Adapt |
+  | Ali `top_p` normalization | Does not add `top_p` when omitted; clamps explicit invalid bounds to `0.99`/`0.01` | Missing | Port |
+  | Qwen TTS categorization correction | Classifies `tts-*` models as OpenAI instead of Qwen | Missing until the model-category rules were added | Port |
+  | Earlier candidates through `0ab02020603d22e5613bc4cf46bfab06f8567769` | Provider, billing, transport, OIDC, Auto-group, logging, and related fixes | Revalidated against current working tree; prior entries already record their ports or deferrals | Already ported / deferred as recorded |
+  | CI, docs, lockfiles, formatting, refactors, and metadata-only changes | No product behavior in this sync scope | N/A | Excluded |
+
+- Ported:
+  - Replayable HTTP request bodies with independent memory/disk readers, preserved replay metadata through `ReaderOnly`, and `ContentLength`/`GetBody` propagation in ordinary, form, and task requests - `common/body_storage.go`, `relay/channel/api_request.go` - focused storage regression test.
+  - Native Claude and Gemini request construction and adaptor dispatch for channel tests, plus Gemini streaming endpoint normalization - `controller/channel-test.go`.
+  - Provider-aware fetched-model categorization and Qwen TTS correction, adapted to the tracked `web/default` frontend - `web/default/src/features/channels/lib/model-categories.ts`, fetch-models dialog, and library exports.
+  - User-scoped critical rate limits on `/api/user/token` and `/api/user/aff_transfer` - `middleware/rate-limit.go`, `router/api-router.go`.
+  - Redemption quota precision helpers, dynamic input step, and update-time server quota preservation - `web/default/src/lib/currency.ts`, `web/default/src/lib/format.ts`, redemption form and mutate drawer.
+  - Ali `top_p` omission and explicit-bound normalization - `relay/channel/ali/text.go`.
+- Already equivalent / excluded:
+  - Behavior from the earlier source range that is present in the working tree is treated as already ported or intentionally deferred per entries 001-003; no wholesale cherry-pick was performed.
+  - **Confirmed frontend directory rename:** upstream `web/src/...` was adapted to the current target `web/default/src/...` using the standing mapping above; this is settled and must not trigger another confirmation in later syncs.
+  - CI, documentation, lockfiles, formatting-only changes, and behavior-neutral refactors were excluded.
+- Deferred:
+  - None from the reviewed functional candidates. Existing deferrals from entries 001 and 003 remain unchanged and are not silently reclassified.
+- Validation:
+  - `gofmt -w common/body_storage.go controller/channel-test.go middleware/rate-limit.go relay/channel/ali/text.go relay/channel/api_request.go router/api-router.go` - passed
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./common -run TestBodyStorageNewReaderHasIndependentCursor -count=1` - passed
+  - `git diff --check` - passed
+  - `cd web/default && bunx oxfmt -c .oxfmtrc.json --write <touched frontend files>` - passed
+  - `cd web/default && bun run format:check` - blocked by pre-existing formatting drift across unrelated files
+  - `cd web/default && bun run typecheck` - blocked by pre-existing missing `MaxTokenAutoGroups`, OIDC display-name defaults, and unrelated auto-group editor type errors
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./common ./middleware ./relay/channel ./relay/channel/ali ./controller` - blocked: controller lacks an existing `gorm.io/driver/sqlite` go.sum entry; tests requiring local listeners are denied by the sandbox
+- Known blockers: broader Go and frontend suites require repository dependency/type cleanup and a test environment that permits loopback listeners. Dependency and unrelated local files were left unchanged.
 
 ### 2026-08-03 - 003 - Completed
 

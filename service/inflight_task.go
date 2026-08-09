@@ -18,11 +18,18 @@ import (
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 )
 
 const (
-	inflightTaskItemKeyPrefix = "inflight:item:"
-	inflightTaskUserKeyPrefix = "inflight:user:"
+	inflightTaskItemKeyPrefix       = "inflight:item:"
+	inflightTaskUserKeyPrefix       = "inflight:user:"
+	inflightTaskCreatedKeyPrefix    = "inflight:created:"
+	inflightTaskStatusKeyPrefix     = "inflight:status:"
+	inflightTaskKindKeyPrefix       = "inflight:kind:"
+	inflightTaskStreamKeyPrefix     = "inflight:stream:"
+	inflightTaskIndexReadyKeyPrefix = "inflight:index:ready:"
+	inflightTaskIndexBuildKeyPrefix = "inflight:index:build:"
 
 	InflightTaskStatusAccepted        = "accepted"
 	InflightTaskStatusRouting         = "routing"
@@ -40,6 +47,7 @@ const (
 	inflightTaskCleanupIntervalMinutesMax       = 10080
 	inflightTaskWriteMaxRetries                 = 3
 	inflightTaskCleanupBatchSize                = 100
+	inflightTaskQueryBatchSize                  = 200
 )
 
 var errInflightTaskUnavailable = errors.New("功能暂不可用，请联系管理员")
@@ -457,6 +465,203 @@ func inflightTaskUserKey(userID int) string {
 	return inflightTaskUserKeyPrefix + strconv.Itoa(userID)
 }
 
+func inflightTaskCreatedKey(userID int) string {
+	return inflightTaskCreatedKeyPrefix + strconv.Itoa(userID)
+}
+
+func inflightTaskIndexReadyKey(userID int) string {
+	return inflightTaskIndexReadyKeyPrefix + strconv.Itoa(userID)
+}
+
+func inflightTaskIndexBuildKey(userID int) string {
+	return inflightTaskIndexBuildKeyPrefix + strconv.Itoa(userID)
+}
+
+func inflightTaskStatusKey(userID int, status string) string {
+	return inflightTaskStatusKeyPrefix + strconv.Itoa(userID) + ":" + status
+}
+
+func inflightTaskKindKey(userID int, kind string) string {
+	return inflightTaskKindKeyPrefix + strconv.Itoa(userID) + ":" + kind
+}
+
+func inflightTaskStreamKey(userID int, isStream bool) string {
+	return inflightTaskStreamKeyPrefix + strconv.Itoa(userID) + ":" + strconv.FormatBool(isStream)
+}
+
+func inflightTaskStatusValues() []string {
+	return []string{
+		InflightTaskStatusAccepted,
+		InflightTaskStatusRouting,
+		InflightTaskStatusUpstreamPending,
+		InflightTaskStatusStreaming,
+		InflightTaskStatusCompleted,
+		InflightTaskStatusFailed,
+	}
+}
+
+func inflightTaskKindValues() []string {
+	return []string{"chat", "image", "audio"}
+}
+
+func ensureInflightTaskIndexes(ctx context.Context, client *redis.Client, userID int) (bool, error) {
+	ready, err := client.Exists(ctx, inflightTaskIndexReadyKey(userID)).Result()
+	if err != nil || ready > 0 {
+		return ready > 0, err
+	}
+	acquired, err := client.SetNX(ctx, inflightTaskIndexBuildKey(userID), "1", time.Minute).Result()
+	if err != nil || !acquired {
+		return false, err
+	}
+	defer client.Del(ctx, inflightTaskIndexBuildKey(userID))
+	indexKeys := []string{inflightTaskCreatedKey(userID)}
+	for _, status := range inflightTaskStatusValues() {
+		indexKeys = append(indexKeys, inflightTaskStatusKey(userID, status))
+	}
+	for _, kind := range inflightTaskKindValues() {
+		indexKeys = append(indexKeys, inflightTaskKindKey(userID, kind))
+	}
+	indexKeys = append(indexKeys, inflightTaskStreamKey(userID, false), inflightTaskStreamKey(userID, true))
+	if err = client.Del(ctx, indexKeys...).Err(); err != nil {
+		return false, err
+	}
+
+	requestIDs, err := client.ZRange(ctx, inflightTaskUserKey(userID), 0, -1).Result()
+	if err != nil {
+		return false, err
+	}
+	for start := 0; start < len(requestIDs); start += inflightTaskQueryBatchSize {
+		end := start + inflightTaskQueryBatchSize
+		if end > len(requestIDs) {
+			end = len(requestIDs)
+		}
+		ids := requestIDs[start:end]
+		keys := make([]string, 0, len(ids))
+		for _, requestID := range ids {
+			keys = append(keys, inflightTaskItemKey(requestID))
+		}
+		values, err := client.MGet(ctx, keys...).Result()
+		if err != nil {
+			return false, err
+		}
+		pipe := client.Pipeline()
+		for i, value := range values {
+			raw, ok := value.(string)
+			if !ok {
+				continue
+			}
+			var task InflightTask
+			if common.UnmarshalJsonStr(raw, &task) != nil {
+				continue
+			}
+			score := task.CreatedAt
+			if score <= 0 {
+				score = task.UpdatedAt
+			}
+			pipe.ZAdd(ctx, inflightTaskCreatedKey(userID), &redis.Z{Score: float64(score), Member: ids[i]})
+			pipe.ZAdd(ctx, inflightTaskStatusKey(userID, task.Status), &redis.Z{Score: float64(task.UpdatedAt), Member: ids[i]})
+			pipe.ZAdd(ctx, inflightTaskKindKey(userID, task.Kind), &redis.Z{Score: float64(task.UpdatedAt), Member: ids[i]})
+			pipe.ZAdd(ctx, inflightTaskStreamKey(userID, task.IsStream), &redis.Z{Score: float64(task.UpdatedAt), Member: ids[i]})
+		}
+		if _, err = pipe.Exec(ctx); err != nil {
+			return false, err
+		}
+	}
+	return true, client.Set(ctx, inflightTaskIndexReadyKey(userID), "1", 0).Err()
+}
+
+func inflightTaskFilteredKey(ctx context.Context, client *redis.Client, userID int, query InflightTaskQuery) (string, []string, bool, error) {
+	keys := []string{inflightTaskUserKey(userID)}
+	weights := []float64{1}
+	temporary := make([]string, 0, 2)
+	structuredFilter := query.Status != "" || query.Kind != "" || query.IsStream != nil || query.StartTimestamp != 0 || query.EndTimestamp != 0
+	if structuredFilter {
+		ready, err := ensureInflightTaskIndexes(ctx, client, userID)
+		if err != nil {
+			return "", nil, false, err
+		}
+		if !ready {
+			if query.Channel != "" || query.ModelName != "" || query.RequestID != "" {
+				destination := "inflight:query:" + uuid.NewString()
+				if _, err := client.ZInterStore(ctx, destination, &redis.ZStore{Keys: keys}).Result(); err != nil {
+					return "", nil, false, err
+				}
+				_ = client.Expire(ctx, destination, time.Minute).Err()
+				return destination, []string{destination}, false, nil
+			}
+			return inflightTaskUserKey(userID), nil, false, nil
+		}
+	}
+	add := func(key string) {
+		keys = append(keys, key)
+		weights = append(weights, 0)
+	}
+	if query.Status != "" {
+		add(inflightTaskStatusKey(userID, query.Status))
+	}
+	if query.Kind != "" {
+		add(inflightTaskKindKey(userID, query.Kind))
+	}
+	if query.IsStream != nil {
+		add(inflightTaskStreamKey(userID, *query.IsStream))
+	}
+	if query.StartTimestamp != 0 || query.EndTimestamp != 0 {
+		min, max := "-inf", "+inf"
+		if query.StartTimestamp != 0 {
+			min = strconv.FormatInt(query.StartTimestamp, 10)
+		}
+		if query.EndTimestamp != 0 {
+			max = strconv.FormatInt(query.EndTimestamp, 10)
+		}
+		timeKey := "inflight:query:" + uuid.NewString()
+		if _, err := client.ZInterStore(ctx, timeKey, &redis.ZStore{
+			Keys:      []string{inflightTaskUserKey(userID), inflightTaskCreatedKey(userID)},
+			Weights:   []float64{0, 1},
+			Aggregate: "SUM",
+		}).Result(); err != nil {
+			return "", nil, false, err
+		}
+		if query.StartTimestamp != 0 {
+			if err := client.ZRemRangeByScore(ctx, timeKey, "-inf", "("+min).Err(); err != nil {
+				return "", nil, false, err
+			}
+		}
+		if query.EndTimestamp != 0 {
+			if err := client.ZRemRangeByScore(ctx, timeKey, "("+max, "+inf").Err(); err != nil {
+				return "", nil, false, err
+			}
+		}
+		if count, err := client.ZCard(ctx, timeKey).Result(); err != nil {
+			return "", nil, false, err
+		} else if count == 0 {
+			_ = client.Del(ctx, timeKey).Err()
+			return "", nil, true, nil
+		}
+		_ = client.Expire(ctx, timeKey, time.Minute).Err()
+		temporary = append(temporary, timeKey)
+		add(timeKey)
+	}
+	if len(keys) == 1 {
+		if query.Channel != "" || query.ModelName != "" || query.RequestID != "" {
+			destination := "inflight:query:" + uuid.NewString()
+			if _, err := client.ZInterStore(ctx, destination, &redis.ZStore{Keys: keys}).Result(); err != nil {
+				return "", nil, false, err
+			}
+			_ = client.Expire(ctx, destination, time.Minute).Err()
+			temporary = append(temporary, destination)
+			return destination, temporary, false, nil
+		}
+		return keys[0], temporary, false, nil
+	}
+	destination := "inflight:query:" + uuid.NewString()
+	if _, err := client.ZInterStore(ctx, destination, &redis.ZStore{Keys: keys, Weights: weights, Aggregate: "SUM"}).Result(); err != nil {
+		return "", nil, false, err
+	}
+	_ = client.Expire(ctx, destination, time.Minute).Err()
+	temporary = append(temporary, destination)
+	return destination, temporary, false, nil
+}
+
 type inflightTaskRedisOps interface {
 	TxPipeline() redis.Pipeliner
 }
@@ -478,10 +683,33 @@ func persistInflightTask(ctx context.Context, ops inflightTaskRedisOps, task *In
 		Score:  float64(task.UpdatedAt),
 		Member: task.RequestID,
 	})
+	createdAt := task.CreatedAt
+	if createdAt <= 0 {
+		createdAt = task.UpdatedAt
+	}
+	pipe.ZAdd(ctx, inflightTaskCreatedKey(task.UserID), &redis.Z{Score: float64(createdAt), Member: task.RequestID})
+	for _, status := range inflightTaskStatusValues() {
+		pipe.ZRem(ctx, inflightTaskStatusKey(task.UserID, status), task.RequestID)
+	}
+	for _, kind := range inflightTaskKindValues() {
+		pipe.ZRem(ctx, inflightTaskKindKey(task.UserID, kind), task.RequestID)
+	}
+	pipe.ZRem(ctx, inflightTaskStreamKey(task.UserID, false), task.RequestID)
+	pipe.ZRem(ctx, inflightTaskStreamKey(task.UserID, true), task.RequestID)
+	pipe.ZAdd(ctx, inflightTaskStatusKey(task.UserID, task.Status), &redis.Z{Score: float64(task.UpdatedAt), Member: task.RequestID})
+	pipe.ZAdd(ctx, inflightTaskKindKey(task.UserID, task.Kind), &redis.Z{Score: float64(task.UpdatedAt), Member: task.RequestID})
+	pipe.ZAdd(ctx, inflightTaskStreamKey(task.UserID, task.IsStream), &redis.Z{Score: float64(task.UpdatedAt), Member: task.RequestID})
+	indexKeys := []string{inflightTaskCreatedKey(task.UserID), inflightTaskStatusKey(task.UserID, task.Status), inflightTaskKindKey(task.UserID, task.Kind), inflightTaskStreamKey(task.UserID, task.IsStream), inflightTaskIndexReadyKey(task.UserID)}
 	if ttl > 0 {
 		pipe.Expire(ctx, userKey, ttl)
+		for _, key := range indexKeys {
+			pipe.Expire(ctx, key, ttl)
+		}
 	} else {
 		pipe.Persist(ctx, userKey)
+		for _, key := range indexKeys {
+			pipe.Persist(ctx, key)
+		}
 	}
 	_, err = pipe.Exec(ctx)
 	return err
@@ -1173,27 +1401,182 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 		return nil, 0, err
 	}
 
-	requestIDs, err := client.ZRevRange(ctx, inflightTaskUserKey(userID), 0, -1).Result()
+	userKey := inflightTaskUserKey(userID)
+	noFilters := query.Status == "" && query.Kind == "" && query.Channel == "" &&
+		query.ModelName == "" && query.RequestID == "" && query.StartTimestamp == 0 &&
+		query.EndTimestamp == 0 && query.IsStream == nil
+	if noFilters && query.Num > 0 {
+		total64, err := client.ZCard(ctx, userKey).Result()
+		if err != nil {
+			return nil, 0, err
+		}
+		pageItems := make([]InflightTask, 0, query.Num)
+		missing := make([]interface{}, 0)
+		activeRequestIDs := make([]string, 0, query.Num)
+		offset := int64(query.StartIdx)
+		for len(pageItems) < query.Num {
+			remaining := query.Num - len(pageItems)
+			if remaining > inflightTaskQueryBatchSize {
+				remaining = inflightTaskQueryBatchSize
+			}
+			requestIDs, rangeErr := client.ZRevRange(ctx, userKey, offset, offset+int64(remaining)-1).Result()
+			if rangeErr != nil {
+				return nil, 0, rangeErr
+			}
+			if len(requestIDs) == 0 {
+				break
+			}
+			offset += int64(len(requestIDs))
+			batchItems, batchMissing, batchActive, batchErr := loadInflightTaskBatch(ctx, client, userID, requestIDs, query)
+			if batchErr != nil {
+				return nil, 0, batchErr
+			}
+			missing = append(missing, batchMissing...)
+			activeRequestIDs = append(activeRequestIDs, batchActive...)
+			pageItems = append(pageItems, batchItems...)
+			if len(requestIDs) < remaining {
+				break
+			}
+		}
+		if len(missing) > 0 {
+			removeInflightTaskIDs(ctx, client, userID, missing)
+			total64 -= int64(len(missing))
+		}
+		if total64 < 0 {
+			total64 = 0
+		}
+		if err = reconcileInflightTasks(ctx, client, userID, pageItems, activeRequestIDs); err != nil {
+			return nil, 0, err
+		}
+		if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
+			return nil, 0, err
+		}
+		fillMissingInflightTaskGroups(userID, pageItems)
+		return pageItems, int(total64), nil
+	}
+
+	candidateKey, temporaryKeys, empty, err := inflightTaskFilteredKey(ctx, client, userID, query)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(requestIDs) == 0 {
+	if len(temporaryKeys) > 0 {
+		defer client.Del(ctx, temporaryKeys...)
+	}
+	if empty {
 		return []InflightTask{}, 0, nil
 	}
+	if query.Status == "" && query.Channel == "" && query.ModelName == "" && query.RequestID == "" && query.Num > 0 {
+		total64, err := client.ZCard(ctx, candidateKey).Result()
+		if err != nil {
+			return nil, 0, err
+		}
+		pageItems := make([]InflightTask, 0, query.Num)
+		missing := make([]interface{}, 0)
+		activeRequestIDs := make([]string, 0, query.Num)
+		offset := int64(query.StartIdx)
+		for len(pageItems) < query.Num {
+			remaining := query.Num - len(pageItems)
+			if remaining > inflightTaskQueryBatchSize {
+				remaining = inflightTaskQueryBatchSize
+			}
+			requestIDs, rangeErr := client.ZRevRange(ctx, candidateKey, offset, offset+int64(remaining)-1).Result()
+			if rangeErr != nil {
+				return nil, 0, rangeErr
+			}
+			if len(requestIDs) == 0 {
+				break
+			}
+			offset += int64(len(requestIDs))
+			batchItems, batchMissing, batchActive, batchErr := loadInflightTaskBatch(ctx, client, userID, requestIDs, query)
+			if batchErr != nil {
+				return nil, 0, batchErr
+			}
+			pageItems = append(pageItems, batchItems...)
+			missing = append(missing, batchMissing...)
+			activeRequestIDs = append(activeRequestIDs, batchActive...)
+			if len(requestIDs) < remaining {
+				break
+			}
+		}
+		if len(missing) > 0 {
+			removeInflightTaskIDs(ctx, client, userID, missing)
+			total64 -= int64(len(missing))
+			if total64 < 0 {
+				total64 = 0
+			}
+		}
+		if err = reconcileInflightTasks(ctx, client, userID, pageItems, activeRequestIDs); err != nil {
+			return nil, 0, err
+		}
+		if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
+			return nil, 0, err
+		}
+		fillMissingInflightTaskGroups(userID, pageItems)
+		return pageItems, int(total64), nil
+	}
+	pageItems := make([]InflightTask, 0)
+	missing := make([]interface{}, 0)
+	activeRequestIDs := make([]string, 0)
+	total := 0
+	var offset int64
+	for {
+		requestIDs, rangeErr := client.ZRevRange(ctx, candidateKey, offset, offset+inflightTaskQueryBatchSize-1).Result()
+		if rangeErr != nil {
+			return nil, 0, rangeErr
+		}
+		if len(requestIDs) == 0 {
+			break
+		}
+		offset += int64(len(requestIDs))
+		batchTasks, batchMissing, _, batchErr := loadInflightTaskBatch(ctx, client, userID, requestIDs, query)
+		if batchErr != nil {
+			return nil, 0, batchErr
+		}
+		missing = append(missing, batchMissing...)
+		for _, task := range batchTasks {
+			if query.Status != "" && task.Status != query.Status {
+				continue
+			}
+			if total >= query.StartIdx && (query.Num <= 0 || len(pageItems) < query.Num) {
+				pageItems = append(pageItems, task)
+				if !isInflightTaskTerminalStatus(task.Status) {
+					activeRequestIDs = append(activeRequestIDs, task.RequestID)
+				}
+			}
+			total++
+		}
+		if len(requestIDs) < inflightTaskQueryBatchSize {
+			break
+		}
+	}
+	if len(missing) > 0 {
+		removeInflightTaskIDs(ctx, client, userID, missing)
+	}
+	if err = reconcileInflightTasks(ctx, client, userID, pageItems, activeRequestIDs); err != nil {
+		return nil, 0, err
+	}
+	if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
+		return nil, 0, err
+	}
+	fillMissingInflightTaskGroups(userID, pageItems)
+	return pageItems, total, nil
+}
 
+func loadInflightTaskBatch(ctx context.Context, client *redis.Client, userID int, requestIDs []string, query InflightTaskQuery) ([]InflightTask, []interface{}, []string, error) {
+	if len(requestIDs) == 0 {
+		return []InflightTask{}, nil, nil, nil
+	}
 	keys := make([]string, 0, len(requestIDs))
 	for _, requestID := range requestIDs {
 		keys = append(keys, inflightTaskItemKey(requestID))
 	}
-
 	values, err := client.MGet(ctx, keys...).Result()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, nil, err
 	}
-
 	tasks := make([]InflightTask, 0, len(values))
 	missing := make([]interface{}, 0)
-	activeRequestIDs := make([]string, 0, len(values))
+	activeRequestIDs := make([]string, 0)
 	for i, value := range values {
 		if value == nil {
 			missing = append(missing, requestIDs[i])
@@ -1204,31 +1587,21 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 			continue
 		}
 		var task InflightTask
-		if err = common.UnmarshalJsonStr(raw, &task); err != nil {
-			continue
-		}
-		if task.UserID != userID {
+		if err = common.UnmarshalJsonStr(raw, &task); err != nil || task.UserID != userID {
 			continue
 		}
 		if query.Kind != "" && task.Kind != query.Kind {
 			continue
 		}
-		if !inflightTaskMatchesChannel(task, query.Channel) {
+		if query.Status != "" && task.Status != query.Status {
 			continue
 		}
-		if query.ModelName != "" && !strings.Contains(task.ModelName, query.ModelName) {
-			continue
-		}
-		if query.RequestID != "" && !strings.Contains(task.RequestID, query.RequestID) {
-			continue
-		}
-		if query.StartTimestamp != 0 && task.CreatedAt < query.StartTimestamp {
-			continue
-		}
-		if query.EndTimestamp != 0 && task.CreatedAt > query.EndTimestamp {
-			continue
-		}
-		if query.IsStream != nil && task.IsStream != *query.IsStream {
+		if !inflightTaskMatchesChannel(task, query.Channel) ||
+			(query.ModelName != "" && !strings.Contains(task.ModelName, query.ModelName)) ||
+			(query.RequestID != "" && !strings.Contains(task.RequestID, query.RequestID)) ||
+			(query.StartTimestamp != 0 && task.CreatedAt < query.StartTimestamp) ||
+			(query.EndTimestamp != 0 && task.CreatedAt > query.EndTimestamp) ||
+			(query.IsStream != nil && task.IsStream != *query.IsStream) {
 			continue
 		}
 		if !isInflightTaskTerminalStatus(task.Status) {
@@ -1236,10 +1609,31 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 		}
 		tasks = append(tasks, task)
 	}
+	return tasks, missing, activeRequestIDs, nil
+}
 
+func removeInflightTaskIDs(ctx context.Context, client *redis.Client, userID int, requestIDs []interface{}) {
+	if len(requestIDs) == 0 {
+		return
+	}
+	pipe := client.TxPipeline()
+	pipe.ZRem(ctx, inflightTaskUserKey(userID), requestIDs...)
+	pipe.ZRem(ctx, inflightTaskCreatedKey(userID), requestIDs...)
+	for _, status := range inflightTaskStatusValues() {
+		pipe.ZRem(ctx, inflightTaskStatusKey(userID, status), requestIDs...)
+	}
+	for _, kind := range inflightTaskKindValues() {
+		pipe.ZRem(ctx, inflightTaskKindKey(userID, kind), requestIDs...)
+	}
+	pipe.ZRem(ctx, inflightTaskStreamKey(userID, false), requestIDs...)
+	pipe.ZRem(ctx, inflightTaskStreamKey(userID, true), requestIDs...)
+	_, _ = pipe.Exec(ctx)
+}
+
+func reconcileInflightTasks(ctx context.Context, client *redis.Client, userID int, tasks []InflightTask, activeRequestIDs []string) error {
 	terminalStatuses, err := loadTerminalStatusesByRequestID(userID, activeRequestIDs)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
 	reconciled := make([]*InflightTask, 0)
 	for i := range tasks {
@@ -1254,42 +1648,11 @@ func ListUserInflightTasks(ctx context.Context, userID int, query InflightTaskQu
 		}
 	}
 	for _, task := range reconciled {
-		_ = persistInflightTask(ctx, client, task)
-	}
-	if query.Status != "" {
-		filtered := tasks[:0]
-		for i := range tasks {
-			if tasks[i].Status == query.Status {
-				filtered = append(filtered, tasks[i])
-			}
+		if err = persistInflightTask(ctx, client, task); err != nil {
+			return err
 		}
-		tasks = filtered
 	}
-
-	if len(missing) > 0 {
-		_, _ = client.ZRem(ctx, inflightTaskUserKey(userID), missing...).Result()
-	}
-
-	sort.Slice(tasks, func(i, j int) bool {
-		if tasks[i].UpdatedAt == tasks[j].UpdatedAt {
-			return tasks[i].CreatedAt > tasks[j].CreatedAt
-		}
-		return tasks[i].UpdatedAt > tasks[j].UpdatedAt
-	})
-	total := len(tasks)
-	if query.StartIdx >= total {
-		return []InflightTask{}, total, nil
-	}
-	end := query.StartIdx + query.Num
-	if query.Num <= 0 || end > total {
-		end = total
-	}
-	pageItems := tasks[query.StartIdx:end]
-	if err = attachInflightTaskHasTrace(ctx, pageItems); err != nil {
-		return nil, 0, err
-	}
-	fillMissingInflightTaskGroups(userID, pageItems)
-	return pageItems, total, nil
+	return nil
 }
 
 // fillMissingInflightTaskGroups backfills empty group fields for records written
@@ -1494,6 +1857,10 @@ func DeleteTerminalInflightTasksBefore(ctx context.Context, targetTimestamp int6
 		}
 		cursor = next
 		for _, userKey := range userKeys {
+			userID, parseErr := strconv.Atoi(strings.TrimPrefix(userKey, inflightTaskUserKeyPrefix))
+			if parseErr != nil || userID <= 0 {
+				continue
+			}
 			var offset int64
 			for {
 				requestIDs, err := client.ZRangeByScore(ctx, userKey, &redis.ZRangeBy{
@@ -1586,6 +1953,15 @@ func DeleteTerminalInflightTasksBefore(ctx context.Context, targetTimestamp int6
 
 				pipe := client.TxPipeline()
 				pipe.ZRem(ctx, userKey, removeIDs...)
+				pipe.ZRem(ctx, inflightTaskCreatedKey(userID), removeIDs...)
+				for _, status := range inflightTaskStatusValues() {
+					pipe.ZRem(ctx, inflightTaskStatusKey(userID, status), removeIDs...)
+				}
+				for _, kind := range inflightTaskKindValues() {
+					pipe.ZRem(ctx, inflightTaskKindKey(userID, kind), removeIDs...)
+				}
+				pipe.ZRem(ctx, inflightTaskStreamKey(userID, false), removeIDs...)
+				pipe.ZRem(ctx, inflightTaskStreamKey(userID, true), removeIDs...)
 				if len(removeKeys) > 0 {
 					pipe.Del(ctx, removeKeys...)
 				}

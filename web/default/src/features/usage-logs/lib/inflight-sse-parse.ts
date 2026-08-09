@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { JSONPath } from 'jsonpath-plus'
 
 export type SseParseStrategy =
+  | 'auto'
   | 'openai'
   | 'gemini'
   | 'claude'
@@ -86,7 +87,10 @@ function extractOpenAi(parsed: unknown): string {
   }
   const record = parsed as Record<string, unknown>
   const type = typeof record.type === 'string' ? record.type : ''
-  if (type === 'response.output_text.delta' && typeof record.delta === 'string') {
+  if (
+    type === 'response.output_text.delta' &&
+    typeof record.delta === 'string'
+  ) {
     return record.delta
   }
   if (
@@ -109,16 +113,58 @@ function extractOpenAi(parsed: unknown): string {
   return parts.join('')
 }
 
+function detectSseStrategyFromParsed(
+  parsed: unknown
+): Exclude<SseParseStrategy, 'auto' | 'custom'> {
+  if (!parsed || typeof parsed !== 'object') {
+    return 'openai'
+  }
+  const record = parsed as Record<string, unknown>
+  const candidates = record.candidates
+  if (Array.isArray(candidates)) {
+    return 'gemini'
+  }
+  const delta = record.delta
+  if (
+    delta &&
+    typeof delta === 'object' &&
+    typeof (delta as Record<string, unknown>).text === 'string'
+  ) {
+    return 'claude'
+  }
+  const message = record.message
+  if (
+    message &&
+    typeof message === 'object' &&
+    typeof (message as Record<string, unknown>).content === 'string'
+  ) {
+    return 'ollama_chat'
+  }
+  if (typeof record.response === 'string') {
+    return 'ollama_generate'
+  }
+  return 'openai'
+}
+
 function extractByStrategy(
   parsed: unknown,
   strategy: SseParseStrategy,
   customPath: string
 ): string {
   switch (strategy) {
+    case 'auto':
+      return extractByStrategy(
+        parsed,
+        detectSseStrategyFromParsed(parsed),
+        customPath
+      )
     case 'openai':
       return extractOpenAi(parsed)
     case 'gemini':
-      return extractWithJsonPath(parsed, '$.candidates[0].content.parts[0].text')
+      return extractWithJsonPath(
+        parsed,
+        '$.candidates[0].content.parts[0].text'
+      )
     case 'claude':
       return extractWithJsonPath(parsed, '$.delta.text')
     case 'ollama_generate':
@@ -134,6 +180,8 @@ function extractByStrategy(
 
 export function parseSseDataPayload(chunk: string): string | null {
   const dataLines = chunk
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
     .split('\n')
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
@@ -144,7 +192,11 @@ export function parseSseDataPayload(chunk: string): string | null {
 }
 
 export function parseSseChunks(text: string): string[] {
-  return text.split('\n\n').filter((chunk) => chunk.trim().length > 0)
+  return text
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .split('\n\n')
+    .filter((chunk) => chunk.trim().length > 0)
 }
 
 function parseSseChunk(
@@ -236,9 +288,10 @@ export function appendSseTraceText(
   strategy: SseParseStrategy,
   customPath: string
 ): ParsedSseResult {
+  const normalizedText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
   const strategyChanged =
     state.strategy !== strategy || state.customPath !== customPath
-  if (text.length < state.scannedLength || strategyChanged) {
+  if (normalizedText.length < state.scannedLength || strategyChanged) {
     state.scannedLength = 0
     state.pending = ''
     state.events = []
@@ -247,36 +300,52 @@ export function appendSseTraceText(
   state.strategy = strategy
   state.customPath = customPath
 
-  const delta = text.slice(state.scannedLength)
-  state.scannedLength = text.length
-  if (!delta) {
-    return {
-      events: state.events,
-      concatenated: state.concatenated,
+  const delta = normalizedText.slice(state.scannedLength)
+  state.scannedLength = normalizedText.length
+  if (delta) {
+    state.pending += delta
+    while (true) {
+      const separator = state.pending.indexOf('\n\n')
+      if (separator < 0) {
+        break
+      }
+      const chunk = state.pending.slice(0, separator)
+      state.pending = state.pending.slice(separator + 2)
+      if (!chunk.trim()) {
+        continue
+      }
+      const event = parseSseChunk(
+        chunk,
+        state.events.length + 1,
+        strategy,
+        customPath
+      )
+      state.events.push(event)
+      if (event.extracted) {
+        state.concatenated += event.extracted
+      }
     }
   }
 
-  state.pending += delta
-  while (true) {
-    const separator = state.pending.indexOf('\n\n')
-    if (separator < 0) {
-      break
-    }
-    const chunk = state.pending.slice(0, separator)
-    state.pending = state.pending.slice(separator + 2)
-    if (!chunk.trim()) {
-      continue
-    }
-    const event = parseSseChunk(chunk, state.events.length + 1, strategy, customPath)
-    state.events.push(event)
-    if (event.extracted) {
-      state.concatenated += event.extracted
-    }
-  }
-
+  const pendingEvent = state.pending.trim()
+    ? parseSseChunk(
+        state.pending,
+        state.events.length + 1,
+        strategy,
+        customPath
+      )
+    : null
+  const hasCompletePendingEvent = Boolean(
+    pendingEvent?.isDone || pendingEvent?.parsed !== null
+  )
   return {
-    events: state.events,
-    concatenated: state.concatenated,
+    events:
+      hasCompletePendingEvent && pendingEvent
+        ? [...state.events, pendingEvent]
+        : [...state.events],
+    concatenated:
+      state.concatenated +
+      (hasCompletePendingEvent && pendingEvent ? pendingEvent.extracted : ''),
   }
 }
 

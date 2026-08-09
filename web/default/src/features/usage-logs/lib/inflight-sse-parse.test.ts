@@ -45,9 +45,7 @@ describe('parseSseTrace', () => {
 
   test('summarizes image stream payloads without dumping base64', () => {
     const body = [
-      'data: {"type":"image_generation.partial_image","b64_json":"' +
-        'a'.repeat(120) +
-        '"}',
+      `data: {"type":"image_generation.partial_image","b64_json":"${'a'.repeat(120)}"}`,
       '',
     ].join('\n')
 
@@ -106,9 +104,59 @@ describe('parseSseTrace', () => {
     const body = 'data: {"message":{"content":"custom"}}\n\n'
 
     appendSseTraceText(state, body, 'openai', '')
-    const result = appendSseTraceText(state, body, 'custom', '$.message.content')
+    const result = appendSseTraceText(
+      state,
+      body,
+      'custom',
+      '$.message.content'
+    )
 
     assert.equal(result.concatenated, 'custom')
     assert.equal(result.events.length, 1)
+  })
+
+  test('parses a complete event before its terminating blank line', () => {
+    const state = createIncrementalSseParserState()
+    const result = appendSseTraceText(
+      state,
+      'data: {"choices":[{"delta":{"content":"live"}}]}',
+      'auto',
+      ''
+    )
+
+    assert.equal(result.concatenated, 'live')
+    assert.equal(result.events.length, 1)
+    assert.equal(result.events[0]?.parseError, null)
+  })
+
+  test('keeps incomplete JSON buffered until the next snapshot', () => {
+    const state = createIncrementalSseParserState()
+    const first = appendSseTraceText(state, 'data: {"choices":[', 'auto', '')
+    const second = appendSseTraceText(
+      state,
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+      'auto',
+      ''
+    )
+
+    assert.equal(first.events.length, 0)
+    assert.equal(second.concatenated, 'ok')
+    assert.equal(second.events.length, 1)
+  })
+
+  test('auto-detects provider payloads and normalizes CRLF', () => {
+    const cases = [
+      [
+        'data: {"candidates":[{"content":{"parts":[{"text":"gemini"}]}}]}\r\n\r\n',
+        'gemini',
+      ],
+      ['data: {"delta":{"text":"claude"}}\r\n\r\n', 'claude'],
+      ['data: {"response":"generate"}\r\n\r\n', 'generate'],
+      ['data: {"message":{"content":"chat"}}\r\n\r\n', 'chat'],
+    ] as const
+
+    for (const [body, expected] of cases) {
+      assert.equal(parseSseTrace(body, 'auto', '').concatenated, expected)
+    }
   })
 })

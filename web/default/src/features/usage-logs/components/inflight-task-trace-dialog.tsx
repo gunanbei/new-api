@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Download, Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -63,25 +70,6 @@ import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 
 import {
-  cacheInflightTraceArchive,
-  readInflightTraceArchiveRecord,
-} from '../lib/inflight-trace-local-cache'
-
-import {
-  InflightDetailRow,
-  InflightDetailSection,
-} from './inflight-detail-primitives'
-import type {
-  InflightTaskTrace,
-  InflightTraceHTTPPart,
-} from '../types/inflight-trace'
-import {
-  formatJsonText,
-  formatTraceJsonForDisplay,
-  isHeavyTraceJsonBody,
-  shouldUseInstantTraceBodyRender,
-} from '../lib/inflight-trace-body-display'
-import {
   appendSseTraceText,
   createIncrementalSseParserState,
   formatSseEventsForCopy,
@@ -89,6 +77,24 @@ import {
   type IncrementalSseParserState,
   type SseParseStrategy,
 } from '../lib/inflight-sse-parse'
+import {
+  formatJsonText,
+  formatTraceJsonForDisplay,
+  isHeavyTraceJsonBody,
+  shouldUseInstantTraceBodyRender,
+} from '../lib/inflight-trace-body-display'
+import {
+  cacheInflightTraceArchive,
+  readInflightTraceArchiveRecord,
+} from '../lib/inflight-trace-local-cache'
+import type {
+  InflightTaskTrace,
+  InflightTraceHTTPPart,
+} from '../types/inflight-trace'
+import {
+  InflightDetailRow,
+  InflightDetailSection,
+} from './inflight-detail-primitives'
 
 type InflightTaskTraceDialogProps = {
   requestId: string | null
@@ -116,10 +122,14 @@ const SSE_STRATEGY_OPTIONS: Array<{
   value: SseParseStrategy
   labelKey: string
 }> = [
+  { value: 'auto', labelKey: 'Auto detect (default)' },
   { value: 'openai', labelKey: 'OpenAI API compatible format' },
   { value: 'gemini', labelKey: 'Gemini API compatible format' },
   { value: 'claude', labelKey: 'Claude API compatible format' },
-  { value: 'ollama_generate', labelKey: 'Ollama API compatible format (Generate)' },
+  {
+    value: 'ollama_generate',
+    labelKey: 'Ollama API compatible format (Generate)',
+  },
   { value: 'ollama_chat', labelKey: 'Ollama API compatible format (Chat)' },
   { value: 'custom', labelKey: 'Custom JSONPath extraction' },
 ]
@@ -218,6 +228,10 @@ function isSseContentType(contentType?: string) {
   return Boolean(contentType?.includes('text/event-stream'))
 }
 
+function looksLikeSseBody(text: string) {
+  return /(?:^|\r?\n)(?:data|event|id|retry):/.test(text)
+}
+
 function isBinaryContentType(contentType?: string) {
   if (!contentType) return false
   return (
@@ -249,7 +263,12 @@ function HeadersTable(props: {
     <div className='space-y-2'>
       <div className='flex items-center justify-between gap-2'>
         <span className='text-sm font-medium'>{props.copyLabel}</span>
-        <Button type='button' variant='outline' size='sm' onClick={props.onCopy}>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          onClick={props.onCopy}
+        >
           {t('Copy Headers')}
         </Button>
       </div>
@@ -283,10 +302,7 @@ const traceInfoAlertClassName = 'border-border bg-muted/30'
 const tracePreClassName =
   'border-border bg-muted/30 max-h-[50vh] overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap'
 
-function TruncationAlert(props: {
-  truncated?: boolean
-  bodyBytes?: number
-}) {
+function TruncationAlert(props: { truncated?: boolean; bodyBytes?: number }) {
   const { t } = useTranslation()
   if (!props.truncated) return null
   return (
@@ -310,13 +326,17 @@ function TraceBodyPanel(props: {
 }) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
-  const preRef = useRef<HTMLPreElement>(null)
+  const scrollRef = useRef<HTMLElement>(null)
+  const setScrollElement = useCallback((element: HTMLElement | null) => {
+    scrollRef.current = element
+  }, [])
   const incrementalSseRef = useRef<IncrementalSseParserState | null>(null)
-  const textBody = props.part?.body_encoding === 'text' ? props.part.body || '' : ''
+  const textBody =
+    props.part?.body_encoding === 'text' ? props.part.body || '' : ''
   const contentType = props.part?.content_type
   const isJson = isJsonContentType(contentType)
   const isMultipart = isMultipartContentType(contentType)
-  const isSse = isSseContentType(contentType)
+  const isSse = isSseContentType(contentType) || looksLikeSseBody(textBody)
   const isBinary = isTraceBodyBinary(props.part)
   const heavyBody = useMemo(
     () => isHeavyTraceJsonBody(textBody, contentType, props.traceKind),
@@ -326,8 +346,11 @@ function TraceBodyPanel(props: {
     heavyBody ? 'raw' : 'formatted'
   )
   const [sseViewMode, setSseViewMode] = useState<SseViewMode>('raw')
-  const [sseStrategy, setSseStrategy] = useState<SseParseStrategy>('openai')
-  const [customJsonPath, setCustomJsonPath] = useState('$.choices[0].delta.content')
+  const [sseStrategy, setSseStrategy] = useState<SseParseStrategy>('auto')
+  const [customJsonPath, setCustomJsonPath] = useState(
+    '$.choices[0].delta.content'
+  )
+  const autoScrollRef = useRef(true)
   const useInstantPre = shouldUseInstantTraceBodyRender({
     liveUpdate: props.liveUpdate,
     isSse,
@@ -365,16 +388,35 @@ function TraceBodyPanel(props: {
       return textBody
     }
     if (viewMode === 'formatted' && isJson) {
-      return heavyBody ? formatTraceJsonForDisplay(textBody) : formatJsonText(textBody)
+      return heavyBody
+        ? formatTraceJsonForDisplay(textBody)
+        : formatJsonText(textBody)
     }
     return textBody
   }, [heavyBody, isJson, textBody, useInstantPre, viewMode])
 
   useEffect(() => {
-    if (!props.liveUpdate || !preRef.current) {
+    const element = scrollRef.current
+    if (!element) {
       return
     }
-    preRef.current.scrollTop = preRef.current.scrollHeight
+    const updateAutoScroll = () => {
+      autoScrollRef.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight < 48
+    }
+    element.addEventListener('scroll', updateAutoScroll, { passive: true })
+    if (props.liveUpdate && element.scrollTop === 0) {
+      element.scrollTop = element.scrollHeight
+    }
+    updateAutoScroll()
+    return () => element.removeEventListener('scroll', updateAutoScroll)
+  }, [isSse, props.liveUpdate, sseViewMode, useInstantPre, viewMode])
+
+  useEffect(() => {
+    if (!props.liveUpdate || !autoScrollRef.current || !scrollRef.current) {
+      return
+    }
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [parsedSse?.concatenated, props.liveUpdate, sseViewMode, textBody])
 
   const sseEventsToRender = useMemo(() => {
@@ -410,7 +452,7 @@ function TraceBodyPanel(props: {
   if (!isBinary && !isSse && textBody) {
     if (useInstantPre || viewMode === 'raw' || heavyBody) {
       textBodyContent = (
-        <pre ref={preRef} className={tracePreClassName}>
+        <pre ref={setScrollElement} className={tracePreClassName}>
           {displayText}
         </pre>
       )
@@ -428,7 +470,7 @@ function TraceBodyPanel(props: {
       )
     } else {
       textBodyContent = (
-        <pre ref={preRef} className={tracePreClassName}>
+        <pre ref={setScrollElement} className={tracePreClassName}>
           {displayText}
         </pre>
       )
@@ -437,7 +479,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'raw' && textBody) {
     textBodyContent = (
-      <pre ref={preRef} className={tracePreClassName}>
+      <pre ref={setScrollElement} className={tracePreClassName}>
         {textBody}
       </pre>
     )
@@ -445,7 +487,7 @@ function TraceBodyPanel(props: {
 
   if (!isBinary && isSse && sseViewMode === 'parsed') {
     textBodyContent = (
-      <pre ref={preRef} className={tracePreClassName}>
+      <pre ref={setScrollElement} className={tracePreClassName}>
         {parsedSse?.concatenated || '-'}
       </pre>
     )
@@ -453,7 +495,10 @@ function TraceBodyPanel(props: {
 
   return (
     <div className='space-y-3'>
-      <TruncationAlert truncated={props.truncated} bodyBytes={props.part?.body_bytes} />
+      <TruncationAlert
+        truncated={props.truncated}
+        bodyBytes={props.part?.body_bytes}
+      />
       <div className='flex flex-wrap items-center gap-2'>
         <span className='text-sm font-medium'>{props.bodyLabel}</span>
         <div className='ml-auto flex flex-wrap items-center justify-end gap-2'>
@@ -532,8 +577,12 @@ function TraceBodyPanel(props: {
                 <Input
                   className='h-8 w-[min(100%,260px)] font-mono text-xs'
                   value={customJsonPath}
-                  onChange={(event) => setCustomJsonPath(event.currentTarget.value)}
-                  placeholder={t('Supports JSONPath, e.g. $.choices[0].delta.content')}
+                  onChange={(event) =>
+                    setCustomJsonPath(event.currentTarget.value)
+                  }
+                  placeholder={t(
+                    'Supports JSONPath, e.g. $.choices[0].delta.content'
+                  )}
                 />
               ) : null}
             </>
@@ -554,7 +603,11 @@ function TraceBodyPanel(props: {
               size='sm'
               variant='outline'
               onClick={() =>
-                downloadTraceBody(props.part, props.filenameBase, currentCopyText)
+                downloadTraceBody(
+                  props.part,
+                  props.filenameBase,
+                  currentCopyText
+                )
               }
             >
               <Download />
@@ -585,13 +638,22 @@ function TraceBodyPanel(props: {
         <p className='text-muted-foreground text-sm'>-</p>
       ) : null}
 
-      {!isBinary && isSse && sseViewMode === 'events' && sseEventsToRender.length > 0 ? (
-        <div className='space-y-2'>
+      {!isBinary &&
+      isSse &&
+      sseViewMode === 'events' &&
+      sseEventsToRender.length > 0 ? (
+        <div
+          ref={setScrollElement}
+          className='max-h-[50vh] space-y-2 overflow-auto rounded-md'
+        >
           {props.liveUpdate ? (
             <p className='text-muted-foreground text-xs'>
-              {t('Showing the latest {{count}} events while response is in progress', {
-                count: sseEventsToRender.length,
-              })}
+              {t(
+                'Showing the latest {{count}} events while response is in progress',
+                {
+                  count: sseEventsToRender.length,
+                }
+              )}
             </p>
           ) : null}
           {sseEventsToRender.map((event) => (
@@ -684,7 +746,11 @@ async function fetchInflightTaskTrace(requestId: string, useMock: boolean) {
   try {
     const res = await api.get<{ success: boolean; data?: InflightTaskTrace }>(
       `/api/log/inflight/self/${requestId}/trace`,
-      { disableDuplicate: true, skipBusinessError: true, skipErrorHandler: true }
+      {
+        disableDuplicate: true,
+        skipBusinessError: true,
+        skipErrorHandler: true,
+      }
     )
     if (!res.data.success || !res.data.data) {
       return null
@@ -703,7 +769,8 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
   const { copyToClipboard } = useCopyToClipboard()
   const queryClient = useQueryClient()
   const [isCachingArchive, setIsCachingArchive] = useState(false)
-  const [showArchiveDownloadConfirm, setShowArchiveDownloadConfirm] = useState(false)
+  const [showArchiveDownloadConfirm, setShowArchiveDownloadConfirm] =
+    useState(false)
   const [autoDownloadArchive, setAutoDownloadArchive] = useState(
     () => localStorage.getItem(archiveAutoDownloadStorageKey) === 'true'
   )
@@ -711,7 +778,12 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
     () => ['inflight-trace', props.requestId, props.useMock],
     [props.requestId, props.useMock]
   )
-  const { data: trace, isLoading, isError, isFetched } = useQuery({
+  const {
+    data: trace,
+    isLoading,
+    isError,
+    isFetched,
+  } = useQuery({
     queryKey: traceQueryKey,
     queryFn: () => {
       const requestId = props.requestId
@@ -790,14 +862,16 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
       return
     }
     let cancelled = false
-    void readInflightTraceArchiveRecord(trace.archive.file_name, props.requestId)
-      .then((cachedTrace) => {
-        if (cancelled || !cachedTrace) return
-        queryClient.setQueryData<InflightTaskTrace>(traceQueryKey, {
-          ...cachedTrace,
-          archive: trace.archive,
-        })
+    void readInflightTraceArchiveRecord(
+      trace.archive.file_name,
+      props.requestId
+    ).then((cachedTrace) => {
+      if (cancelled || !cachedTrace) return
+      queryClient.setQueryData<InflightTaskTrace>(traceQueryKey, {
+        ...cachedTrace,
+        archive: trace.archive,
       })
+    })
     return () => {
       cancelled = true
     }
@@ -846,9 +920,15 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
     setShowArchiveDownloadConfirm(false)
     setIsCachingArchive(true)
     try {
-      const response = await api.get(`/api/log/inflight/self/${props.requestId}/trace/archive`, { responseType: 'blob' })
+      const response = await api.get(
+        `/api/log/inflight/self/${props.requestId}/trace/archive`,
+        { responseType: 'blob' }
+      )
       await cacheInflightTraceArchive(trace.archive.file_name, response.data)
-      const cachedTrace = await readInflightTraceArchiveRecord(trace.archive.file_name, props.requestId)
+      const cachedTrace = await readInflightTraceArchiveRecord(
+        trace.archive.file_name,
+        props.requestId
+      )
       if (cachedTrace) {
         queryClient.setQueryData<InflightTaskTrace>(traceQueryKey, {
           ...cachedTrace,
@@ -886,14 +966,20 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
         <p className='text-muted-foreground py-6 text-sm'>{t('Loading...')}</p>
       ) : null}
       {isError ? (
-        <p className='text-muted-foreground py-6 text-sm'>{t('Failed to load')}</p>
+        <p className='text-muted-foreground py-6 text-sm'>
+          {t('Failed to load')}
+        </p>
       ) : null}
       {trace ? (
         <Tabs defaultValue='overview' className='min-w-0'>
           {trace.archive && trace.client_request?.body_encoding === 'disk' ? (
             <Alert className='mb-3'>
               <AlertDescription className='flex flex-wrap items-center justify-between gap-2'>
-                <span>{t('This debug log is archived remotely. Download it locally to load request and response bodies.')}</span>
+                <span>
+                  {t(
+                    'This debug log is archived remotely. Download it locally to load request and response bodies.'
+                  )}
+                </span>
                 <Button
                   type='button'
                   variant='outline'
@@ -907,17 +993,26 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
                   }}
                   disabled={isCachingArchive}
                 >
-                  {isCachingArchive ? <Loader2 className='animate-spin' /> : <Download />}
+                  {isCachingArchive ? (
+                    <Loader2 className='animate-spin' />
+                  ) : (
+                    <Download />
+                  )}
                   {t('Download archive')}
                 </Button>
               </AlertDescription>
             </Alert>
           ) : null}
-          <AlertDialog open={showArchiveDownloadConfirm} onOpenChange={setShowArchiveDownloadConfirm}>
+          <AlertDialog
+            open={showArchiveDownloadConfirm}
+            onOpenChange={setShowArchiveDownloadConfirm}
+          >
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{t('Download archive')}</AlertDialogTitle>
-                <AlertDialogDescription>{t('Download this archive to browser debug cache?')}</AlertDialogDescription>
+                <AlertDialogDescription>
+                  {t('Download this archive to browser debug cache?')}
+                </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <label className='mr-auto flex items-center gap-2 text-sm'>
@@ -926,13 +1021,18 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
                     onCheckedChange={(checked) => {
                       const enabled = checked === true
                       setAutoDownloadArchive(enabled)
-                      localStorage.setItem(archiveAutoDownloadStorageKey, String(enabled))
+                      localStorage.setItem(
+                        archiveAutoDownloadStorageKey,
+                        String(enabled)
+                      )
                     }}
                   />
                   {t('Download archives automatically in this browser')}
                 </label>
                 <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={cacheArchive}>{t('Download archive')}</AlertDialogAction>
+                <AlertDialogAction onClick={cacheArchive}>
+                  {t('Download archive')}
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -995,7 +1095,9 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
               />
               <InflightDetailRow
                 label={t('Recorded At')}
-                value={dayjs.unix(trace.recorded_at).format('YYYY-MM-DD HH:mm:ss')}
+                value={dayjs
+                  .unix(trace.recorded_at)
+                  .format('YYYY-MM-DD HH:mm:ss')}
               />
               <InflightDetailRow
                 label={t('Request Body')}
@@ -1008,7 +1110,9 @@ export function InflightTaskTraceDialog(props: InflightTaskTraceDialogProps) {
             </InflightDetailSection>
           </TabsContent>
           <TabsContent value='request' className='space-y-4'>
-            <p className='font-mono text-sm'>{buildHttpLine(trace.client_request)}</p>
+            <p className='font-mono text-sm'>
+              {buildHttpLine(trace.client_request)}
+            </p>
             <HeadersTable
               headers={trace.client_request?.headers}
               copyLabel={t('Request Headers')}

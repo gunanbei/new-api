@@ -4267,6 +4267,7 @@
     "Restrict user model request frequency (may impact high concurrency performance)": "限制用戶模型請求頻率（可能會影響高並發效能）",
     "Result": "結果",
     "Retain last N days": "保留最近N天",
+    "Retain all files": "全部保留",
     "Retain last N files": "保留最近 N 個檔案",
     "Retained local CSV size (KB)": "保留本機 CSV 大小(KB)",
     "Retention days": "保留天數",

@@ -97,14 +97,18 @@ import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { cn, tryPrettyJson } from '@/lib/utils'
 
-import type { ChannelAffinityInfo } from '../types'
 import {
   deleteInflightTraceLocalCacheFiles,
+  getInflightTraceLocalCacheRetention,
   listInflightTraceLocalCacheFiles,
+  pruneInflightTraceLocalCacheFiles,
   readInflightTraceLocalCacheRows,
+  setInflightTraceLocalCacheRetention,
+  type InflightTraceLocalCacheRetention,
   type InflightTraceLocalCacheFile,
 } from '../lib/inflight-trace-local-cache'
 import { getDefaultTimeRange } from '../lib/utils'
+import type { ChannelAffinityInfo } from '../types'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import {
   InflightDetailRow,
@@ -2777,6 +2781,10 @@ export function InflightTasksTab() {
   const [localCacheFiles, setLocalCacheFiles] = useState<
     InflightTraceLocalCacheFile[]
   >([])
+  const [localCacheRetention, setLocalCacheRetention] =
+    useState<InflightTraceLocalCacheRetention>(() =>
+      getInflightTraceLocalCacheRetention()
+    )
   const [selectedLocalCacheFiles, setSelectedLocalCacheFiles] = useState<
     string[]
   >([])
@@ -2793,7 +2801,13 @@ export function InflightTasksTab() {
 
   const refreshLocalCacheFiles = useCallback(async () => {
     try {
-      setLocalCacheFiles(await listInflightTraceLocalCacheFiles())
+      const files = await listInflightTraceLocalCacheFiles()
+      setLocalCacheFiles(files)
+      setSelectedLocalCacheFiles((selected) =>
+        selected.filter((fileName) =>
+          files.some((file) => file.fileName === fileName)
+        )
+      )
     } catch {
       toast.error(t('Failed to load local cache files'))
     }
@@ -2803,6 +2817,29 @@ export function InflightTasksTab() {
     setLocalCacheOpen(true)
     await refreshLocalCacheFiles()
   }, [refreshLocalCacheFiles])
+  const handleLocalCacheRetentionChange = useCallback(
+    async (value: string) => {
+      const retention = Number(value)
+      if (
+        retention !== 0 &&
+        retention !== 10 &&
+        retention !== 50 &&
+        retention !== 100
+      ) {
+        return
+      }
+      const nextRetention = retention as InflightTraceLocalCacheRetention
+      setLocalCacheRetention(nextRetention)
+      setInflightTraceLocalCacheRetention(nextRetention)
+      try {
+        await pruneInflightTraceLocalCacheFiles(nextRetention)
+        await refreshLocalCacheFiles()
+      } catch {
+        toast.error(t('Failed to load local cache files'))
+      }
+    },
+    [refreshLocalCacheFiles, t]
+  )
   const localCacheSize = useMemo(() => {
     const selectedFileNames = new Set(selectedLocalCacheFiles)
     const sizeBytes = localCacheFiles.reduce(
@@ -3035,56 +3072,94 @@ export function InflightTasksTab() {
           </Button>
         }
       >
-        <div className='flex flex-wrap gap-2'>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            onClick={() =>
-              setSelectedLocalCacheFiles(
-                localCacheFiles.map((file) => file.fileName)
-              )
-            }
-          >
-            {t('Select all')}
-          </Button>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            onClick={() =>
-              setSelectedLocalCacheFiles((selected) =>
-                localCacheFiles
-                  .filter((file) => !selected.includes(file.fileName))
-                  .map((file) => file.fileName)
-              )
-            }
-          >
-            {t('Invert selection')}
-          </Button>
-          <Button
-            type='button'
-            variant='destructive'
-            size='sm'
-            disabled={!selectedLocalCacheFiles.length}
-            onClick={async () => {
-              await deleteInflightTraceLocalCacheFiles(selectedLocalCacheFiles)
-              setSelectedLocalCacheFiles([])
-              await refreshLocalCacheFiles()
-            }}
-          >
-            <Trash2 />
-            {t('Delete selected')}
-          </Button>
-          <span className='text-muted-foreground self-center text-sm'>
-            {selectedLocalCacheFiles.length > 0
-              ? t('Current selected cached files size: {{size}} KB', {
-                  size: localCacheSize,
-                })
-              : t('Current total cached files size: {{size}} KB', {
-                  size: localCacheSize,
-                })}
-          </span>
+        <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
+          <div className='flex min-w-0 flex-wrap items-center gap-2'>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={() =>
+                setSelectedLocalCacheFiles(
+                  localCacheFiles.map((file) => file.fileName)
+                )
+              }
+            >
+              {t('Select all')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={() =>
+                setSelectedLocalCacheFiles((selected) =>
+                  localCacheFiles
+                    .filter((file) => !selected.includes(file.fileName))
+                    .map((file) => file.fileName)
+                )
+              }
+            >
+              {t('Invert selection')}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              size='sm'
+              disabled={!selectedLocalCacheFiles.length}
+              onClick={async () => {
+                await deleteInflightTraceLocalCacheFiles(
+                  selectedLocalCacheFiles
+                )
+                setSelectedLocalCacheFiles([])
+                await refreshLocalCacheFiles()
+              }}
+            >
+              <Trash2 />
+              {t('Delete selected')}
+            </Button>
+            <span className='text-muted-foreground self-center text-sm'>
+              {selectedLocalCacheFiles.length > 0
+                ? t('Current selected cached files size: {{size}} KB', {
+                    size: localCacheSize,
+                  })
+                : t('Current total cached files size: {{size}} KB', {
+                    size: localCacheSize,
+                  })}
+            </span>
+          </div>
+          <div className='flex w-full items-center justify-between gap-2 sm:ml-auto sm:w-auto sm:justify-end'>
+            <span className='text-muted-foreground shrink-0 text-sm'>
+              {t('Data retention')}
+            </span>
+            <Select
+              value={String(localCacheRetention)}
+              onValueChange={(value) => {
+                if (value) void handleLocalCacheRetentionChange(value)
+              }}
+            >
+              <SelectTrigger className='h-8 min-w-0 flex-1 sm:w-[190px] sm:flex-none'>
+                <SelectValue>
+                  {localCacheRetention === 0
+                    ? t('Retain all files')
+                    : t('Retain last N files').replace(
+                        'N',
+                        String(localCacheRetention)
+                      )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {[0, 10, 50, 100].map((retention) => (
+                  <SelectItem key={retention} value={String(retention)}>
+                    {retention === 0
+                      ? t('Retain all files')
+                      : t('Retain last N files').replace(
+                          'N',
+                          String(retention)
+                        )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className='mt-4 max-h-80 space-y-2 overflow-auto rounded-md border p-3'>
           {localCacheFiles.length === 0 ? (

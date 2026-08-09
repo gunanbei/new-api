@@ -2,15 +2,47 @@ import type { InflightTaskTrace } from '../types/inflight-trace'
 
 const databaseName = 'inflight-trace-local-cache'
 const archiveStoreName = 'archives'
+export const inflightTraceLocalCacheRetentionStorageKey =
+  'usage-logs:inflight-trace:cache-retention'
+
+export type InflightTraceLocalCacheRetention = 0 | 10 | 50 | 100
 
 type InflightTraceArchiveCacheEntry = {
   fileName: string
   content: Blob
+  cachedAt?: number
 }
 
 export type InflightTraceLocalCacheFile = {
   fileName: string
   sizeBytes: number
+  cachedAt?: number
+}
+
+export function getInflightTraceLocalCacheRetention(): InflightTraceLocalCacheRetention {
+  if (typeof window === 'undefined') return 0
+  try {
+    const value = Number(
+      window.localStorage.getItem(inflightTraceLocalCacheRetentionStorageKey)
+    )
+    return value === 10 || value === 50 || value === 100 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+export function setInflightTraceLocalCacheRetention(
+  retention: InflightTraceLocalCacheRetention
+): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      inflightTraceLocalCacheRetentionStorageKey,
+      String(retention)
+    )
+  } catch {
+    // localStorage can be unavailable in privacy-restricted browser contexts.
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -100,7 +132,7 @@ export async function cacheInflightTraceArchive(
       const transaction = database.transaction(archiveStoreName, 'readwrite')
       transaction
         .objectStore(archiveStoreName)
-        .put({ fileName, content: response })
+        .put({ fileName, content: response, cachedAt: Date.now() })
       transaction.addEventListener('complete', () => resolve())
       transaction.addEventListener('error', () => reject(transaction.error))
       transaction.addEventListener('abort', () => reject(transaction.error))
@@ -108,6 +140,7 @@ export async function cacheInflightTraceArchive(
   } finally {
     database.close()
   }
+  await pruneInflightTraceLocalCacheFiles()
 }
 
 export async function readInflightTraceArchiveRecord(
@@ -159,8 +192,13 @@ export async function listInflightTraceLocalCacheFiles(): Promise<
       .map((archive) => ({
         fileName: archive.fileName,
         sizeBytes: archive.content.size,
+        cachedAt: archive.cachedAt,
       }))
-      .sort((left, right) => left.fileName.localeCompare(right.fileName))
+      .sort(
+        (left, right) =>
+          (left.cachedAt ?? 0) - (right.cachedAt ?? 0) ||
+          left.fileName.localeCompare(right.fileName)
+      )
   } finally {
     database.close()
   }
@@ -183,4 +221,15 @@ export async function deleteInflightTraceLocalCacheFiles(
   } finally {
     database.close()
   }
+}
+
+export async function pruneInflightTraceLocalCacheFiles(
+  retention = getInflightTraceLocalCacheRetention()
+): Promise<void> {
+  if (retention === 0) return
+  const files = await listInflightTraceLocalCacheFiles()
+  if (files.length <= retention) return
+  await deleteInflightTraceLocalCacheFiles(
+    files.slice(0, files.length - retention).map((file) => file.fileName)
+  )
 }

@@ -4267,6 +4267,7 @@
     "Restrict user model request frequency (may impact high concurrency performance)": "Hạn chế tần suất yêu cầu mô hình người dùng (có thể ảnh hưởng đến hiệu suất khi có độ đồng thời cao)",
     "Result": "Kết quả",
     "Retain last N days": "Giữ lại N ngày gần nhất",
+    "Retain all files": "Giữ lại tất cả tệp",
     "Retain last N files": "Giữ lại N tệp gần nhất",
     "Retained local CSV size (KB)": "Kich thuoc CSV cuc bo da luu (KB)",
     "Retention days": "Số ngày lưu giữ",

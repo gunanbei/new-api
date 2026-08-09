@@ -4267,6 +4267,7 @@
     "Restrict user model request frequency (may impact high concurrency performance)": "ユーザーモデルのリクエスト頻度を制限する（高並行性パフォーマンスに影響を与える可能性があります）",
     "Result": "結果",
     "Retain last N days": "最新N日間を保持",
+    "Retain all files": "すべてのファイルを保持",
     "Retain last N files": "最新N個のファイルを保持",
     "Retained local CSV size (KB)": "保持中ローカル CSV サイズ (KB)",
     "Retention days": "保持日数",

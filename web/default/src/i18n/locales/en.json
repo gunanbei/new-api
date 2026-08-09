@@ -4267,6 +4267,7 @@
     "Restrict user model request frequency (may impact high concurrency performance)": "Restrict user model request frequency (may impact high concurrency performance)",
     "Result": "Result",
     "Retain last N days": "Retain last N days",
+    "Retain all files": "Retain all files",
     "Retain last N files": "Retain last N files",
     "Retained local CSV size (KB)": "Retained local CSV size (KB)",
     "Retention days": "Retention days",

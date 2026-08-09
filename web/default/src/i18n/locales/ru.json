@@ -4267,6 +4267,7 @@
     "Restrict user model request frequency (may impact high concurrency performance)": "Ограничить частоту запросов пользовательских моделей (может повлиять на производительность при высокой конкуренции)",
     "Result": "Результат",
     "Retain last N days": "Хранить последние N дней",
+    "Retain all files": "Хранить все файлы",
     "Retain last N files": "Хранить последние N файлов",
     "Retained local CSV size (KB)": "Размер сохраненных локальных CSV (КБ)",
     "Retention days": "Дней хранения",

@@ -77,6 +77,7 @@ type InflightTask struct {
 	Kind      string              `json:"kind"`
 	ModelName string              `json:"model_name"`
 	Group     string              `json:"group,omitempty"`
+	TokenName string              `json:"token_name,omitempty"`
 	IsStream  bool                `json:"is_stream"`
 	CreatedAt int64               `json:"created_at"`
 	UpdatedAt int64               `json:"updated_at"`
@@ -531,6 +532,7 @@ func inflightTaskFromRelayInfo(info *relaycommon.RelayInfo, status string) *Infl
 		Kind:      inflightTaskKindFromRelayMode(info.RelayMode),
 		ModelName: info.OriginModelName,
 		Group:     inflightTaskGroup(info),
+		TokenName: info.TokenName,
 		IsStream:  info.IsStream,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -1061,6 +1063,9 @@ func updateInflightTask(ctx context.Context, client *redis.Client, task *Infligh
 					task.CreatedAt = stored.CreatedAt
 					if task.Group == "" {
 						task.Group = stored.Group
+					}
+					if task.TokenName == "" {
+						task.TokenName = stored.TokenName
 					}
 					previousStatus := stored.Status
 					previousRetryIndex := -1

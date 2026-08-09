@@ -343,6 +343,9 @@ func InitResources() error {
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()
+	if err := service.CleanupInflightTraceResponseTempFiles(5 * time.Minute); err != nil {
+		common.SysError("failed to clean inflight trace response temp files: " + err.Error())
+	}
 
 	// Initialize SQL Database
 	err = model.InitLogDB()

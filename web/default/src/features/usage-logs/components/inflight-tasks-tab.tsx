@@ -229,6 +229,7 @@ type InflightTask = {
   kind: string
   model_name: string
   group?: string
+  token_name?: string
   is_stream: boolean
   created_at: number
   updated_at: number
@@ -257,6 +258,7 @@ const MOCK_INFLIGHT_TASKS: InflightTask[] = [
     kind: 'chat',
     model_name: 'gpt-4.1',
     group: 'default',
+    token_name: 'primary-token',
     is_stream: true,
     created_at: 1751905200,
     updated_at: 1751905228,
@@ -1873,6 +1875,10 @@ function InflightTaskDetails(props: { task: InflightTask; isAdmin: boolean }) {
           value={props.task.model_name || '-'}
         />
         <InflightDetailRow
+          label={t('Token')}
+          value={props.task.token_name || '-'}
+        />
+        <InflightDetailRow
           label={t('Status')}
           value={t(statusLabel[props.task.status] || props.task.status)}
         />
@@ -2271,6 +2277,15 @@ function useInflightTaskColumns(props: {
             } satisfies ColumnDef<InflightTask>,
           ]
         : []),
+      {
+        accessorKey: 'token_name',
+        header: t('Token'),
+        cell: ({ row }) => (
+          <TruncatedCell className='max-w-[180px]'>
+            {row.original.token_name || '-'}
+          </TruncatedCell>
+        ),
+      },
       {
         accessorKey: 'model_name',
         header: t('Model'),

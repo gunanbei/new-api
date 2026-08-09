@@ -100,4 +100,15 @@ describe('parseSseTrace', () => {
     assert.equal(second.concatenated, 'Hi there')
     assert.equal(second.events.length, 2)
   })
+
+  test('reparses the current prefix when strategy changes', () => {
+    const state = createIncrementalSseParserState()
+    const body = 'data: {"message":{"content":"custom"}}\n\n'
+
+    appendSseTraceText(state, body, 'openai', '')
+    const result = appendSseTraceText(state, body, 'custom', '$.message.content')
+
+    assert.equal(result.concatenated, 'custom')
+    assert.equal(result.events.length, 1)
+  })
 })

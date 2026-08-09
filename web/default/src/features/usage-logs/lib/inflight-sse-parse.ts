@@ -215,6 +215,8 @@ export type IncrementalSseParserState = {
   pending: string
   events: ParsedSseEvent[]
   concatenated: string
+  strategy: SseParseStrategy | null
+  customPath: string
 }
 
 export function createIncrementalSseParserState(): IncrementalSseParserState {
@@ -223,6 +225,8 @@ export function createIncrementalSseParserState(): IncrementalSseParserState {
     pending: '',
     events: [],
     concatenated: '',
+    strategy: null,
+    customPath: '',
   }
 }
 
@@ -232,12 +236,16 @@ export function appendSseTraceText(
   strategy: SseParseStrategy,
   customPath: string
 ): ParsedSseResult {
-  if (text.length < state.scannedLength) {
+  const strategyChanged =
+    state.strategy !== strategy || state.customPath !== customPath
+  if (text.length < state.scannedLength || strategyChanged) {
     state.scannedLength = 0
     state.pending = ''
     state.events = []
     state.concatenated = ''
   }
+  state.strategy = strategy
+  state.customPath = customPath
 
   const delta = text.slice(state.scannedLength)
   state.scannedLength = text.length

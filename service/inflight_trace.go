@@ -1,12 +1,14 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +35,7 @@ const (
 	inflightTaskTraceMaxResponseBytesOptionKey = "InflightTaskTraceMaxResponseBytes"
 	inflightTraceFlushInterval                 = 2 * time.Second
 	inflightTraceFlushMinBytes                 = 64 * 1024
+	inflightTraceLiveSnapshotMaxBytes          = 64 * 1024
 )
 
 var sensitiveTraceHeaderNames = map[string]struct{}{
@@ -104,32 +107,44 @@ type InflightTaskListMeta struct {
 
 type traceResponseWriter struct {
 	gin.ResponseWriter
-	buf          *bytes.Buffer
-	maxBytes     int64
-	totalWritten int64
-	truncated    bool
-	statusCode   int
-	headerSnap   http.Header
-	wroteHeader  bool
-	owner        *InflightTraceCapture
+	mu            sync.Mutex
+	tempPath      string
+	tempFile      *os.File
+	capturedBytes int64
+	maxBytes      int64
+	totalWritten  int64
+	truncated     bool
+	statusCode    int
+	headerSnap    http.Header
+	wroteHeader   bool
+	owner         *InflightTraceCapture
 }
 
-func (w *traceResponseWriter) WriteHeader(code int) {
+func (w *traceResponseWriter) setHeaderLocked(code int) {
 	if !w.wroteHeader {
 		w.statusCode = code
 		w.headerSnap = w.Header().Clone()
 		w.wroteHeader = true
 	}
+}
+
+func (w *traceResponseWriter) WriteHeader(code int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.setHeaderLocked(code)
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *traceResponseWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if !w.wroteHeader {
-		w.WriteHeader(http.StatusOK)
+		w.setHeaderLocked(http.StatusOK)
+		w.ResponseWriter.WriteHeader(http.StatusOK)
 	}
 	n, err := w.ResponseWriter.Write(b)
 	if n > 0 {
-		w.capture(b[:n])
+		w.captureLocked(b[:n])
 	}
 	return n, err
 }
@@ -139,25 +154,128 @@ func (w *traceResponseWriter) WriteString(s string) (int, error) {
 }
 
 func (w *traceResponseWriter) capture(chunk []byte) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.captureLocked(chunk)
+}
+
+func (w *traceResponseWriter) captureLocked(chunk []byte) {
 	if len(chunk) == 0 {
 		return
 	}
 	w.totalWritten += int64(len(chunk))
-	if w.maxBytes > 0 && int64(w.buf.Len()) >= w.maxBytes {
+	if w.tempFile == nil {
+		w.truncated = true
+		return
+	}
+	if w.maxBytes > 0 && w.capturedBytes >= w.maxBytes {
 		w.truncated = true
 		return
 	}
 	if w.maxBytes > 0 {
-		remain := w.maxBytes - int64(w.buf.Len())
+		remain := w.maxBytes - w.capturedBytes
 		if int64(len(chunk)) > remain {
 			chunk = chunk[:remain]
 			w.truncated = true
 		}
 	}
-	_, _ = w.buf.Write(chunk)
-	if w.owner != nil {
-		w.owner.noteResponseCapture(len(chunk))
+	if len(chunk) == 0 {
+		return
 	}
+	n, err := w.tempFile.Write(chunk)
+	if n > 0 {
+		w.capturedBytes += int64(n)
+		if w.owner != nil {
+			w.owner.noteResponseCapture(n)
+		}
+	}
+	if err == nil && n != len(chunk) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		w.truncated = true
+		common.SysError(fmt.Sprintf("write inflight trace response temp file failed: %v", err))
+	}
+}
+
+type traceResponseSnapshot struct {
+	statusCode    int
+	headerSnap    http.Header
+	buf           []byte
+	capturedBytes int64
+	truncated     bool
+	totalWritten  int64
+}
+
+func (w *traceResponseWriter) snapshot() traceResponseSnapshot {
+	return w.snapshotWithLimit(0)
+}
+
+func (w *traceResponseWriter) snapshotWithLimit(maxBytes int64) traceResponseSnapshot {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	snap := traceResponseSnapshot{
+		statusCode:    w.statusCode,
+		capturedBytes: w.capturedBytes,
+		truncated:     w.truncated,
+		totalWritten:  w.totalWritten,
+	}
+	if w.headerSnap != nil {
+		snap.headerSnap = w.headerSnap.Clone()
+	} else {
+		snap.headerSnap = w.Header().Clone()
+	}
+	readBytes := w.capturedBytes
+	if maxBytes > 0 && readBytes > maxBytes {
+		readBytes = maxBytes
+		snap.truncated = true
+	}
+	if w.tempFile != nil && readBytes > 0 {
+		reader := io.NewSectionReader(w.tempFile, 0, readBytes)
+		if body, err := io.ReadAll(reader); err == nil {
+			snap.buf = body
+		} else {
+			common.SysError(fmt.Sprintf("read inflight trace response temp file failed: %v", err))
+		}
+	}
+	return snap
+}
+
+func createInflightTraceResponseTempFile() (string, *os.File, error) {
+	dir := filepath.Join(common.GetDiskCacheDir(), "inflight-trace-responses")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", nil, err
+	}
+	file, err := os.CreateTemp(dir, "inflight-trace-response-*.tmp")
+	if err != nil {
+		return "", nil, err
+	}
+	return file.Name(), file, nil
+}
+
+func CleanupInflightTraceResponseTempFiles(maxAge time.Duration) error {
+	dir := filepath.Join(common.GetDiskCacheDir(), "inflight-trace-responses")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cutoff := time.Now().Add(-maxAge)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "inflight-trace-response-") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		if removeErr := os.Remove(filepath.Join(dir, entry.Name())); removeErr != nil && !os.IsNotExist(removeErr) {
+			return removeErr
+		}
+	}
+	return nil
 }
 
 type InflightTraceCapture struct {
@@ -172,9 +290,12 @@ type InflightTraceCapture struct {
 	info            *relaycommon.RelayInfo
 	parentCtx       context.Context
 	createdAt       int64
+	persistMu       sync.Mutex
 	flushMu         sync.Mutex
 	lastFlushedAt   time.Time
 	bytesSinceFlush int64
+	flushInFlight   bool
+	flushPending    bool
 }
 
 func InflightTaskTraceEnabled() bool {
@@ -307,8 +428,14 @@ func StartInflightTraceCapture(c *gin.Context, info *relaycommon.RelayInfo, rela
 
 	writer := &traceResponseWriter{
 		ResponseWriter: c.Writer,
-		buf:            bytes.NewBuffer(nil),
 		maxBytes:       inflightTaskTraceMaxResponseBytes(),
+	}
+	if tempPath, tempFile, err := createInflightTraceResponseTempFile(); err == nil {
+		writer.tempPath = tempPath
+		writer.tempFile = tempFile
+	} else {
+		writer.truncated = true
+		common.SysError(fmt.Sprintf("create inflight trace response temp file failed: %v", err))
 	}
 	c.Writer = writer
 	capture.writer = writer
@@ -317,7 +444,9 @@ func StartInflightTraceCapture(c *gin.Context, info *relaycommon.RelayInfo, rela
 	capture.parentCtx = c.Request.Context()
 	capture.createdAt = time.Now().Unix()
 	common.SetContextKey(c, constant.ContextKeyInflightTraceCapture, capture)
-	flushInflightTraceSnapshotAsync(capture)
+	if capture.startResponseCaptureFlush(time.Time{}) {
+		flushInflightTraceSnapshotAsync(capture)
+	}
 	return capture
 }
 
@@ -340,6 +469,8 @@ func (capture *InflightTraceCapture) StageInflightTraceResponse(contentType stri
 	if statusCode <= 0 {
 		statusCode = http.StatusOK
 	}
+	capture.writer.mu.Lock()
+	defer capture.writer.mu.Unlock()
 	if capture.writer.wroteHeader {
 		return
 	}
@@ -355,7 +486,10 @@ func (capture *InflightTraceCapture) AppendInflightTraceResponseChunk(chunk []by
 	if capture == nil || capture.writer == nil || len(chunk) == 0 {
 		return
 	}
-	if !capture.writer.wroteHeader {
+	capture.writer.mu.Lock()
+	wroteHeader := capture.writer.wroteHeader
+	capture.writer.mu.Unlock()
+	if !wroteHeader {
 		capture.StageInflightTraceResponse("text/event-stream", http.StatusOK)
 	}
 	capture.writer.capture(chunk)
@@ -365,7 +499,17 @@ func (capture *InflightTraceCapture) ResetInflightTraceResponseBody() {
 	if capture == nil || capture.writer == nil {
 		return
 	}
-	capture.writer.buf.Reset()
+	capture.writer.mu.Lock()
+	defer capture.writer.mu.Unlock()
+	if capture.writer.tempFile != nil {
+		if err := capture.writer.tempFile.Truncate(0); err != nil {
+			common.SysError(fmt.Sprintf("reset inflight trace response temp file failed: %v", err))
+		}
+		if _, err := capture.writer.tempFile.Seek(0, 0); err != nil {
+			common.SysError(fmt.Sprintf("seek inflight trace response temp file failed: %v", err))
+		}
+	}
+	capture.writer.capturedBytes = 0
 	capture.writer.truncated = false
 	capture.writer.totalWritten = 0
 	capture.writer.wroteHeader = false
@@ -373,12 +517,27 @@ func (capture *InflightTraceCapture) ResetInflightTraceResponseBody() {
 	capture.writer.headerSnap = nil
 }
 
+func (capture *InflightTraceCapture) cleanupResponseTempFile() {
+	if capture == nil || capture.writer == nil {
+		return
+	}
+	capture.writer.mu.Lock()
+	defer capture.writer.mu.Unlock()
+	if capture.writer.tempFile != nil {
+		_ = capture.writer.tempFile.Close()
+		capture.writer.tempFile = nil
+	}
+	if capture.writer.tempPath != "" {
+		_ = os.Remove(capture.writer.tempPath)
+		capture.writer.tempPath = ""
+	}
+}
+
 func (capture *InflightTraceCapture) noteResponseCapture(n int) {
 	if capture == nil {
 		return
 	}
 	capture.flushMu.Lock()
-	defer capture.flushMu.Unlock()
 	if n > 0 {
 		capture.bytesSinceFlush += int64(n)
 	}
@@ -387,22 +546,71 @@ func (capture *InflightTraceCapture) noteResponseCapture(n int) {
 		capture.lastFlushedAt.IsZero() ||
 		now.Sub(capture.lastFlushedAt) >= inflightTraceFlushInterval
 	if !shouldFlush {
+		capture.flushMu.Unlock()
 		return
 	}
+	if capture.flushInFlight {
+		capture.flushPending = true
+		capture.flushMu.Unlock()
+		return
+	}
+	capture.flushInFlight = true
 	capture.bytesSinceFlush = 0
 	capture.lastFlushedAt = now
+	capture.flushMu.Unlock()
 	flushInflightTraceSnapshotAsync(capture)
 }
 
+func (capture *InflightTraceCapture) startResponseCaptureFlush(now time.Time) bool {
+	capture.flushMu.Lock()
+	defer capture.flushMu.Unlock()
+	if capture.flushInFlight {
+		capture.flushPending = true
+		return false
+	}
+	capture.flushInFlight = true
+	if !now.IsZero() {
+		capture.bytesSinceFlush = 0
+		capture.lastFlushedAt = now
+	}
+	return true
+}
+
+func (capture *InflightTraceCapture) finishResponseCaptureFlush() bool {
+	capture.flushMu.Lock()
+	defer capture.flushMu.Unlock()
+	if capture.flushPending {
+		capture.flushPending = false
+		capture.bytesSinceFlush = 0
+		capture.lastFlushedAt = time.Now()
+		return true
+	}
+	capture.flushInFlight = false
+	return false
+}
+
 func flushInflightTraceSnapshotAsync(capture *InflightTraceCapture) {
-	if capture == nil || capture.info == nil || capture.info.UserId <= 0 || capture.info.RequestId == "" {
+	if capture == nil {
+		return
+	}
+	if capture.info == nil || capture.info.UserId <= 0 || capture.info.RequestId == "" {
+		capture.flushMu.Lock()
+		capture.flushInFlight = false
+		capture.flushPending = false
+		capture.flushMu.Unlock()
 		return
 	}
 	gopool.Go(func() {
-		ctx, cancel := NewInflightTaskFinalizeContext(capture.parentCtx)
-		defer cancel()
-		if err := persistInflightTraceSnapshot(ctx, capture); err != nil && !errors.Is(err, errInflightTaskUnavailable) {
-			common.SysError(fmt.Sprintf("flush inflight trace snapshot failed: %v", err))
+		for {
+			ctx, cancel := NewInflightTaskFinalizeContext(capture.parentCtx)
+			err := persistInflightTraceSnapshot(ctx, capture)
+			cancel()
+			if err != nil && !errors.Is(err, errInflightTaskUnavailable) {
+				common.SysError(fmt.Sprintf("flush inflight trace snapshot failed: %v", err))
+			}
+			if !capture.finishResponseCaptureFlush() {
+				return
+			}
 		}
 	})
 }
@@ -431,15 +639,23 @@ func PersistInflightTaskTraceAsync(parent context.Context, capture *InflightTrac
 }
 
 func persistInflightTaskTrace(ctx context.Context, capture *InflightTraceCapture, info *relaycommon.RelayInfo, status string) error {
+	capture.persistMu.Lock()
+	defer capture.persistMu.Unlock()
 	createdAt := capture.createdAt
 	if existing, err := loadInflightTaskTraceCreatedAt(ctx, info.RequestId); err == nil && existing > 0 {
 		createdAt = existing
 	}
 	trace := buildInflightTaskTraceFromCapture(capture, info, status, createdAt, false)
-	return writeInflightTaskTrace(ctx, info.RequestId, status, trace)
+	if err := writeInflightTaskTrace(ctx, info.RequestId, status, trace); err != nil {
+		return err
+	}
+	capture.cleanupResponseTempFile()
+	return nil
 }
 
 func persistInflightTraceSnapshot(ctx context.Context, capture *InflightTraceCapture) error {
+	capture.persistMu.Lock()
+	defer capture.persistMu.Unlock()
 	info := capture.info
 	if info == nil || info.UserId <= 0 || info.RequestId == "" {
 		return nil
@@ -447,7 +663,17 @@ func persistInflightTraceSnapshot(ctx context.Context, capture *InflightTraceCap
 
 	item, err := loadInflightTaskItem(ctx, info.RequestId)
 	if errors.Is(err, redis.Nil) {
-		return nil
+		// The trace capture starts immediately after relay info is created, while
+		// the accepted task record is written asynchronously. Keep an initial
+		// request snapshot instead of dropping it during that short race.
+		trace := buildInflightTaskTraceFromCapture(
+			capture,
+			info,
+			InflightTaskStatusAccepted,
+			capture.createdAt,
+			true,
+		)
+		return writeInflightTaskTrace(ctx, info.RequestId, InflightTaskStatusAccepted, trace)
 	}
 	if err != nil {
 		return err
@@ -536,28 +762,32 @@ func buildInflightTaskTraceFromCapture(
 	trace.Flags.RequestTruncated = requestTruncated
 
 	if capture.writer != nil {
-		responseHeaders := capture.writer.headerSnap
-		if responseHeaders == nil {
-			responseHeaders = capture.writer.Header()
+		var snapshot traceResponseSnapshot
+		if inProgress {
+			snapshot = capture.writer.snapshotWithLimit(inflightTraceLiveSnapshotMaxBytes)
+		} else {
+			snapshot = capture.writer.snapshot()
 		}
+		responseHeaders := snapshot.headerSnap
 		responsePart, responseTruncated := buildInflightTraceHTTPPart(
 			"",
 			"",
 			"",
 			"",
-			capture.writer.statusCode,
+			snapshot.statusCode,
 			responseHeaders,
-			capture.writer.buf.Bytes(),
+			snapshot.buf,
 			inflightTaskTraceMaxResponseBytes(),
 		)
+		responsePart.BodyBytes = snapshot.capturedBytes
 		trace.ClientResponse = responsePart
-		trace.Flags.ResponseTruncated = responseTruncated || capture.writer.truncated
+		trace.Flags.ResponseTruncated = responseTruncated || snapshot.truncated
 		if inProgress {
 			trace.Flags.InProgress = true
 			trace.Flags.ResponseIncomplete = true
-		} else if capture.writer.totalWritten > 0 && capture.writer.buf.Len() == 0 && capture.writer.statusCode == 0 {
+		} else if snapshot.totalWritten > 0 && len(snapshot.buf) == 0 && snapshot.statusCode == 0 {
 			trace.Flags.ResponseIncomplete = true
-		} else if capture.writer.buf.Len() == 0 && capture.writer.totalWritten == 0 && capture.writer.statusCode == 0 {
+		} else if len(snapshot.buf) == 0 && snapshot.totalWritten == 0 && snapshot.statusCode == 0 {
 			trace.Flags.ResponseIncomplete = true
 		}
 	} else if inProgress {
@@ -574,18 +804,19 @@ func writeInflightTaskTrace(ctx context.Context, requestID, status string, trace
 		return err
 	}
 	if inflightTaskTraceStorageMode() == "disk" {
+		trace.StorageMode = "disk"
 		if isInflightTaskTerminalStatus(status) {
 			if err := persistInflightTraceToDisk(ctx, trace); err != nil {
 				return err
 			}
-		}
-		if trace.ClientRequest != nil {
-			trace.ClientRequest.Body = ""
-			trace.ClientRequest.BodyEncoding = "disk"
-		}
-		if trace.ClientResponse != nil {
-			trace.ClientResponse.Body = ""
-			trace.ClientResponse.BodyEncoding = "disk"
+			if trace.ClientRequest != nil {
+				trace.ClientRequest.Body = ""
+				trace.ClientRequest.BodyEncoding = "disk"
+			}
+			if trace.ClientResponse != nil {
+				trace.ClientResponse.Body = ""
+				trace.ClientResponse.BodyEncoding = "disk"
+			}
 		}
 	}
 	data, err := common.Marshal(trace)
@@ -634,18 +865,18 @@ func GetInflightTaskTrace(ctx context.Context, userID int, requestID string) (*I
 	}
 
 	itemRaw, err := client.Get(ctx, inflightTaskItemKey(requestID)).Result()
-	if errors.Is(err, redis.Nil) {
-		return nil, errInflightTaskTraceNotFound
-	}
-	if err != nil {
+	itemExists := err == nil
+	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
 	var item InflightTask
-	if err = common.UnmarshalJsonStr(itemRaw, &item); err != nil {
-		return nil, err
-	}
-	if item.UserID != userID {
-		return nil, errInflightTaskTraceForbidden
+	if itemExists {
+		if err = common.UnmarshalJsonStr(itemRaw, &item); err != nil {
+			return nil, err
+		}
+		if item.UserID != userID {
+			return nil, errInflightTaskTraceForbidden
+		}
 	}
 
 	traceRaw, err := client.Get(ctx, inflightTaskTraceKey(requestID)).Result()
@@ -661,6 +892,9 @@ func GetInflightTaskTrace(ctx context.Context, userID int, requestID string) (*I
 	}
 	if trace.UserID != userID {
 		return nil, errInflightTaskTraceForbidden
+	}
+	if !itemExists && !trace.Flags.InProgress {
+		return nil, errInflightTaskTraceNotFound
 	}
 	if trace.StorageMode == "disk" && trace.ArchiveID > 0 {
 		var archive model.InflightTraceArchive

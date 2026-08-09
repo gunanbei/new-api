@@ -10,6 +10,7 @@ go run main.go
 cd web
 bun install --filter ./default
 cd default
+
 bun run dev -- --host 0.0.0.0 --port 5173
 #访问 http://localhost:5173，前端请求会自动代理到 http://localhost:3000。
 

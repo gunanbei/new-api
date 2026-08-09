@@ -418,6 +418,7 @@ func TestMergeInflightTaskDetailRetryUpstreamPendingShowsCurrentChannel(t *testi
 		},
 	}
 	next := inflightTaskFromRelayInfo(&relaycommon.RelayInfo{
+		TokenName:  "primary-token",
 		RetryIndex: 1,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelId:   20,
@@ -432,6 +433,7 @@ func TestMergeInflightTaskDetailRetryUpstreamPendingShowsCurrentChannel(t *testi
 	assert.Equal(t, 1, next.Detail.RetryIndex)
 	assert.Equal(t, 20, next.Detail.ChannelID)
 	assert.Equal(t, "second", next.Detail.ChannelName)
+	assert.Equal(t, "primary-token", next.TokenName)
 	require.Len(t, next.Detail.Attempts, 2)
 	assert.Equal(t, InflightTaskStatusUpstreamPending, next.Detail.Attempts[1].Status)
 	require.GreaterOrEqual(t, len(next.Detail.Attempts[1].Timeline), 2)

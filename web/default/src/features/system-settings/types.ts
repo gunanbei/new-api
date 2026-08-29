@@ -269,6 +269,7 @@ export type ModelSettings = {
   'group_ratio_setting.group_special_usable_group': string
   RetryTimes: number
   ChannelDisableThreshold: string
+  AutomaticDisableFailureThreshold: number
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string

@@ -315,6 +315,12 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "AutomaticDisableFailureThreshold":
+		threshold, parseErr := strconv.Atoi(option.Value.(string))
+		if parseErr != nil || threshold < 0 || threshold > 1000 {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "连续失败阈值必须是 0 到 1000 的整数"})
+			return
+		}
 	case "AutomaticRetryStatusCodes":
 		_, err = operation_setting.ParseHTTPStatusCodeRanges(option.Value.(string))
 		if err != nil {

@@ -279,6 +279,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		if newAPIError == nil {
+			service.ResetChannelFailures(channel.Id)
 			if attemptWriter != nil && attemptWriter.Committed() && relayInfo.FailoverState.State() == relaycommon.FailoverStateAttempting {
 				if err := relayInfo.FailoverState.MarkResponseCommitted(relayInfo); err != nil {
 					newAPIError = failoverStateError(err)
@@ -558,6 +559,7 @@ func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, chann
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})
 	}
+	service.RecordChannelFailure(channelError, err.ErrorWithStatusCode())
 
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
 		// 保存错误日志到mysql中
@@ -748,6 +750,7 @@ func RelayTask(c *gin.Context) {
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
+			service.ResetChannelFailures(channel.Id)
 			break
 		}
 

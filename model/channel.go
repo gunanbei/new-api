@@ -41,15 +41,16 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping   *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority            *int64  `json:"priority" gorm:"bigint;default:0"`
+	AutoBan             *int    `json:"auto_ban" gorm:"default:1"`
+	ConsecutiveFailures int     `json:"-" gorm:"default:0"`
+	OtherInfo           string  `json:"other_info"`
+	Tag                 *string `json:"tag" gorm:"index"`
+	Setting             *string `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride       *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride      *string `json:"header_override" gorm:"type:text"`
+	Remark              *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -799,6 +800,31 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		}
 	}
 	return true
+}
+
+// RecordChannelFailure increments the channel-level consecutive failure
+// counter atomically and returns the resulting count.
+func RecordChannelFailure(channelId int) (int, error) {
+	if common.AutomaticDisableFailureThreshold <= 0 {
+		return 0, nil
+	}
+	result := DB.Model(&Channel{}).Where("id = ?", channelId).
+		UpdateColumn("consecutive_failures", gorm.Expr("consecutive_failures + ?", 1))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	var channel Channel
+	if err := DB.Select("consecutive_failures").First(&channel, channelId).Error; err != nil {
+		return 0, err
+	}
+	return channel.ConsecutiveFailures, nil
+}
+
+func ResetChannelFailures(channelId int) {
+	if err := DB.Model(&Channel{}).Where("id = ?", channelId).
+		UpdateColumn("consecutive_failures", 0).Error; err != nil {
+		common.SysLog(fmt.Sprintf("failed to reset channel failure counter: channel_id=%d, error=%v", channelId, err))
+	}
 }
 
 func EnableChannelByTag(tag string) error {

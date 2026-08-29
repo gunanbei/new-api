@@ -33,6 +33,25 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 	}
 }
 
+// RecordChannelFailure records every failure after a channel has been tried.
+// It is intentionally independent of retry/status-code rules.
+func RecordChannelFailure(channelError types.ChannelError, reason string) {
+	threshold := common.AutomaticDisableFailureThreshold
+	if threshold <= 0 || !common.AutomaticDisableChannelEnabled || !channelError.AutoBan {
+		return
+	}
+	count, err := model.RecordChannelFailure(channelError.ChannelId)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to record channel failure: channel_id=%d, error=%v", channelError.ChannelId, err))
+		return
+	}
+	if count >= threshold {
+		DisableChannel(channelError, fmt.Sprintf("连续失败 %d 次：%s", count, reason))
+	}
+}
+
+func ResetChannelFailures(channelId int) { model.ResetChannelFailures(channelId) }
+
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {

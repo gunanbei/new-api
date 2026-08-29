@@ -46,6 +46,7 @@ func InitOptionMap() {
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
 	common.OptionMap["RegisterEnabled"] = strconv.FormatBool(common.RegisterEnabled)
 	common.OptionMap["AutomaticDisableChannelEnabled"] = strconv.FormatBool(common.AutomaticDisableChannelEnabled)
+	common.OptionMap["AutomaticDisableFailureThreshold"] = strconv.Itoa(common.AutomaticDisableFailureThreshold)
 	common.OptionMap["AutomaticEnableChannelEnabled"] = strconv.FormatBool(common.AutomaticEnableChannelEnabled)
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
 	common.OptionMap["InflightTaskCleanupRule"] = "2"
@@ -320,6 +321,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.EmailAliasRestrictionEnabled = boolValue
 		case "AutomaticDisableChannelEnabled":
 			common.AutomaticDisableChannelEnabled = boolValue
+		case "AutomaticDisableFailureThreshold":
+			common.AutomaticDisableFailureThreshold, _ = strconv.Atoi(value)
 		case "AutomaticEnableChannelEnabled":
 			common.AutomaticEnableChannelEnabled = boolValue
 		case "LogConsumeEnabled":

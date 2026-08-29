@@ -150,6 +150,10 @@ var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
+
+// AutomaticDisableFailureThreshold disables a channel after this many
+// consecutive upstream failures. Zero disables threshold-based banning.
+var AutomaticDisableFailureThreshold = 0
 var AutomaticEnableChannelEnabled = false
 var QuotaRemindThreshold = 1000
 var PreConsumedQuota = 500

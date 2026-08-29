@@ -84,6 +84,7 @@ const routingReliabilitySchema = z
   .object({
     RetryTimes: z.coerce.number().min(0).max(10),
     ChannelDisableThreshold: numericString,
+    AutomaticDisableFailureThreshold: z.coerce.number().int().min(0).max(1000),
     AutomaticDisableChannelEnabled: z.boolean(),
     AutomaticEnableChannelEnabled: z.boolean(),
     AutomaticDisableKeywords: z.string(),
@@ -195,6 +196,7 @@ type RoutingReliabilitySectionProps = {
   defaultValues: {
     RetryTimes: number
     ChannelDisableThreshold: string
+    AutomaticDisableFailureThreshold: number
     AutomaticDisableChannelEnabled: boolean
     AutomaticEnableChannelEnabled: boolean
     AutomaticDisableKeywords: string
@@ -308,6 +310,7 @@ const buildFormDefaults = (
 ): RoutingReliabilityFormInput => ({
   RetryTimes: defaults.RetryTimes ?? 0,
   ChannelDisableThreshold: defaults.ChannelDisableThreshold ?? '',
+  AutomaticDisableFailureThreshold: defaults.AutomaticDisableFailureThreshold ?? 0,
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -337,6 +340,7 @@ const normalizeDefaults = (
 ): NormalizedRoutingReliabilityValues => ({
   RetryTimes: defaults.RetryTimes ?? 0,
   ChannelDisableThreshold: (defaults.ChannelDisableThreshold ?? '').trim(),
+  AutomaticDisableFailureThreshold: defaults.AutomaticDisableFailureThreshold ?? 0,
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -374,6 +378,7 @@ const normalizeFormValues = (
 ): NormalizedRoutingReliabilityValues => ({
   RetryTimes: values.RetryTimes,
   ChannelDisableThreshold: values.ChannelDisableThreshold.trim(),
+  AutomaticDisableFailureThreshold: values.AutomaticDisableFailureThreshold,
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: values.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -757,6 +762,23 @@ export function RoutingReliabilitySection({
                       {t(
                         'Automatically disable channels exceeding this response time'
                       )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='AutomaticDisableFailureThreshold'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Consecutive failure threshold')}</FormLabel>
+                    <FormControl>
+                      <Input type='number' min={0} step={1} {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Disable a channel after this many consecutive call failures; 0 disables this rule.')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

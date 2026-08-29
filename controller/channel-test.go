@@ -976,9 +976,14 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		}
 
 		// disable channel
-		if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+		if allowDisable && isChannelEnabled && newAPIError != nil && channel.GetAutoBan() {
 			processChannelError(result.context, nil, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, channel.GetGroups()...)
-			summary.Disabled++
+			if shouldBanChannel {
+				summary.Disabled++
+			}
+		}
+		if newAPIError == nil {
+			service.ResetChannelFailures(channel.Id)
 		}
 
 		// enable channel

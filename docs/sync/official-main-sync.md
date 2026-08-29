@@ -192,7 +192,7 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 - Already equivalent / excluded:
   - No additional equivalent behavior was found among the reviewed functional commits; formatting-only, lockfile, and metadata changes were excluded.
 - Deferred:
-  - Sandboxed JavaScript task-plugin replacement (`eb48396d...`) - requires coordinated relay/task/controller/model/router/frontend migration and cannot be safely isolated without porting the complete plugin architecture.
+  - Sandboxed JavaScript task-plugin replacement (`eb48396d...`) - requires coordinated relay/task/controller/model/router/frontend migration and cannot be safely isolated without porting the complete plugin architecture; phased plan is documented in [`docs/sync/task-plugin-migration/README.md`](./task-plugin-migration/README.md).
 - Validation:
   - `gofmt -w` on touched Go files - passed.
   - `git diff --check` - passed.

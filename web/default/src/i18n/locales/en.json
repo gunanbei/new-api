@@ -3561,6 +3561,8 @@
     "Overflow": "Overflow",
     "Overflow items": "Overflow items",
     "Overnight range": "Overnight range",
+    "Time range": "Time range",
+    "Start ≤ end: within the day; start > end: across midnight": "Start ≤ end: within the day; start > end: across midnight",
     "override": "override",
     "Override": "Override",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.",

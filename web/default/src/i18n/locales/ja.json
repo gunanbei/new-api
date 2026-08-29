@@ -3561,6 +3561,8 @@
     "Overflow": "オーバーフロー",
     "Overflow items": "超過項目",
     "Overnight range": "日跨ぎ範囲",
+    "Time range": "時間範囲",
+    "Start ≤ end: within the day; start > end: across midnight": "開始 ≤ 終了は日内範囲、開始 > 終了は日をまたぐ範囲",
     "override": "上書き",
     "Override": "上書き",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "グループごとの自動無効化スイッチ、しきい値、HTTPステータスコードを上書きします。",

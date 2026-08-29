@@ -3561,6 +3561,8 @@
     "Overflow": "Débordement",
     "Overflow items": "Éléments excédentaires",
     "Overnight range": "Plage nocturne",
+    "Time range": "Plage horaire",
+    "Start ≤ end: within the day; start > end: across midnight": "Début ≤ fin : plage dans la journée ; début > fin : plage après minuit",
     "override": "remplacer",
     "Override": "Remplacer",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "Remplacez les interrupteurs, seuils et codes d’état HTTP de désactivation automatique pour chaque groupe.",

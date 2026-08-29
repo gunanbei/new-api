@@ -3561,6 +3561,8 @@
     "Overflow": "Tràn trên",
     "Overflow items": "Mục vượt giới hạn",
     "Overnight range": "Khoảng qua nửa đêm",
+    "Time range": "Khoảng thời gian",
+    "Start ≤ end: within the day; start > end: across midnight": "Bắt đầu ≤ kết thúc: trong ngày; bắt đầu > kết thúc: qua nửa đêm",
     "override": "ghi đè",
     "Override": "Ghi đè",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "Ghi đè công tắc, ngưỡng và mã trạng thái HTTP tự động tắt cho từng nhóm.",

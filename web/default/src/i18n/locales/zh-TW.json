@@ -3561,6 +3561,8 @@
     "Overflow": "上溢",
     "Overflow items": "超出項",
     "Overnight range": "跨日範圍",
+    "Time range": "時間範圍",
+    "Start ≤ end: within the day; start > end: across midnight": "開始 ≤ 結束為當日區間，開始 > 結束為跨午夜區間",
     "override": "覆蓋",
     "Override": "覆蓋",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "為各個分組覆寫自動停用開關、閾值和 HTTP 狀態碼。",

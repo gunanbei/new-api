@@ -18,6 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import {
+  clearPasswordEncryptionCache,
+  encryptPassword,
+} from './lib/password-encryption'
 import type {
   LoginPayload,
   LoginResponse,
@@ -36,16 +40,24 @@ import type {
 // ----------------------------------------------------------------------------
 
 // User login with username and password
-export async function login(payload: LoginPayload) {
+export async function login(payload: LoginPayload): Promise<LoginResponse> {
   const turnstile = payload.turnstile ?? ''
-  const res = await api.post<LoginResponse>(
-    `/api/user/login?turnstile=${turnstile}`,
-    {
-      username: payload.username,
-      password: payload.password,
+  try {
+    const passwordFields = payload.passwordEncryptionEnabled
+      ? await encryptPassword(payload.password)
+      : { password: payload.password }
+    const res = await api.post<LoginResponse>(
+      `/api/user/login?turnstile=${turnstile}`,
+      { username: payload.username, ...passwordFields }
+    )
+    if (payload.passwordEncryptionEnabled && !res.data?.success) {
+      clearPasswordEncryptionCache()
     }
-  )
-  return res.data
+    return res.data
+  } catch (error: unknown) {
+    if (payload.passwordEncryptionEnabled) clearPasswordEncryptionCache()
+    throw error
+  }
 }
 
 // Two-factor authentication login

@@ -156,11 +156,56 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
+| 2026-08-29 | 006 | Completed | e468b73915e5028e9849de62c5018a0faa203012..918427d8ab41f6adaa4113d0496f1f8621855b70 | develop | uncommitted | Incremental audit; ported password-login encryption opt-in, relay validation status, setup recheck, billing time-range validation, AQBot preset, admin binding keys, and Docker relaykit context. Task plugin migration deferred as a coupled architecture change. |
 | 2026-08-29 | 005 | Completed | 823e26304a396854ace30b52b98ec497c2dd9c36..e468b73915e5028e9849de62c5018a0faa203012 | develop | uncommitted | Incremental audit; ported channel auto-ban test selection, recharge quota/concurrency protections, Gemini model-list routing, Ollama context preservation, Zhipu Responses, backend validation, and related relay overrides. Remaining functional candidates are explicitly deferred below. |
 | 2026-08-09 | 004 | Completed | 1086038f5f893a4558366f4d314cabc4ef5c8a23..823e26304a396854ace30b52b98ec497c2dd9c36 | develop | uncommitted | Merge-base fallback because the latest completed ledger entry targets `develop_tmp`; ported request replay, native channel tests, model categorization, user critical limits, redemption precision, Ali `top_p`, and Qwen TTS classification. Focused Go regression passed; broader Go/frontend checks remain blocked by environment or pre-existing repository issues. |
 | 2026-08-03 | 003 | Completed | f3ab2cff36b3962815be9114e300d26927cc42b3..0ab02020603d22e5613bc4cf46bfab06f8567769 | develop_tmp | uncommitted | Ported the isolated provider, billing, channel transport, and token Auto-group behavior; three coupled relay/session changes remain deferred. |
 | 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
+
+### 2026-08-29 - 006 - Completed
+
+- Source: origin/main; range: e468b73915e5028e9849de62c5018a0faa203012..918427d8ab41f6adaa4113d0496f1f8621855b70
+- Target: develop; start: fa477c324123c61ff596ea07ccd3b9b5539f3306; result: uncommitted
+- Baseline: previous ledger entry; source end is an ancestor of the reviewed origin/main tip.
+- Triage:
+
+  | Candidate | User-visible behavior | Target equivalent? | Decision |
+  |---|---|---|---|
+  | Admin built-in binding keys | Admin unbind actions reach backend binding routes | No; target sent database field names instead of route binding types | Port / Adapt |
+  | Billing time ranges | Within-day ranges use `&&`, overnight ranges use `||`, and invalid bounds stay editable as raw expressions | No; target emitted tautological `||` ranges and accepted invalid domains | Port / Adapt |
+  | Relaykit Docker dev context | Dev image resolves the local relaykit module during `go mod download` | No; relaykit go.mod was absent from pre-copy layer | Port |
+  | Password login transport encryption | Optional persisted RSA-OAEP key, encrypted login payload, status/API negotiation | No | Port / Adapt (mapped to `web/default`) |
+  | Setup status after reload | Setup status is rechecked per page session rather than trusted from localStorage | No; stale localStorage suppressed checks | Port |
+  | AQBot chat preset | Chat links can generate an AQBot provider URL | No | Port / Adapt |
+  | Sandboxed JS task-plugin system | Replaces built-in task adaptors and adds plugin protocol, storage, UI, and routes | No; target task architecture is incompatible and change spans hundreds of coupled files | Defer |
+  | Formatting, dependency-only, and PR/docs metadata changes | No product behavior | N/A | Excluded |
+
+- Ported:
+  - Admin binding route keys (`github`, `discord`, `wechat`, `oidc`, `telegram`, `linuxdo`) - `web/default/src/features/users/components/dialogs/user-binding-dialog.tsx`.
+  - Time-function domain validation, range-pair parsing, and within-day versus overnight expression generation, with editor guidance and locale keys - `web/default/src/features/pricing/lib/billing-expr.ts`, `web/default/src/features/system-settings/models/tiered-pricing-editor.tsx`, `web/default/src/i18n/locales/*.json`.
+  - Relaykit module manifest in the Docker dev dependency layer - `Dockerfile.dev`.
+  - Invalid relay request parameters now return HTTP 400 and skip retry - `controller/relay.go`.
+  - Setup status cache is page-session-only and only marks success after a valid status response - `web/default/src/routes/__root.tsx`.
+  - Optional persisted RSA-OAEP password login encryption, key endpoint, environment/status flag, login decryption, and default-theme client negotiation (Web Crypto with node-forge fallback) - `common/password_crypto.go`, `model/password_crypto.go`, migrations, `controller/user.go`, `controller/misc.go`, `router/api-router.go`, `web/default/src/features/auth/*`, `.env.example`.
+  - AQBot chat preset and URL expansion - `setting/chat.go`, `web/default/src/features/chat/lib/chat-links.ts`.
+- Already equivalent / excluded:
+  - No additional equivalent behavior was found among the reviewed functional commits; formatting-only, lockfile, and metadata changes were excluded.
+- Deferred:
+  - Sandboxed JavaScript task-plugin replacement (`eb48396d...`) - requires coordinated relay/task/controller/model/router/frontend migration and cannot be safely isolated without porting the complete plugin architecture.
+- Validation:
+  - `gofmt -w` on touched Go files - passed.
+  - `git diff --check` - passed.
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./model ./router` - passed.
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./common ./controller` - blocked/failed: existing missing `gorm.io/driver/sqlite` checksum; common SMTP tests also require loopback listeners denied by sandbox.
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./...` - blocked by the same missing checksum and loopback listener restrictions.
+  - `cd web/default && bunx oxfmt --write <touched files>` - passed.
+  - `cd web/default && bun run build` - passed.
+  - `cd web/default && bun run format:check` - blocked by pre-existing formatting drift in unrelated files.
+  - `cd web/default && bun run i18n:sync` - passed.
+  - `cd web/default && bun run typecheck` - blocked by pre-existing errors in auto-group/model settings/routing reliability types.
+  - `cd web/default && bun run lint ...` - blocked by pre-existing repository-wide lint errors outside the touched files.
+- Known blockers: broader Go/frontend suites remain blocked by pre-existing dependency, sandbox, and type/lint issues; unrelated `.fastRequest/` remains untouched.
 
 ### 2026-08-29 - 005 - Completed
 

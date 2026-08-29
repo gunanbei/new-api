@@ -3561,6 +3561,8 @@
     "Overflow": "Переполнение",
     "Overflow items": "Элементы сверх лимита",
     "Overnight range": "Диапазон через полночь",
+    "Time range": "Временной диапазон",
+    "Start ≤ end: within the day; start > end: across midnight": "Начало ≤ конца — в пределах дня, начало > конца — через полночь",
     "override": "переопределить",
     "Override": "Перезаписать",
     "Override auto-disable switches, thresholds, and HTTP status codes for individual groups.": "Переопределите переключатели, пороги и коды состояния HTTP автоотключения для отдельных групп.",

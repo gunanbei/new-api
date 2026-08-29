@@ -156,10 +156,35 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
+| 2026-08-29 | 005 | Completed | 823e26304a396854ace30b52b98ec497c2dd9c36..e468b73915e5028e9849de62c5018a0faa203012 | develop | uncommitted | Incremental audit; ported channel auto-ban test selection, recharge quota/concurrency protections, Gemini model-list routing, Ollama context preservation, Zhipu Responses, backend validation, and related relay overrides. Remaining functional candidates are explicitly deferred below. |
 | 2026-08-09 | 004 | Completed | 1086038f5f893a4558366f4d314cabc4ef5c8a23..823e26304a396854ace30b52b98ec497c2dd9c36 | develop | uncommitted | Merge-base fallback because the latest completed ledger entry targets `develop_tmp`; ported request replay, native channel tests, model categorization, user critical limits, redemption precision, Ali `top_p`, and Qwen TTS classification. Focused Go regression passed; broader Go/frontend checks remain blocked by environment or pre-existing repository issues. |
 | 2026-08-03 | 003 | Completed | f3ab2cff36b3962815be9114e300d26927cc42b3..0ab02020603d22e5613bc4cf46bfab06f8567769 | develop_tmp | uncommitted | Ported the isolated provider, billing, channel transport, and token Auto-group behavior; three coupled relay/session changes remain deferred. |
 | 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
+
+### 2026-08-29 - 005 - Completed
+
+- Source: origin/main; range: 823e26304a396854ace30b52b98ec497c2dd9c36..e468b73915e5028e9849de62c5018a0faa203012
+- Target: develop; start: 0ebb60694e9e1964a15a0b92cc11760ce6c185b7; result: uncommitted
+- Baseline: previous ledger entry; source end is an ancestor of the reviewed origin/main tip.
+- Triage and ported behavior:
+  - Auto-ban-only channel test mode and validation, including default frontend selector - `controller/channel-test.go`, `setting/operation_setting/monitor_setting.go`, `web/default/src/features/system-settings/models/routing-reliability-section.tsx`.
+  - Atomic top-up settlement and quota-capacity validation across payment callbacks - `controller/topup*.go`, `model/topup.go`, `model/quota_reserve.go`, `model/user_cache.go`, `common/quota_math.go`.
+  - Gemini-compatible `/v1/models` authentication/routing, Zhipu Responses endpoint, and Ollama reasoning/tool-call/response-format preservation - `middleware/auth.go`, `router/relay-router.go`, `relay/channel/zhipu_4v/`, `relay/channel/ollama/`.
+  - Backend length validation and user/group context propagation for parameter overrides - `setting/console_setting/validation.go`, `relay/common/override.go`.
+- Already equivalent / excluded:
+  - Existing target implementations already cover model categorization, native channel tests, replay metadata, Ali normalization, and prior ledger items.
+  - Dependency bumps, CI/docs/lockfiles, test-framework migration, formatting-only changes, and behavior-neutral refactors excluded.
+- Deferred:
+  - Frontend search debouncing, access-token rotation confirmation, mobile sidebar/Turnstile UX, advanced custom route-editor refactor, streamed-word fade UI, and credential-autofill test changes: require broader mapped `web/default` review and are isolated from backend sync.
+  - DeepSeek Responses, Responses penalty/cache accounting, Claude parameterless-tools conversion, vLLM thinking budget, and Ollama passthrough refinements: target relaykit layout differs or requires coordinated converter tests; no partial port applied.
+- Validation:
+  - `gofmt -w` on all touched Go files - passed.
+  - `git diff --check` - passed.
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./relay/channel/ollama ./relay/common ./setting/operation_setting ./setting/console_setting ./middleware ./router` - passed.
+  - `GOCACHE=/private/tmp/new-api-go-cache go test ./model ./controller` - blocked by missing existing `gorm.io/driver/sqlite` go.sum entry (and an upstream test helper unavailable in target).
+  - `cd web/default && bun run i18n:sync` - passed.
+- Known blockers: broader controller/model tests require the repository's missing SQLite module checksum; unrelated `.fastRequest/` remains untouched.
 
 ### 2026-08-09 - 004 - Completed
 

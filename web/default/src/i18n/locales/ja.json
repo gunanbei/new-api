@@ -4421,6 +4421,7 @@
     "Schedule preset": "スケジュールプリセット",
     "Scheduled channel tests": "スケジュールされたチャネルテスト",
     "Scheduled full test": "定期フルテスト",
+    "Auto-ban channels only": "自動 ban チャネルのみ",
     "Scheduled full test probes non-manually-disabled channels; passive recovery only checks auto-disabled channels after real request failures.": "定期フルテストは手動で無効化されていないチャネルを検査します。パッシブ復旧は実リクエストの失敗後に自動無効化されたチャネルのみを確認します。",
     "scheduling controls": "スケジューリング制御",
     "Science": "科学",

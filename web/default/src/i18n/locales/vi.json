@@ -4421,6 +4421,7 @@
     "Schedule preset": "Mau lich",
     "Scheduled channel tests": "Kiểm tra kênh theo lịch trình",
     "Scheduled full test": "Kiểm tra toàn bộ theo lịch",
+    "Auto-ban channels only": "Chỉ các kênh tự động cấm",
     "Scheduled full test probes non-manually-disabled channels; passive recovery only checks auto-disabled channels after real request failures.": "Kiểm tra toàn bộ theo lịch sẽ dò các kênh không bị vô hiệu hóa thủ công; khôi phục thụ động chỉ kiểm tra các kênh bị tự động vô hiệu hóa sau lỗi từ yêu cầu thực tế.",
     "scheduling controls": "điều khiển điều phối",
     "Science": "Khoa học",

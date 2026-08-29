@@ -73,7 +73,11 @@ const numericString = z.string().refine((value) => {
   return !Number.isNaN(Number(trimmed)) && Number(trimmed) >= 0
 }, 'Enter a non-negative number or leave empty')
 
-const channelTestModes = ['scheduled_all', 'passive_recovery'] as const
+const channelTestModes = [
+  'scheduled_all',
+  'auto_ban_only',
+  'passive_recovery',
+] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
 
 const routingReliabilitySchema = z
@@ -613,6 +617,10 @@ export function RoutingReliabilitySection({
                           label: t('Scheduled full test'),
                         },
                         {
+                          value: 'auto_ban_only',
+                          label: t('Auto-ban channels only'),
+                        },
+                        {
                           value: 'passive_recovery',
                           label: t('Passive recovery only'),
                         },
@@ -629,6 +637,9 @@ export function RoutingReliabilitySection({
                         <SelectGroup>
                           <SelectItem value='scheduled_all'>
                             {t('Scheduled full test')}
+                          </SelectItem>
+                          <SelectItem value='auto_ban_only'>
+                            {t('Auto-ban channels only')}
                           </SelectItem>
                           <SelectItem value='passive_recovery'>
                             {t('Passive recovery only')}

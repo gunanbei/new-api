@@ -754,12 +754,12 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 
-		if !taskErr.LocalError {
-			processChannelError(c, relayInfo,
-				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
-					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
-				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
-		}
+		// Any error returned after RelayTaskSubmit has attempted the upstream
+		// channel counts as a channel failure, including adapter/local EOF errors.
+		processChannelError(c, relayInfo,
+			*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
+				common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
+			types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, maxRetryTimes-retryParam.GetRetry()) {
 			break

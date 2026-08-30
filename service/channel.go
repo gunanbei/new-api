@@ -45,6 +45,7 @@ func RecordChannelFailure(channelError types.ChannelError, reason string) {
 		common.SysLog(fmt.Sprintf("failed to record channel failure: channel_id=%d, error=%v", channelError.ChannelId, err))
 		return
 	}
+	common.SysLog(fmt.Sprintf("channel #%d consecutive failure count=%d/%d", channelError.ChannelId, count, threshold))
 	if count >= threshold {
 		DisableChannel(channelError, fmt.Sprintf("连续失败 %d 次：%s", count, reason))
 	}

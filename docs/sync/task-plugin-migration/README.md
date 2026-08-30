@@ -2,7 +2,13 @@
 
 ## 顶部移植提示词
 
-请在当前 `develop` 分支按本目录的阶段顺序移植官方 `origin/main` 的任务插件 JS 沙箱系统。先阅读本文件、`docs/plugin-api/v1.md`、`docs/plugin-api/v1.d.ts` 和 `AGENTS.md`，再进入对应阶段。保持现有 `web/default/` 前端目录，不要复制官方 `web/` 树；不得移除或改写 `new-api`、`QuantumNous` 相关受保护信息。每个阶段只实现本阶段范围，先完成测试与验证，再进入下一阶段；不要通过整段 cherry-pick 引入无关重构。
+请作为移植负责人，在当前 `develop` 分支分阶段移植官方 `origin/main` 的任务插件 JS 沙箱系统。执行前完整阅读本 README、`docs/plugin-api/README.md`、`docs/plugin-api/v1.md`、`docs/plugin-api/v1.d.ts`、`docs/plugin-api/v1.schema.json`、`pkg/billingexpr/expr.md`、`AGENTS.md` 以及 `web/default/AGENTS.md`。注意：上述 `docs/plugin-api/*` 规范文件目前只存在于 `origin/main`，若当前分支缺失，必须用 `git show origin/main:<path>`（或从提交 `eb48396d5fe97d27772d0cd5e3ca8aa5caa4f3e9` 读取）核对，不能假定它们已经在工作树中；进入阶段 01 时再按交付物要求移植到目标分支。以官方任务插件提交 `eb48396d5fe97d27772d0cd5e3ca8aa5caa4f3e9` 及其后续修订为行为参考，并先审计当前代码与提交差异，再决定实现顺序。
+
+严格按 01→02→03→04/05→06→07 执行：每阶段只改动本阶段范围，完成底部验证清单、相关测试和 `git diff --check` 后才进入下一阶段；任一安全、计费、数据库兼容或回滚门槛失败，必须停留在 `In progress`/`Blocked` 并记录证据，不得以“代码已合并”替代验收。不要整段 cherry-pick 官方提交或引入无关重构；保留旧 `relay/channel/task/*` 适配器作为可回滚兼容路径。
+
+实现边界必须保持：插件是单文件、同步 ECMAScript 模块，只负责请求/响应转换、协议渲染和用量事实提取；Go 负责认证、HTTP、持久化、任务状态、轮询、重试、产物代理、权限、计费、预扣费、结算和退款。沙箱禁止网络、文件系统、环境变量、`require`/import、`async`/Promise，并限制执行时长、并发、输入和输出大小。注册表发布必须 generation-atomic，任务固定插件版本；Responses/Video/native routes、artifact 能力 URL、SSRF/重定向防护、usage schema 与 quota saturation 审计必须覆盖。前端只能落在 `web/default/`，所有用户文案接入 i18n；不得移除或改写 `new-api`、`QuantumNous` 相关受保护信息。
+
+每阶段交付实现、迁移说明、fixture/回归测试和验证证据；同步更新本目录复选框及 `docs/sync/official-main-sync.md` 的源端 SHA、目标 HEAD、决策和 blocker。最终只有 7 个阶段、63 个行为矩阵单元全部通过，且无安全/计费阻塞并完成灰度回滚演练，才可将 Deferred 改为 Completed。
 
 ## 目标与基线
 
@@ -11,6 +17,17 @@
 - 当前目标代码仍保留 `relay/channel/task/*` 内置适配器；最终目标是由 JS 插件驱动任务平台，同时保留可回滚的兼容路径。
 - 前端映射：上游 `web/src/...` → 当前 `web/default/src/...`。
 - 计费改动必须先阅读 `pkg/billingexpr/expr.md`，并遵守配额饱和、预扣费、结算和审计约束。
+
+## 规范文件现状
+
+当前 `develop` 工作树尚未包含 `docs/plugin-api/`。规范来源位于 `origin/main`，包括：
+
+- `docs/plugin-api/README.md`
+- `docs/plugin-api/v1.md`
+- `docs/plugin-api/v1.d.ts`
+- `docs/plugin-api/v1.schema.json`
+
+阶段 01 负责将这些规范及其对应实现移植到目标分支；在此之前，所有阶段文档中的引用均指向上游规范来源，不表示本地文件已经存在。
 
 ## 阶段依赖
 
@@ -65,3 +82,5 @@
 - [ ] `git diff --check` 通过，且同步台账已记录源端 SHA、目标 HEAD、决策和阻塞项
 
 完成度：`通过阶段数 / 7 × 100%`。未通过阶段必须保留为 `In progress` 或 `Blocked`，不能以“代码已合并”代替行为验证。
+
+阶段 01 当前状态：`In progress`。契约文档、沙箱引擎、fixture/CLI 和 Responses 协议类型已移植；受本机 Go 工具链无法解析标准库包影响，阶段验证尚未通过。

@@ -90,7 +90,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
-			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.DetailedError())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			committed := c.Writer.Written() || relayInfo != nil && relayInfo.AttemptResponse != nil && relayInfo.AttemptResponse.Committed()
 			if !committed {
@@ -219,7 +219,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
-			if err := relayInfo.FailoverState.FailSelection(relayInfo, channelErr, channelErr.Error()); err != nil {
+			if err := relayInfo.FailoverState.FailSelection(relayInfo, channelErr, channelErr.DetailedError()); err != nil {
 				newAPIError = failoverStateError(err)
 			}
 			break
@@ -240,7 +240,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			} else {
 				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
-			if err := relayInfo.FailoverState.FailSelection(relayInfo, newAPIError, newAPIError.Error()); err != nil {
+			if err := relayInfo.FailoverState.FailSelection(relayInfo, newAPIError, newAPIError.DetailedError()); err != nil {
 				newAPIError = failoverStateError(err)
 			}
 			break
@@ -542,7 +542,7 @@ func isTextFailoverRequest(format types.RelayFormat, mode int) bool {
 }
 
 func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError, groups ...string) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.DetailedError())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if len(groups) == 0 {
@@ -588,6 +588,11 @@ func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, chann
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		service.AppendFailoverAuditAdminInfo(relayInfo, adminInfo)
+		if relayInfo != nil && relayInfo.StreamStatus != nil {
+			adminInfo["stream_status"] = map[string]interface{}{
+				"summary": relayInfo.StreamStatus.Summary(),
+			}
+		}
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

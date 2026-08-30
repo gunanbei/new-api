@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,9 +90,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		if info != nil && info.StreamStatus != nil {
+			info.StreamStatus.SetLastEventType(streamResponse.Type)
+		}
 		switch streamResponse.Type {
-		case "response.completed":
+		case "response.completed", "response.done":
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
@@ -114,10 +117,53 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 				}
 			}
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				sr.Stop(types.NewError(errors.New("failed to write response stream"), types.ErrorCodeUpstreamStreamError,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(err)))
+				return
+			}
+			sr.Done()
+		case "response.failed", "response.error", "error":
+			var cause error
+			if streamResponse.Response != nil {
+				if oaiErr := streamResponse.Response.GetOpenAIError(); oaiErr != nil {
+					cause = formatResponsesStreamError(oaiErr)
+				}
+			}
+			if cause == nil {
+				if oaiErr := dto.GetOpenAIError(streamResponse.Error); oaiErr != nil {
+					cause = formatResponsesStreamError(oaiErr)
+				}
+			}
+			if cause == nil {
+				cause = fmt.Errorf("responses stream event %s", streamResponse.Type)
+			}
+			sr.Stop(types.NewError(errors.New("upstream responses stream failed"), types.ErrorCodeUpstreamStreamError,
+				types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(cause)))
+		case "response.incomplete":
+			reason := "incomplete"
+			if streamResponse.Response != nil && streamResponse.Response.IncompleteDetails != nil && streamResponse.Response.IncompleteDetails.Reason != "" {
+				reason = streamResponse.Response.IncompleteDetails.Reason
+			}
+			if info != nil && info.StreamStatus != nil {
+				info.StreamStatus.SetEndDetail("response.incomplete: " + reason)
+			}
+			sr.Stop(types.NewError(errors.New("upstream responses stream incomplete"), types.ErrorCodeUpstreamStreamError,
+				types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(errors.New(reason))))
 		case "response.output_text.delta":
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				sr.Stop(types.NewError(errors.New("failed to write response stream"), types.ErrorCodeUpstreamStreamError,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(err)))
+				return
+			}
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
 		case dto.ResponsesOutputTypeItemDone:
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				sr.Stop(types.NewError(errors.New("failed to write response stream"), types.ErrorCodeUpstreamStreamError,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(err)))
+				return
+			}
 			// 函数调用处理
 			if streamResponse.Item != nil {
 				switch streamResponse.Item.Type {
@@ -128,6 +174,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 						}
 					}
 				}
+			}
+		default:
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				sr.Stop(types.NewError(errors.New("failed to write response stream"), types.ErrorCodeUpstreamStreamError,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(err)))
+				return
 			}
 		}
 	})
@@ -149,4 +201,18 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func formatResponsesStreamError(oaiErr *types.OpenAIError) error {
+	if oaiErr == nil {
+		return nil
+	}
+	message := strings.TrimSpace(oaiErr.Message)
+	if message == "" {
+		message = "upstream responses error"
+	}
+	if oaiErr.Type != "" {
+		return fmt.Errorf("%s: %s", oaiErr.Type, message)
+	}
+	return errors.New(message)
 }

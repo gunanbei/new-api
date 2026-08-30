@@ -91,7 +91,11 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
+	Err error
+	// internalErr keeps the provider-specific cause when Err intentionally
+	// remains a stable, client-facing message (for example, "EOF"). It is
+	// used only by backend logging/auditing helpers.
+	internalErr    error
 	RelayError     any
 	skipRetry      bool
 	recordErrorLog *bool
@@ -99,6 +103,31 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+}
+
+// DetailedError returns the stable error message followed by the preserved
+// provider cause. The client response continues to use Error(), so callers
+// can keep returning a unified public error without losing diagnostics.
+func (e *NewAPIError) DetailedError() string {
+	if e == nil {
+		return ""
+	}
+	base := e.Error()
+	if e.internalErr == nil {
+		return base
+	}
+	cause := e.internalErr.Error()
+	var nested *NewAPIError
+	if errors.As(e.internalErr, &nested) && nested != nil && nested != e {
+		cause = nested.DetailedError()
+	}
+	if base == "" {
+		return cause
+	}
+	if cause == "" || cause == base || strings.Contains(base, cause) {
+		return base
+	}
+	return fmt.Sprintf("%s: %s", base, cause)
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -138,7 +167,7 @@ func (e *NewAPIError) ErrorWithStatusCode() string {
 	if e == nil {
 		return ""
 	}
-	msg := e.Error()
+	msg := e.DetailedError()
 	if e.StatusCode == 0 {
 		return msg
 	}
@@ -155,7 +184,7 @@ func (e *NewAPIError) MaskSensitiveError() string {
 	if e.Err == nil {
 		return string(e.errorCode)
 	}
-	errStr := e.Err.Error()
+	errStr := e.DetailedError()
 	if e.errorCode == ErrorCodeCountTokenFailed {
 		return errStr
 	}
@@ -405,6 +434,16 @@ func ErrOptionWithHideErrMsg(replaceStr string) NewAPIErrorOptions {
 			fmt.Printf("ErrOptionWithHideErrMsg: %s, origin error: %s", replaceStr, e.Err)
 		}
 		e.Err = errors.New(replaceStr)
+	}
+}
+
+// ErrOptionWithInternalError preserves a detailed provider/root cause for
+// backend logs while leaving the public Error() message unchanged.
+func ErrOptionWithInternalError(err error) NewAPIErrorOptions {
+	return func(e *NewAPIError) {
+		if e != nil && err != nil {
+			e.internalErr = err
+		}
 	}
 }
 

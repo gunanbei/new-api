@@ -148,8 +148,18 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 		"status":     status,
 		"end_reason": string(ss.EndReason),
 	}
+	if ss.LastEventType != "" {
+		streamInfo["last_event_type"] = ss.LastEventType
+	}
 	if ss.EndError != nil {
-		streamInfo["end_error"] = ss.EndError.Error()
+		if apiErr, ok := ss.EndError.(*types.NewAPIError); ok {
+			streamInfo["end_error"] = apiErr.DetailedError()
+		} else {
+			streamInfo["end_error"] = ss.EndError.Error()
+		}
+	}
+	if ss.EndDetail != "" {
+		streamInfo["end_detail"] = ss.EndDetail
 	}
 	if ss.ErrorCount > 0 {
 		streamInfo["error_count"] = ss.ErrorCount

@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 
@@ -151,6 +152,12 @@ func TestStreamStatus_IsNormalEnd(t *testing.T) {
 	}
 }
 
+func TestStreamStatus_EOFWithErrorIsNotNormal(t *testing.T) {
+	s := NewStreamStatus()
+	s.SetEndReason(StreamEndReasonEOF, io.ErrUnexpectedEOF)
+	assert.False(t, s.IsNormalEnd())
+}
+
 func TestStreamStatus_IsNormalEnd_NilSafe(t *testing.T) {
 	t.Parallel()
 	var s *StreamStatus
@@ -170,9 +177,11 @@ func TestStreamStatus_Summary(t *testing.T) {
 	s2.SetEndReason(StreamEndReasonTimeout, nil)
 	s2.RecordError("bad json")
 	s2.RecordError("write failed")
+	s2.SetLastEventType("response.failed")
 	summary2 := s2.Summary()
 	assert.Contains(t, summary2, "reason=timeout")
 	assert.Contains(t, summary2, "soft_errors=2")
+	assert.Contains(t, summary2, "last_event=response.failed")
 }
 
 func TestStreamStatus_Summary_NilSafe(t *testing.T) {

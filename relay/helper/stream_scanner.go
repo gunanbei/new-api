@@ -90,6 +90,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	var (
 		stopChan     = make(chan bool, 3) // 增加缓冲区避免阻塞
 		scanner      = NewStreamScanner(resp.Body)
+		doneSeen     bool
 		ticker       = time.NewTicker(streamingTimeout)
 		pingTicker   *time.Ticker
 		contentTimer *time.Timer
@@ -289,6 +290,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			} else {
+				doneSeen = true
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 				logger.LogDebug(c, "received [DONE], stopping scanner")
 				return
@@ -301,7 +303,15 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 			}
 		}
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+		if doneSeen {
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+		} else {
+			// bufio.Scanner reports a clean EOF for a peer that closes the
+			// body without sending a terminal SSE event. Preserve that
+			// distinction so callers can return a unified error while logs
+			// retain that the provider stream was incomplete.
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, io.ErrUnexpectedEOF)
+		}
 	})
 
 	// 主循环等待完成或超时。首内容计时器只由有效模型输出关闭，

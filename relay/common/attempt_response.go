@@ -254,19 +254,30 @@ func (info *RelayInfo) FinalizeFailoverAttempt() *types.NewAPIError {
 	if gate.HasContent() {
 		info.SetFirstResponseTime()
 		if err := gate.Commit(); err != nil {
-			return types.NewError(err, types.ErrorCodeUpstreamStreamError)
+			return types.NewError(errors.New("failed to commit upstream response"), types.ErrorCodeUpstreamStreamError,
+				types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(err))
 		}
 		return nil
 	}
 	if info.StreamStatus != nil {
 		if info.StreamStatus.HasErrors() {
-			return types.NewError(errors.New("upstream stream failed before returning valid content"), types.ErrorCodeUpstreamStreamError, types.ErrOptionWithStatusCode(http.StatusBadGateway))
+			cause := info.StreamStatus.EndError
+			if cause == nil {
+				cause = info.StreamStatus.FirstError()
+			}
+			return types.NewError(errors.New("upstream stream failed before returning valid content"), types.ErrorCodeUpstreamStreamError,
+				types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(cause))
 		}
 		switch info.StreamStatus.EndReason {
 		case StreamEndReasonFirstContentTimeout:
-			return types.NewError(errors.New("upstream timed out before returning valid content"), types.ErrorCodeUpstreamFirstContentTimeout, types.ErrOptionWithStatusCode(http.StatusGatewayTimeout))
+			return types.NewError(errors.New("upstream timed out before returning valid content"), types.ErrorCodeUpstreamFirstContentTimeout,
+				types.ErrOptionWithStatusCode(http.StatusGatewayTimeout), types.ErrOptionWithInternalError(info.StreamStatus.EndError))
 		case StreamEndReasonScannerErr, StreamEndReasonTimeout, StreamEndReasonPanic, StreamEndReasonHandlerStop, StreamEndReasonPingFail:
-			return types.NewError(errors.New("upstream stream ended before returning valid content"), types.ErrorCodeUpstreamStreamError, types.ErrOptionWithStatusCode(http.StatusBadGateway))
+			return types.NewError(errors.New("upstream stream ended before returning valid content"), types.ErrorCodeUpstreamStreamError,
+				types.ErrOptionWithStatusCode(http.StatusBadGateway), types.ErrOptionWithInternalError(info.StreamStatus.EndError))
+		case StreamEndReasonEOF:
+			return types.NewError(io.EOF, types.ErrorCodeEmptyResponse, types.ErrOptionWithStatusCode(http.StatusBadGateway),
+				types.ErrOptionWithInternalError(info.StreamStatus.EndError))
 		}
 	}
 	return types.NewError(io.EOF, types.ErrorCodeEmptyResponse, types.ErrOptionWithStatusCode(http.StatusBadGateway))

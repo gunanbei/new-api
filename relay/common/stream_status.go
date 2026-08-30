@@ -32,11 +32,34 @@ type StreamErrorEntry struct {
 type StreamStatus struct {
 	EndReason StreamEndReason
 	EndError  error
-	endOnce   sync.Once
+	EndDetail string
+	// LastEventType records the last parsed provider event. It is deliberately
+	// metadata only (never the event payload) so failure logs retain the
+	// upstream lifecycle reason without leaking model output.
+	LastEventType string
+	endOnce       sync.Once
 
 	mu         sync.Mutex
 	Errors     []StreamErrorEntry
 	ErrorCount int
+}
+
+func (s *StreamStatus) SetLastEventType(eventType string) {
+	if s == nil || eventType == "" {
+		return
+	}
+	s.mu.Lock()
+	s.LastEventType = eventType
+	s.mu.Unlock()
+}
+
+func (s *StreamStatus) SetEndDetail(detail string) {
+	if s == nil || detail == "" {
+		return
+	}
+	s.mu.Lock()
+	s.EndDetail = detail
+	s.mu.Unlock()
 }
 
 func NewStreamStatus() *StreamStatus {
@@ -86,13 +109,29 @@ func (s *StreamStatus) TotalErrorCount() int {
 	return s.ErrorCount
 }
 
+// FirstError returns the first recorded stream error for backend diagnostics.
+func (s *StreamStatus) FirstError() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.Errors) == 0 || s.Errors[0].Message == "" {
+		return nil
+	}
+	return fmt.Errorf("%s", s.Errors[0].Message)
+}
+
 func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true
 	}
-	return s.EndReason == StreamEndReasonDone ||
-		s.EndReason == StreamEndReasonEOF ||
-		s.EndReason == StreamEndReasonHandlerStop
+	if s.EndReason == StreamEndReasonEOF {
+		// A body EOF without an explicit terminal event is an interrupted
+		// provider stream, not a successful completion.
+		return s.EndError == nil
+	}
+	return s.EndReason == StreamEndReasonDone || s.EndReason == StreamEndReasonHandlerStop
 }
 
 func (s *StreamStatus) Summary() string {
@@ -105,8 +144,14 @@ func (s *StreamStatus) Summary() string {
 		fmt.Fprintf(b, " end_error=%q", s.EndError.Error())
 	}
 	s.mu.Lock()
+	if s.EndDetail != "" {
+		fmt.Fprintf(b, " end_detail=%q", s.EndDetail)
+	}
 	if s.ErrorCount > 0 {
 		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
+	}
+	if s.LastEventType != "" {
+		fmt.Fprintf(b, " last_event=%s", s.LastEventType)
 	}
 	s.mu.Unlock()
 	return b.String()

@@ -54,9 +54,13 @@ var (
 )
 
 type InflightTaskTrace struct {
-	RequestID   string                         `json:"request_id"`
-	UserID      int                            `json:"user_id"`
-	Status      string                         `json:"status"`
+	RequestID string `json:"request_id"`
+	UserID    int    `json:"user_id"`
+	Status    string `json:"status"`
+	// Error contains a lifecycle summary for failed streams. The raw
+	// upstream response remains in ClientResponse when available; this field
+	// keeps the terminal reason queryable even when the provider closes early.
+	Error       string                         `json:"error,omitempty"`
 	Kind        string                         `json:"kind"`
 	ModelName   string                         `json:"model_name"`
 	IsStream    bool                           `json:"is_stream"`
@@ -746,6 +750,9 @@ func buildInflightTaskTraceFromCapture(
 		CreatedAt:  createdAt,
 		UpdatedAt:  now,
 		RecordedAt: now,
+	}
+	if info.StreamStatus != nil && status == InflightTaskStatusFailed {
+		trace.Error = info.StreamStatus.Summary()
 	}
 
 	requestPart, requestTruncated := buildInflightTraceHTTPPart(

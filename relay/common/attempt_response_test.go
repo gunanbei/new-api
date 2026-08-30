@@ -1,6 +1,7 @@
 package common
 
 import (
+	"io"
 	"net/http/httptest"
 	"testing"
 
@@ -37,6 +38,19 @@ func TestFinalizeFailoverAttemptRejectsEmptyResponse(t *testing.T) {
 	require.NotNil(t, apiErr)
 	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
 	assert.Empty(t, recorder.Body.String())
+}
+
+func TestFinalizeFailoverAttemptPreservesStreamCauseForLogs(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	info := &RelayInfo{AttemptResponse: NewAttemptResponseWriter(ctx.Writer), StreamStatus: NewStreamStatus()}
+	info.StreamStatus.SetEndReason(StreamEndReasonEOF, io.ErrUnexpectedEOF)
+
+	apiErr := info.FinalizeFailoverAttempt()
+	require.NotNil(t, apiErr)
+	assert.Equal(t, "EOF", apiErr.Error())
+	assert.Contains(t, apiErr.DetailedError(), "unexpected EOF")
+	assert.Contains(t, apiErr.ErrorWithStatusCode(), "unexpected EOF")
 }
 
 func TestAttemptResponseWriterTreatsToolCallAsContent(t *testing.T) {

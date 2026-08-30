@@ -30,13 +30,16 @@ func DecompressRequestMiddleware() gin.HandlerFunc {
 			return
 		}
 		maxMB := constant.MaxRequestBodyMB
-		if maxMB <= 0 {
-			maxMB = 32
+		if maxMB < 0 {
+			maxMB = 0
 		}
 		maxBytes := int64(maxMB) << 20
 
 		origBody := c.Request.Body
 		wrapMaxBytes := func(body io.ReadCloser) io.ReadCloser {
+			if maxBytes <= 0 {
+				return body
+			}
 			return http.MaxBytesReader(c.Writer, body, maxBytes)
 		}
 		decompressed := false
@@ -83,7 +86,7 @@ func DecompressRequestMiddleware() gin.HandlerFunc {
 			})
 			decompressed = true
 		default:
-			// Even for uncompressed bodies, enforce a max size to avoid huge request allocations.
+			// Apply the configured limit to uncompressed bodies as well.
 			c.Request.Body = wrapMaxBytes(origBody)
 		}
 

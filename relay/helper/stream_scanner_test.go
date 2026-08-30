@@ -87,6 +87,16 @@ func TestNewStreamScanner_AllowsLargeStreamLine(t *testing.T) {
 	require.NoError(t, scanner.Err())
 }
 
+func TestNewStreamScanner_ZeroLimitUsesPlatformMaximum(t *testing.T) {
+	oldBufferMB := constant.StreamScannerMaxBufferMB
+	constant.StreamScannerMaxBufferMB = 0
+	t.Cleanup(func() {
+		constant.StreamScannerMaxBufferMB = oldBufferMB
+	})
+
+	require.Greater(t, getScannerBufferSize(), DefaultMaxScannerBufferSize)
+}
+
 func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	t.Parallel()
 

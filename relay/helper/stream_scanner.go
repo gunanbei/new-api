@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	InitialScannerBufferSize    = 64 << 10  // 64KB (64*1024)
-	DefaultMaxScannerBufferSize = 128 << 20 // 64MB (64*1024*1024) default SSE buffer size
+	InitialScannerBufferSize = 64 << 10 // 64KB (64*1024)
+	// Kept for compatibility with callers that use the historical default.
+	DefaultMaxScannerBufferSize = 128 << 20 // 128MB (128*1024*1024)
 	DefaultPingInterval         = 10 * time.Second
 	// streamWriteTimeout bounds a single blocked write to a slow client so the
 	// unconditional wg.Wait() in cleanup can always finish. Without it, a slow
@@ -37,7 +38,9 @@ func getScannerBufferSize() int {
 	if constant.StreamScannerMaxBufferMB > 0 {
 		return constant.StreamScannerMaxBufferMB << 20
 	}
-	return DefaultMaxScannerBufferSize
+	// A zero value means unlimited. Scanner still requires an int maximum,
+	// so use the largest addressable value on this platform.
+	return int(^uint(0) >> 1)
 }
 
 func NewStreamScanner(reader io.Reader) *bufio.Scanner {

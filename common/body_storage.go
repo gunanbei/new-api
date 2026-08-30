@@ -153,14 +153,18 @@ func newDiskStorageFromReader(reader io.Reader, maxBytes int64, cachePath string
 	}
 
 	// 从 reader 读取并写入文件
-	written, err := io.Copy(file, io.LimitReader(reader, maxBytes+1))
+	limitedReader := reader
+	if maxBytes > 0 {
+		limitedReader = io.LimitReader(reader, maxBytes+1)
+	}
+	written, err := io.Copy(file, limitedReader)
 	if err != nil {
 		file.Close()
 		os.Remove(filePath)
 		return nil, fmt.Errorf("failed to write to temp file: %w", err)
 	}
 
-	if written > maxBytes {
+	if maxBytes > 0 && written > maxBytes {
 		file.Close()
 		os.Remove(filePath)
 		return nil, ErrRequestBodyTooLarge
@@ -310,11 +314,15 @@ func CreateBodyStorageFromReader(reader io.Reader, contentLength int64, maxBytes
 	}
 
 	// 使用内存读取
-	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	limitedReader := reader
+	if maxBytes > 0 {
+		limitedReader = io.LimitReader(reader, maxBytes+1)
+	}
+	data, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxBytes {
+	if maxBytes > 0 && int64(len(data)) > maxBytes {
 		return nil, ErrRequestBodyTooLarge
 	}
 

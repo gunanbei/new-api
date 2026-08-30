@@ -2,6 +2,7 @@ package common
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,4 +25,19 @@ func TestBodyStorageNewReaderHasIndependentCursor(t *testing.T) {
 	data, err := io.ReadAll(replay)
 	require.NoError(t, err)
 	require.Equal(t, []byte("payload"), data)
+}
+
+func TestCreateBodyStorageFromReader_ZeroLimitAllowsFullBody(t *testing.T) {
+	storage, err := CreateBodyStorageFromReader(strings.NewReader("payload"), -1, 0)
+	require.NoError(t, err)
+	defer storage.Close()
+
+	data, err := storage.Bytes()
+	require.NoError(t, err)
+	require.Equal(t, []byte("payload"), data)
+}
+
+func TestCreateBodyStorageFromReader_PositiveLimitStillRejectsOversizedBody(t *testing.T) {
+	_, err := CreateBodyStorageFromReader(strings.NewReader("payload"), -1, 3)
+	require.ErrorIs(t, err, ErrRequestBodyTooLarge)
 }

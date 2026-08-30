@@ -58,9 +58,11 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 	}
 
 	maxMB := constant.MaxRequestBodyMB
-	if maxMB <= 0 {
-		maxMB = 128 // 默认 128MB
+	if maxMB < 0 {
+		maxMB = 0
 	}
+	// A value of 0 disables the application-level request body limit.
+	// The storage layer still uses disk-backed caching when configured.
 	maxBytes := int64(maxMB) << 20
 
 	contentLength := c.Request.ContentLength

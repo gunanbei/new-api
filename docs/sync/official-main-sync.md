@@ -156,7 +156,7 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 
 | Date | ID | Status | Source range | Target branch | Result | Notes |
 |---|---|---|---|---|---|---|
-| 2026-08-29 | 007 | In progress | eb48396d5fe97d27772d0cd5e3ca8aa5caa4f3e9..origin/main (stage 01 scope) | develop | uncommitted | Ported plugin API documents, synchronous Sobek sandbox, contract loader, fixtures/CLI, and Responses protocol DTOs. Verification blocked by local Go 1.26 standard-library resolution failure; stages 02-07 not started. |
+| 2026-08-30 | 007 | Completed | eb48396d5fe97d27772d0cd5e3ca8aa5caa4f3e9..origin/main (stage 01 scope) | develop | uncommitted | Ported plugin API documents, synchronous Sobek sandbox, contract loader, fixtures/CLI, and Responses protocol DTOs. Go 1.25.1 toolchain and Sobek indirect dependencies restored; stage 01 tests passed. Stages 02-07 not started. |
 | 2026-08-29 | 006 | Completed | e468b73915e5028e9849de62c5018a0faa203012..918427d8ab41f6adaa4113d0496f1f8621855b70 | develop | uncommitted | Incremental audit; ported password-login encryption opt-in, relay validation status, setup recheck, billing time-range validation, AQBot preset, admin binding keys, and Docker relaykit context. Task plugin migration deferred as a coupled architecture change. |
 | 2026-08-29 | 005 | Completed | 823e26304a396854ace30b52b98ec497c2dd9c36..e468b73915e5028e9849de62c5018a0faa203012 | develop | uncommitted | Incremental audit; ported channel auto-ban test selection, recharge quota/concurrency protections, Gemini model-list routing, Ollama context preservation, Zhipu Responses, backend validation, and related relay overrides. Remaining functional candidates are explicitly deferred below. |
 | 2026-08-09 | 004 | Completed | 1086038f5f893a4558366f4d314cabc4ef5c8a23..823e26304a396854ace30b52b98ec497c2dd9c36 | develop | uncommitted | Merge-base fallback because the latest completed ledger entry targets `develop_tmp`; ported request replay, native channel tests, model categorization, user critical limits, redemption precision, Ali `top_p`, and Qwen TTS classification. Focused Go regression passed; broader Go/frontend checks remain blocked by environment or pre-existing repository issues. |
@@ -164,7 +164,7 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 | 2026-07-27 | 002 | Completed | 60a1acb703a64186bf6eeef441e2fac947b75f26..f3ab2cff36b3962815be9114e300d26927cc42b3 | codex/develop-tmp | uncommitted | Ported the GitCode release-sync workflow; remaining changes were behavior-neutral refactors. |
 | 2026-07-27 | 001 | Completed with documented blocker | 1086038f5f893a4558366f4d314cabc4ef5c8a23..60a1acb703a64186bf6eeef441e2fac947b75f26 | codex/develop-tmp | uncommitted | Functional review completed; broader controller/service tests blocked by an existing missing module checksum. |
 
-### 2026-08-29 - 007 - In progress
+### 2026-08-30 - 007 - Completed
 
 - Source: origin/main; reference: `eb48396d5fe97d27772d0cd5e3ca8aa5caa4f3e9` and subsequent plugin revisions; stage 01 only.
 - Target: develop; start: `baa13444`; result: uncommitted.
@@ -179,8 +179,9 @@ Keep newest entries first. The table is an index; each detailed entry below it i
 - Validation:
   - `gofmt -w` on stage 01 Go files - passed.
   - `git diff --check` - passed.
-  - `go test ./pkg/jsplugin ./relay/... ./dto` - blocked: local Go 1.26.4 reports every standard-library package (for example `context`, `encoding/json`) as “not in std”; `github.com/grafana/sobek` is consequently unresolved. No dependency files were changed.
-- Known blockers: Go toolchain/environment must be repaired before marking stage 01 complete; no security or billing bypass was accepted.
+  - `GOTOOLCHAIN=go1.25.1+auto GOCACHE=/private/tmp/new-api-go-cache go test ./pkg/jsplugin` - passed.
+  - `GOTOOLCHAIN=go1.25.1+auto GOCACHE=/private/tmp/new-api-go-cache go test ./relay/... ./dto` - passed.
+- Known blockers: none for stage 01; stages 02-07 remain pending by design.
 
 ### 2026-08-29 - 006 - Completed
 
